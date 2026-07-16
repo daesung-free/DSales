@@ -1,0 +1,47 @@
+HELP.md
+.gradle
+build/
+!gradle/wrapper/gradle-wrapper.jar
+!**/src/main/**/build/
+!**/src/test/**/build/
+
+### STS ###
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+.springBeans
+.sts4-cache
+bin/
+!**/src/main/**/bin/
+!**/src/test/**/bin/
+
+### IntelliJ IDEA ###
+.idea
+*.iws
+*.iml
+*.ipr
+out/
+!**/src/main/**/out/
+!**/src/test/**/out/
+
+### NetBeans ###
+/nbproject/private/
+/nbbuild/
+/dist/
+/nbdist/
+/.nb-gradle/
+
+### VS Code ###
+.vscode/
+
+### Claude Code ###
+.claude/
+
+### 내부 분석/기획 문서 — 크리덴셜·운영호스트·취약점 정보 포함, 커밋 금지 ###
+매출프로그램_기술_개발문서.md
+00_공통_킥오프_체크리스트_W1-W2.md
+01_DB트랙_체크리스트_W1-W2.md
+02_백엔드트랙_체크리스트_W1-W2.md
+03_프론트트랙_체크리스트_W1-W2.md
