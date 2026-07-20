@@ -33,4 +33,12 @@ public class Warehouse extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 10)
     private WarehouseType type;
+
+    public static Warehouse create(String code, String name, WarehouseType type) {
+        Warehouse w = new Warehouse();
+        w.code = code;
+        w.name = name;
+        w.type = type;
+        return w;
+    }
 }

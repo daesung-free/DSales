@@ -33,4 +33,12 @@ public class Partner extends BaseEntity {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 10)
     private PartnerType type = PartnerType.NORMAL;
+
+    public static Partner create(String code, String name, PartnerType type) {
+        Partner p = new Partner();
+        p.code = code;
+        p.name = name;
+        p.type = (type == null) ? PartnerType.NORMAL : type;
+        return p;
+    }
 }
