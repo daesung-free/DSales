@@ -70,4 +70,19 @@ public class InventoryTxn extends BaseEntity {
 
     @Column(length = 1000)
     private String memo;
+
+    /** 일반 입고 이벤트. qty는 양수. */
+    public static InventoryTxn inbound(Product product, Warehouse warehouse, int qty, Long unitCost,
+                                       LocalDate tradeDate, Partner partner, String memo) {
+        InventoryTxn t = new InventoryTxn();
+        t.product = product;
+        t.warehouse = warehouse;
+        t.txnType = TxnType.INBOUND;
+        t.qty = qty;
+        t.unitCost = unitCost;
+        t.tradeDate = tradeDate;
+        t.partner = partner;
+        t.memo = memo;
+        return t;
+    }
 }
