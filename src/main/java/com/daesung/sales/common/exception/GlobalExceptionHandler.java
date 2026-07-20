@@ -4,6 +4,7 @@ import com.daesung.sales.common.response.ApiResponse;
 import com.daesung.sales.common.response.ErrorResponse;
 import java.util.stream.Collectors;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.data.mapping.PropertyReferenceException;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -31,6 +32,14 @@ public class GlobalExceptionHandler {
                 .collect(Collectors.joining(", "));
         return ResponseEntity.status(ErrorCode.INVALID_INPUT.getStatus())
                 .body(ApiResponse.fail(ErrorResponse.of(ErrorCode.INVALID_INPUT, detail)));
+    }
+
+    /** 잘못된 정렬(sort) 컬럼 등 → 400. */
+    @ExceptionHandler(PropertyReferenceException.class)
+    public ResponseEntity<ApiResponse<Void>> handlePropertyReference(PropertyReferenceException e) {
+        return ResponseEntity.status(ErrorCode.INVALID_INPUT.getStatus())
+                .body(ApiResponse.fail(ErrorResponse.of(ErrorCode.INVALID_INPUT,
+                        "정렬/조회 기준이 올바르지 않습니다: " + e.getPropertyName())));
     }
 
     /** 존재하지 않는 경로/리소스 → 404. */

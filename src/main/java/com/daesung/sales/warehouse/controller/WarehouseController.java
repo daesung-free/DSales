@@ -1,13 +1,16 @@
 package com.daesung.sales.warehouse.controller;
 
+import com.daesung.sales.common.dto.PageRequestDto;
 import com.daesung.sales.common.response.ApiResponse;
 import com.daesung.sales.common.response.PageResponse;
 import com.daesung.sales.warehouse.dto.WarehouseCreateRequest;
 import com.daesung.sales.warehouse.dto.WarehouseResponse;
 import com.daesung.sales.warehouse.service.WarehouseService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
-import org.springframework.data.domain.Pageable;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -18,6 +21,7 @@ import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /** 기초관리 - 창고 관리. 실제 경로: /api/v1/masters/warehouses. */
+@Tag(name = "기초관리 · 창고", description = "창고 마스터 관리 (물류/위탁)")
 @RestController
 @RequiredArgsConstructor
 @RequestMapping("/masters/warehouses")
@@ -25,16 +29,19 @@ public class WarehouseController {
 
     private final WarehouseService warehouseService;
 
+    @Operation(summary = "창고 목록 조회", description = "페이징·정렬 지원")
     @GetMapping
-    public ApiResponse<PageResponse<WarehouseResponse>> list(Pageable pageable) {
-        return ApiResponse.success(warehouseService.findAll(pageable));
+    public ApiResponse<PageResponse<WarehouseResponse>> list(@ParameterObject PageRequestDto pageReq) {
+        return ApiResponse.success(warehouseService.findAll(pageReq.toPageable()));
     }
 
+    @Operation(summary = "창고 상세 조회", description = "id로 단건 조회. 없으면 404")
     @GetMapping("/{id}")
     public ApiResponse<WarehouseResponse> get(@PathVariable Long id) {
         return ApiResponse.success(warehouseService.findById(id));
     }
 
+    @Operation(summary = "창고 등록", description = "창고코드 중복 시 400 반환")
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<WarehouseResponse> create(@Valid @RequestBody WarehouseCreateRequest req) {
