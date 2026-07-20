@@ -47,4 +47,18 @@ public class Product extends BaseEntity {
 
     @Column(name = "use_yn", nullable = false)
     private boolean useYn = true;
+
+    public static Product create(String code, String name, ContentType contentType, boolean set,
+                                 Integer price, boolean taxFree, String grade, boolean useYn) {
+        Product p = new Product();
+        p.code = code;
+        p.name = name;
+        p.contentType = contentType;
+        p.set = set;
+        p.price = price;
+        p.taxFree = taxFree;
+        p.grade = grade;
+        p.useYn = useYn;
+        return p;
+    }
 }
