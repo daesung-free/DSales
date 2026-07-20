@@ -10,6 +10,25 @@ services:
       - "5432:5432"
     volumes:
       - sales-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U sales"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  app:
+    build: .
+    container_name: sales-app
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      # 컨테이너 내부에선 DB 호스트가 'postgres'(서비스명). application.yml의 localhost를 덮어씀.
+      SPRING_DATASOURCE_URL: jdbc:postgresql://postgres:5432/sales
+      SPRING_DATASOURCE_USERNAME: sales
+      SPRING_DATASOURCE_PASSWORD: sales
+    ports:
+      - "8080:8080"
 
 volumes:
   sales-pgdata:

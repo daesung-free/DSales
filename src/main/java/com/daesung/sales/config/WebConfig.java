@@ -21,8 +21,8 @@ public class WebConfig implements WebMvcConfigurer {
 
     @Override
     public void configurePathMatch(PathMatchConfigurer configurer) {
-        // 전 @RestController에 '/api/v1' 공통 prefix (API 스펙 Base URL과 일치)
-        configurer.addPathPrefix("/api/v1", HandlerTypePredicate.forAnnotation(RestController.class));
+        // 우리 패키지 컨트롤러에만 '/api/v1' prefix (springdoc 등 라이브러리 컨트롤러 제외)
+        configurer.addPathPrefix("/api/v1", HandlerTypePredicate.forBasePackage("com.daesung.sales"));
     }
 
     @Bean
