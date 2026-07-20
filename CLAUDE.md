@@ -105,7 +105,15 @@ python3 <script> --sheet <ID> --tab <탭명>   # scratchpad의 read_*.py 참고.
 - **트랜잭션 원자성**: 위탁출고+자동이고, 매출확정+미결차감, BOM 조립/해체는 각각 **한 트랜잭션**. 음수재고·초과정산은 제약으로 차단.
 - **화면 선개발 금지**: 대응 백엔드 로직·스키마가 확정되기 전 화면 착수 금지(원칙②).
 - **공통 API 응답 형식**(Claude 추가, 시트 미명시): 모든 컨트롤러는 `ApiResponse<T>`로 감싸 반환(`{success, data, error}`). 도메인 오류는 `throw new BusinessException(ErrorCode.XXX)` → `GlobalExceptionHandler`가 공통 실패 응답으로 변환. 에러코드는 `common/exception/ErrorCode`에 추가(예: PERIOD_LOCKED·NEGATIVE_STOCK·OVER_SETTLEMENT).
-- **API 컨벤션**: 모든 REST 컨트롤러는 `/api` prefix 자동 적용(WebConfig). 목록 응답은 `PageResponse.of(page)`. Swagger는 `/swagger-ui.html`. 보안은 현재 **전체 허용**(SecurityConfig, RBAC 도입 시 제한 — TODO).
+- **★ API 작성 규약(신규 API는 항상 이 형태로)**:
+  - 경로: `/api/v1` 자동 prefix(WebConfig). 컨트롤러엔 `/masters/...` 처럼만 매핑.
+  - 계층: `controller` → `service`(@Transactional) → `repository`. DTO는 각 기능 `dto/` 패키지(record 권장).
+  - 응답: 성공 `ApiResponse.success(data)`, 목록 `ApiResponse.success(PageResponse.of(page))`. 오류는 `throw new BusinessException(ErrorCode.XXX)`.
+  - **페이징 목록**: 파라미터로 `Pageable` 대신 **`PageRequestDto`(@ParameterObject)** 받고 `.toPageable()` 변환. (스프링 기본 Pageable은 Swagger 설명이 영어 하드코딩이라 회피)
+  - **Swagger 한글 문서화 필수**: 컨트롤러 `@Tag(name,description)`, 메서드 `@Operation(summary,description)`, 요청 DTO 필드 `@Schema(description,example, requiredMode)`. → Swagger가 한글 설명+예시값 자동 노출.
+  - 등록 검증: `@Valid` + 코드 중복 등 도메인 검증은 서비스에서 `BusinessException`.
+  - **참고 템플릿**: `product`/`warehouse`/`partner` 패키지(상품·창고·거래처 CRUD)가 표준 예시. 새 API는 이걸 복제·변형.
+  - 보안은 현재 **전체 허용**(SecurityConfig, RBAC 도입 시 제한 — TODO). Swagger는 `/swagger-ui/index.html`.
 - 언어: 산출물·주석·커밋 메시지는 한국어 우선(팀 문서가 한국어).
 
 ## 10. 지금까지의 진행 (세션 컨텍스트)
