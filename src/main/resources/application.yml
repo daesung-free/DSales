@@ -1,0 +1,28 @@
+spring:
+  application:
+    name: sales
+  datasource:
+    url: jdbc:postgresql://localhost:5432/sales
+    username: sales
+    password: sales          # 로컬 개발 전용(docker-compose). 운영은 시크릿 매니저로.
+    driver-class-name: org.postgresql.Driver
+  jpa:
+    hibernate:
+      ddl-auto: validate      # 스키마는 Flyway가 만들고, 엔티티↔스키마 일치만 검증
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+  flyway:
+    enabled: true             # 기동 시 db/migration/V*.sql 자동 적용
+
+server:
+  port: 8080
+
+springdoc:
+  swagger-ui:
+    path: /swagger-ui.html
+
+logging:
+  level:
+    org.hibernate.SQL: debug

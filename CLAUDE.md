@@ -17,6 +17,7 @@
   - Gradle 래퍼는 8.14(Boot 3.4.x 공식 지원 라인). Java 21은 `foojay-resolver`(settings.gradle)로 자동 프로비저닝.
   - build.gradle 의존성: web·validation·actuator / data-jpa·postgresql·querydsl / flyway(스키마 마이그레이션) / security / poi-ooxml(엑셀) / springdoc(OpenAPI) / lombok / test(testcontainers-postgresql, security-test).
   - 📌 결정 로그: **Flyway는 시트에 명시되지 않은 Claude 추가 권장 → 사용자 승인(유지).** 신규 스키마 대량이라 DDL 버전관리 목적. 변경 파일은 `src/main/resources/db/migration/V*.sql`.
+  - 📌 결정 로그: **enum은 API 스펙(`대성매출프로그램_API_스펙.md`) 기준으로 통일.** ShipmentType(NORMAL_SHIP/CONSIGN_SHIP/GIFT/TEACHER_USE/RETURN/CANCEL) · SalesCategory(SALE/FREE/RETURN) · WarehouseType(MAIN/CONSIGN). DB는 로컬 throwaway라 V1 직접 수정 + 볼륨 리셋으로 반영(V2 미사용).
   - **조건부(주석 처리)**: mssql-jdbc(DSLab/DSTxtBook), mysql-connector-j(DSRE2) — **Phase0 DSRE2 결정 후** 활성화.
 - **패키지 구조(기능별 + 내부 layer 서브패키지)** — 이 규칙 유지:
   ```

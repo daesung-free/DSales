@@ -64,7 +64,7 @@ CREATE TABLE warehouses (
     code       VARCHAR(20) NOT NULL UNIQUE,
     name       VARCHAR(50) NOT NULL,
     type       VARCHAR(10) NOT NULL
-                 CHECK (type IN ('PHYSICAL','CONSIGN')),   -- 물류창고(실물) / 위탁창고(가상)
+                 CHECK (type IN ('MAIN','CONSIGN')),   -- MAIN=본사 물류창고(실물) / CONSIGN=위탁창고(가상)
     created_at TIMESTAMP   NOT NULL,
     created_by VARCHAR(50),
     updated_at TIMESTAMP,
@@ -112,21 +112,21 @@ CREATE INDEX ix_inv_txn_trade_dt  ON inventory_txn (trade_date);
 -- 출고유형(6) → 회계구분(3) 룩업 — 근거: 시트2① (레거시 하드코딩 CASE, DB-25)
 -- ※ '취소'의 공급률 30% 분기(매출/무가/유가)는 서비스 로직에서 처리.
 CREATE TABLE out_type_mapping (
-    out_type        VARCHAR(10) PRIMARY KEY
-                      CHECK (out_type IN ('NORMAL','CONSIGN','GIFT','TEACHER','RETURN','CANCEL')),
-    acct_type       VARCHAR(10) NOT NULL
-                      CHECK (acct_type IN ('SALES','FREE','RETURN')),
+    out_type        VARCHAR(20) PRIMARY KEY   -- ShipmentType(출고유형)
+                      CHECK (out_type IN ('NORMAL_SHIP','CONSIGN_SHIP','GIFT','TEACHER_USE','RETURN','CANCEL')),
+    acct_type       VARCHAR(10) NOT NULL      -- SalesCategory(회계구분)
+                      CHECK (acct_type IN ('SALE','FREE','RETURN')),
     default_wh_type VARCHAR(10) NOT NULL
-                      CHECK (default_wh_type IN ('PHYSICAL','CONSIGN')),
+                      CHECK (default_wh_type IN ('MAIN','CONSIGN')),
     is_consignment  BOOLEAN     NOT NULL DEFAULT FALSE
 );
 INSERT INTO out_type_mapping (out_type, acct_type, default_wh_type, is_consignment) VALUES
-    ('NORMAL' , 'SALES' , 'PHYSICAL', FALSE),  -- 정상출고: 즉시 매출
-    ('CONSIGN', 'SALES' , 'CONSIGN' , TRUE ),  -- 위탁출고: 위탁창고 이동 + 매출 미결
-    ('GIFT'   , 'FREE'  , 'PHYSICAL', FALSE),  -- 증정용: 무상
-    ('TEACHER', 'FREE'  , 'PHYSICAL', FALSE),  -- 교사용: 무상
-    ('RETURN' , 'RETURN', 'PHYSICAL', FALSE),  -- 반품: 물류창고 복귀
-    ('CANCEL' , 'RETURN', 'PHYSICAL', FALSE);  -- 취소: 회계상 반품(공급률 분기는 로직)
+    ('NORMAL_SHIP' , 'SALE'  , 'MAIN'   , FALSE),  -- 정상출고: 즉시 매출
+    ('CONSIGN_SHIP', 'SALE'  , 'CONSIGN', TRUE ),  -- 위탁출고: 위탁창고 이동 + 매출 미결
+    ('GIFT'        , 'FREE'  , 'MAIN'   , FALSE),  -- 증정용: 무상
+    ('TEACHER_USE' , 'FREE'  , 'MAIN'   , FALSE),  -- 교사용: 무상
+    ('RETURN'      , 'RETURN', 'MAIN'   , FALSE),  -- 반품: 물류창고 복귀
+    ('CANCEL'      , 'RETURN', 'MAIN'   , FALSE);  -- 취소: 회계상 반품(공급률 분기는 로직)
 
 -- 위탁 미결원장 — 🆕 근거: 로직B (BE-30~35). 불변식/초과정산 방지 제약.
 CREATE TABLE consignment_out (

@@ -23,12 +23,12 @@ public class OutTypeMapping {
 
     @Id
     @Enumerated(EnumType.STRING)
-    @Column(name = "out_type", length = 10)
-    private OutType outType;
+    @Column(name = "out_type", length = 20)
+    private ShipmentType shipmentType;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "acct_type", nullable = false, length = 10)
-    private AcctType acctType;
+    private SalesCategory salesCategory;
 
     @Enumerated(EnumType.STRING)
     @Column(name = "default_wh_type", nullable = false, length = 10)

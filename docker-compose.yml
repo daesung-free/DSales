@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: sales-postgres
+    environment:
+      POSTGRES_DB: sales
+      POSTGRES_USER: sales
+      POSTGRES_PASSWORD: sales   # 로컬 개발 전용(운영 비밀 아님)
+    ports:
+      - "5432:5432"
+    volumes:
+      - sales-pgdata:/var/lib/postgresql/data
+
+volumes:
+  sales-pgdata:
