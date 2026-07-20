@@ -97,7 +97,14 @@ python3 <script> --sheet <ID> --tab <탭명>   # scratchpad의 read_*.py 참고.
 ```
 (gsheets MCP도 등록돼 있으나 **읽기전용**이라 시트 수정 불가 — 정정은 "메모"로 산출하고 반영은 사람이 직접.)
 
-**레거시 원본 DDL(참조자료, gitignore됨)**: `reference/legacy/` — `DSLab.sql`(SQL Server 18t) / `DSTxtBook.sql`(7t) / `dsre-table.sql`(MySQL 58t) / `dsre-procedure.sql`(루틴 25). **이식 대상**(수금·채권·담보·수불부 소스)의 정확한 컬럼·타입은 여기서 확인. ⚠️ 이건 참조자료지 우리 스키마가 아니며, **`src/main/resources/db/migration/`에 절대 두지 말 것**(Flyway 실행됨).
+**레거시 원본 소스·DDL(참조자료 전량, gitignore됨)**: `reference/legacy/`
+- **`DsSales-main/`** — VB.NET WinForms 매출프로그램 본체(.vb 121, rdlc 26). 재고/수불부/매출 로직 원본. 예: `제품수불부.vb`·`IC제품수불부.vb`·`기타고사_제품수불부.vb`·`도서입출고현황.vb`·`조회.vb`·`UC_TabPages_IC.vb`·`clsDB.vb`·`Common.vb`·`매출가져오기.vb`.
+- **`dsdo-dealer-main/`** — order 사이트(Java Spring MVC, jsp). 특약점 신청/조회 로직.
+- **`DSRE2-main/`** — DSRE2(C# 데스크톱).
+- **`*.sql`** — DDL/프로시저(DSLab 18t / DSTxtBook 7t / dsre-table 58t / dsre-procedure 25루틴).
+- **`대성매출프로그램_API_스펙.md`**(개발 API 스펙), **Work Process v1.5 PDF**(기획서 29화면).
+- **활용법(★ 신규 기능 만들 때 항상)**: 해당 화면의 레거시 `.vb`를 먼저 `grep`/`Read`로 찾아 **inline SQL·계산식·분기 규칙을 확인한 뒤** 우리 구조로 재현. (레거시는 잔고 미저장·화면마다 계산식 상이 — 그대로 베끼지 말고 정본 공식 하나로 통일. [[재고 정의 단일화]])
+- ⚠️ **참조자료지 우리 스키마/코드가 아님.** 크리덴셜·취약점 상세는 절대 커밋/노출 금지. **`src/main/resources/db/migration/`에 절대 두지 말 것**(Flyway 실행됨).
 
 ## 9. 작업 규칙 / 컨벤션
 - **보안·비밀정보**: 레거시의 DB 호스트·계정·API키, order IDOR 등 **취약점 상세는 이 파일이나 커밋에 절대 넣지 말 것.** 정본 시트(접근통제)에만 둔다.
