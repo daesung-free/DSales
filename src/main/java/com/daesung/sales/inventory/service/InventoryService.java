@@ -53,15 +53,18 @@ public class InventoryService {
                     item.unitCost(), req.processedDate(), supplier, item.memo());
             inventoryTxnRepository.save(txn);
 
-            // (2) 재고 잔량 갱신(없으면 생성)
-            Inventory inventory = inventoryRepository
+            // (2) 재고 잔량 갱신 — 원자적 증가(lost update 방지). 행이 없으면 신규 생성.
+            int updated = inventoryRepository.addQty(product.getId(), warehouse.getId(), item.qty());
+            if (updated == 0) {
+                inventoryRepository.save(Inventory.create(product, warehouse, item.qty()));
+            }
+            int currentQty = inventoryRepository
                     .findByProductIdAndWarehouseId(product.getId(), warehouse.getId())
-                    .orElseGet(() -> Inventory.create(product, warehouse, 0));
-            inventory.addQty(item.qty());
-            inventoryRepository.save(inventory);
+                    .map(Inventory::getQty)
+                    .orElse(item.qty());
 
             lines.add(new InboundResponse.Line(
-                    product.getId(), product.getCode(), item.qty(), inventory.getQty()));
+                    product.getId(), product.getCode(), item.qty(), currentQty));
         }
         return new InboundResponse(warehouse.getId(), warehouse.getName(), lines);
     }

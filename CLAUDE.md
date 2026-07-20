@@ -81,6 +81,7 @@
 - **E. DSRE2 어댑터가 매출 API보다 뒤(순번18 vs 15)** — 매출일괄등록이 어댑터에 의존하므로 순서 역전. 어댑터를 앞으로.
 - **F. 세 시트(로드맵/BE/FE) 순번체계·의존성 불일치.** 동일 태스크 선행이 시트마다 다름(예: 창고스키마 dep). 정본 하나로 통일 필요.
 - **G. 결손 미반영**: 재고실사(실물대조·차이조정), DSRE 요구 8건 트랙, order 개선 4건 일부(다중선택/담당자자동/전년도리셋).
+- **H. 🔴 dsre2 재고 동기화가 외부 웹앱에 있음(최대 리스크)**: 레거시 SQL Server(DSSales)는 재고 잔고 미저장(계산). 그런데 `dsre2`(MySQL)는 잔고를 저장(`tbl_materials_info.CNT`, `tbl_booklist_cnt.STOCK`)하는데 **이 저장소엔 그걸 쓰는 코드가 없음** → 입고↔CNT 동기화 로직이 **repo에 없는 별도 웹앱**에 존재. 교재/더프 재고를 다루려면 그 로직/DB 규칙이 필요. **DSRE2 통합/분리(Phase0) + 재견적에 직결.**
 
 ## 8. 정보 출처 (정본 = 접근통제된 구글시트)
 두 시트가 정본이며, 이 CLAUDE.md보다 우선한다. 세부·최신 확인 시 **다시 읽어라**.
@@ -103,6 +104,8 @@ python3 <script> --sheet <ID> --tab <탭명>   # scratchpad의 read_*.py 참고.
 - **gitignore 됨(커밋 금지)**: 로컬 분석 `.md`(기술문서·체크리스트 4종), 서비스계정 키, `.claude/`. → `git status`에 이것들이 뜨면 add 하지 말 것.
 - **이중 장부 불변**: 물류(재고)와 재무(매출)는 항상 별도 추적. 위탁출고는 재고 즉시차감 / 매출 미결.
 - **트랜잭션 원자성**: 위탁출고+자동이고, 매출확정+미결차감, BOM 조립/해체는 각각 **한 트랜잭션**. 음수재고·초과정산은 제약으로 차단.
+- **★ 재고 정의 단일화(레거시 #4 근절)**: 레거시는 재고 잔고를 저장 안 하고 화면마다 다른 공식으로 계산 → 같은 도서가 화면마다 재고 다름. 우리는 **`inventory_txn`(이벤트 로그)이 유일 진실**, 재고 = `SUM(qty) by 상품×창고`라는 **단 하나의 공식(=제품수불부)**. `inventory.qty`는 그 공식의 **재생성 가능한 캐시**일 뿐(언제든 txn에서 재계산·대사 가능). **화면마다 다른 재고 계산식 금지.**
+- **재고 잔량 갱신 동시성**: read-modify-write 금지. **원자적 UPDATE** `qty = qty + :delta`(`InventoryRepository.addQty`, `@Modifying`)로 갱신 → 동시 갱신에도 lost update 없음(DB 행 잠금 직렬화). 최초 생성(행 없음) 경합은 (product_id, warehouse_id) UNIQUE가 방어. (병렬 20건 입고 검증: 정확히 누적됨. 참고로 파생쿼리 `@Lock`은 이 케이스에서 유실 재현돼 원자 UPDATE 채택.)
 - **화면 선개발 금지**: 대응 백엔드 로직·스키마가 확정되기 전 화면 착수 금지(원칙②).
 - **공통 API 응답 형식**(Claude 추가, 시트 미명시): 모든 컨트롤러는 `ApiResponse<T>`로 감싸 반환(`{success, data, error}`). 도메인 오류는 `throw new BusinessException(ErrorCode.XXX)` → `GlobalExceptionHandler`가 공통 실패 응답으로 변환. 에러코드는 `common/exception/ErrorCode`에 추가(예: PERIOD_LOCKED·NEGATIVE_STOCK·OVER_SETTLEMENT).
 - **★ API 작성 규약(신규 API는 항상 이 형태로)**:
