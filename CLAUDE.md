@@ -104,6 +104,7 @@ python3 <script> --sheet <ID> --tab <탭명>   # scratchpad의 read_*.py 참고.
 - **트랜잭션 원자성**: 위탁출고+자동이고, 매출확정+미결차감, BOM 조립/해체는 각각 **한 트랜잭션**. 음수재고·초과정산은 제약으로 차단.
 - **화면 선개발 금지**: 대응 백엔드 로직·스키마가 확정되기 전 화면 착수 금지(원칙②).
 - **공통 API 응답 형식**(Claude 추가, 시트 미명시): 모든 컨트롤러는 `ApiResponse<T>`로 감싸 반환(`{success, data, error}`). 도메인 오류는 `throw new BusinessException(ErrorCode.XXX)` → `GlobalExceptionHandler`가 공통 실패 응답으로 변환. 에러코드는 `common/exception/ErrorCode`에 추가(예: PERIOD_LOCKED·NEGATIVE_STOCK·OVER_SETTLEMENT).
+- **API 컨벤션**: 모든 REST 컨트롤러는 `/api` prefix 자동 적용(WebConfig). 목록 응답은 `PageResponse.of(page)`. Swagger는 `/swagger-ui.html`. 보안은 현재 **전체 허용**(SecurityConfig, RBAC 도입 시 제한 — TODO).
 - 언어: 산출물·주석·커밋 메시지는 한국어 우선(팀 문서가 한국어).
 
 ## 10. 지금까지의 진행 (세션 컨텍스트)
