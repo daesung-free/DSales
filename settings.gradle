@@ -1,1 +1,6 @@
+plugins {
+	// Java 21 toolchain 자동 프로비저닝(미설치 시 Gradle이 JDK 다운로드)
+	id 'org.gradle.toolchains.foojay-resolver-convention' version '0.8.0'
+}
+
 rootProject.name = 'sales'
