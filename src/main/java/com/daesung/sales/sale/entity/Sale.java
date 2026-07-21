@@ -18,13 +18,14 @@ import jakarta.persistence.JoinColumn;
 import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
 /**
  * 매출 원장(확정 매출 라인). 근거: 기획서 P.12/P.13, API 스펙 §3.
- * 미결은 여기 없음 — consignment_out(OPEN/PARTIAL/CLOSED)이 단일 진실.
+ * 미결은 여기 없음 — consignment_out(OPEN/PARTIAL/CLOSED)이 단일 진실. 취소는 논리 취소(canceled).
  */
 @Entity
 @Table(name = "sales")
@@ -95,6 +96,13 @@ public class Sale extends BaseEntity {
     @Column(length = 1000)
     private String memo;
 
+    /** 논리 취소 여부(물리삭제 아님, 이력 보존). */
+    @Column(nullable = false)
+    private boolean canceled = false;
+
+    @Column(name = "canceled_at")
+    private LocalDateTime canceledAt;
+
     /** 일반(직접) 매출 라인 생성. 위탁 정산 매출은 별도(from-consign)로 생성. */
     public static Sale create(String salesNo, LocalDate salesDate, Partner partner, Product product,
                               SalesType salesType, ShipmentType shipmentType, SalesCategory salesCategory,
@@ -116,5 +124,11 @@ public class Sale extends BaseEntity {
         s.totalAmount = totalAmount;
         s.memo = memo;
         return s;
+    }
+
+    /** 논리 취소. */
+    public void cancel() {
+        this.canceled = true;
+        this.canceledAt = LocalDateTime.now();
     }
 }
