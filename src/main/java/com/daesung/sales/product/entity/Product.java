@@ -78,4 +78,9 @@ public class Product extends BaseEntity {
     public void deactivate() {
         this.useYn = false;
     }
+
+    /** BOM 완제품(세트)으로 표시. */
+    public void markAsSet() {
+        this.set = true;
+    }
 }

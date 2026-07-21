@@ -2,20 +2,27 @@ package com.daesung.sales.inventory.service;
 
 import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
+import com.daesung.sales.inventory.dto.BomWorkRequest;
+import com.daesung.sales.inventory.dto.BomWorkResponse;
 import com.daesung.sales.inventory.dto.InboundRequest;
 import com.daesung.sales.inventory.dto.InboundResponse;
 import com.daesung.sales.inventory.dto.TransferRequest;
 import com.daesung.sales.inventory.dto.TransferResponse;
+import com.daesung.sales.inventory.entity.BomDirection;
 import com.daesung.sales.inventory.entity.Inventory;
 import com.daesung.sales.inventory.entity.InventoryTxn;
+import com.daesung.sales.inventory.entity.TxnType;
 import com.daesung.sales.inventory.repository.InventoryRepository;
 import com.daesung.sales.inventory.repository.InventoryTxnRepository;
 import com.daesung.sales.partner.entity.Partner;
 import com.daesung.sales.partner.repository.PartnerRepository;
+import com.daesung.sales.product.entity.BomItem;
 import com.daesung.sales.product.entity.Product;
+import com.daesung.sales.product.repository.BomItemRepository;
 import com.daesung.sales.product.repository.ProductRepository;
 import com.daesung.sales.warehouse.entity.Warehouse;
 import com.daesung.sales.warehouse.repository.WarehouseRepository;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -31,10 +38,9 @@ public class InventoryService {
     private final ProductRepository productRepository;
     private final WarehouseRepository warehouseRepository;
     private final PartnerRepository partnerRepository;
+    private final BomItemRepository bomItemRepository;
 
-    /**
-     * 일반 입고. 품목마다 (1) 재고이벤트 INBOUND 기록 + (2) 재고 잔량 가산을 한 트랜잭션으로 처리.
-     */
+    /** 일반 입고. 품목마다 (1) 재고이벤트 INBOUND 기록 + (2) 재고 잔량 가산을 한 트랜잭션으로. */
     @Transactional
     public InboundResponse inbound(InboundRequest req) {
         Warehouse warehouse = warehouseRepository.findById(req.destinationWarehouseId())
@@ -50,20 +56,9 @@ public class InventoryService {
                     .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                             "상품이 없습니다. id=" + item.productId()));
 
-            // (1) 재고 이벤트 기록
-            InventoryTxn txn = InventoryTxn.inbound(product, warehouse, item.qty(),
-                    item.unitCost(), req.processedDate(), supplier, item.memo());
-            inventoryTxnRepository.save(txn);
-
-            // (2) 재고 잔량 갱신 — 원자적 증가(lost update 방지). 행이 없으면 신규 생성.
-            int updated = inventoryRepository.addQty(product.getId(), warehouse.getId(), item.qty());
-            if (updated == 0) {
-                inventoryRepository.save(Inventory.create(product, warehouse, item.qty()));
-            }
-            int currentQty = inventoryRepository
-                    .findByProductIdAndWarehouseId(product.getId(), warehouse.getId())
-                    .map(Inventory::getQty)
-                    .orElse(item.qty());
+            inventoryTxnRepository.save(InventoryTxn.inbound(product, warehouse, item.qty(),
+                    item.unitCost(), req.processedDate(), supplier, item.memo()));
+            int currentQty = applyDelta(product, warehouse, item.qty());
 
             lines.add(new InboundResponse.Line(
                     product.getId(), product.getCode(), item.qty(), currentQty));
@@ -71,10 +66,7 @@ public class InventoryService {
         return new InboundResponse(warehouse.getId(), warehouse.getName(), lines);
     }
 
-    /**
-     * 단순 이고(창고 이동). 출발창고 −qty(음수재고 방지), 도착창고 +qty. 매출 미발생.
-     * 품목마다 재고이벤트 2다리(출발 −, 도착 +)를 source로 연결. 전체 한 트랜잭션.
-     */
+    /** 단순 이고(창고 이동). 출발창고 −qty(음수재고 방지), 도착창고 +qty. 매출 미발생. */
     @Transactional
     public TransferResponse transfer(TransferRequest req) {
         if (req.fromWarehouseId().equals(req.toWarehouseId())) {
@@ -93,30 +85,78 @@ public class InventoryService {
                     .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                             "상품이 없습니다. id=" + item.productId()));
 
-            // 출발창고 차감(음수재고 방지)
-            int dec = inventoryRepository.addQtyIfEnough(product.getId(), from.getId(), -item.qty());
-            if (dec == 0) {
-                throw new BusinessException(ErrorCode.NEGATIVE_STOCK,
-                        "재고 부족: 창고[" + from.getName() + "] 상품[" + product.getCode() + "]");
-            }
+            int fromBal = applyDelta(product, from, -item.qty());
             InventoryTxn outLeg = inventoryTxnRepository.save(
                     InventoryTxn.transfer(product, from, -item.qty(), req.processedDate(), null, item.reason()));
-
-            // 도착창고 증가(없으면 생성)
-            int inc = inventoryRepository.addQty(product.getId(), to.getId(), item.qty());
-            if (inc == 0) {
-                inventoryRepository.save(Inventory.create(product, to, item.qty()));
-            }
+            int toBal = applyDelta(product, to, item.qty());
             inventoryTxnRepository.save(
                     InventoryTxn.transfer(product, to, item.qty(), req.processedDate(), outLeg, item.reason()));
 
-            int fromBal = inventoryRepository.findByProductIdAndWarehouseId(product.getId(), from.getId())
-                    .map(Inventory::getQty).orElse(0);
-            int toBal = inventoryRepository.findByProductIdAndWarehouseId(product.getId(), to.getId())
-                    .map(Inventory::getQty).orElse(item.qty());
             lines.add(new TransferResponse.Line(
                     product.getId(), product.getCode(), item.qty(), fromBal, toBal));
         }
         return new TransferResponse(from.getId(), from.getName(), to.getId(), to.getName(), lines);
+    }
+
+    /**
+     * BOM 조립/해체. 구성품·비율은 상품 BOM 마스터에서 읽는다.
+     * 조립: 완제품 +workQty / 구성품 각 −(비율×workQty). 해체: 반대. 전체 한 트랜잭션.
+     */
+    @Transactional
+    public BomWorkResponse bom(BomWorkRequest req) {
+        Warehouse warehouse = warehouseRepository.findById(req.warehouseId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                        "창고가 없습니다. id=" + req.warehouseId()));
+        Product parent = productRepository.findById(req.parentProductId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                        "완제품 상품이 없습니다. id=" + req.parentProductId()));
+        List<BomItem> boms = bomItemRepository.findByParentId(parent.getId());
+        if (boms.isEmpty()) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "BOM 구성이 없습니다: " + parent.getCode());
+        }
+
+        boolean assemble = req.direction() == BomDirection.ASSEMBLE;
+        TxnType txnType = assemble ? TxnType.BOM_ASSEMBLE : TxnType.BOM_DISASSEMBLE;
+
+        // 완제품: 조립 +, 해체 −
+        int parentDelta = assemble ? req.workQty() : -req.workQty();
+        int parentBal = applyDelta(parent, warehouse, parentDelta);
+        inventoryTxnRepository.save(InventoryTxn.bom(parent, warehouse, parentDelta, txnType, req.processedDate(), req.memo()));
+        BomWorkResponse.Line parentLine = new BomWorkResponse.Line(
+                parent.getId(), parent.getCode(), parentDelta, parentBal);
+
+        // 구성품: 조립 −(비율×수량), 해체 +(비율×수량)
+        List<BomWorkResponse.Line> compLines = new ArrayList<>();
+        for (BomItem b : boms) {
+            Product child = b.getChild();
+            int compDelta = (assemble ? -1 : 1) * b.getRatio() * req.workQty();
+            int compBal = applyDelta(child, warehouse, compDelta);
+            inventoryTxnRepository.save(InventoryTxn.bom(child, warehouse, compDelta, txnType, req.processedDate(), req.memo()));
+            compLines.add(new BomWorkResponse.Line(child.getId(), child.getCode(), compDelta, compBal));
+        }
+
+        return new BomWorkResponse(warehouse.getId(), warehouse.getName(), req.direction(), parentLine, compLines);
+    }
+
+    /**
+     * 재고 잔량 증감(원자적). delta>=0이면 가산(없으면 생성), delta<0이면 음수재고 방지 차감.
+     * 반환값 = 갱신 후 잔량.
+     */
+    private int applyDelta(Product product, Warehouse warehouse, int delta) {
+        if (delta >= 0) {
+            int inc = inventoryRepository.addQty(product.getId(), warehouse.getId(), delta);
+            if (inc == 0) {
+                inventoryRepository.save(Inventory.create(product, warehouse, delta));
+            }
+        } else {
+            int dec = inventoryRepository.addQtyIfEnough(product.getId(), warehouse.getId(), delta);
+            if (dec == 0) {
+                throw new BusinessException(ErrorCode.NEGATIVE_STOCK,
+                        "재고 부족: 상품[" + product.getCode() + "] 창고[" + warehouse.getName() + "]");
+            }
+        }
+        return inventoryRepository.findByProductIdAndWarehouseId(product.getId(), warehouse.getId())
+                .map(Inventory::getQty)
+                .orElse(Math.max(delta, 0));
     }
 }

@@ -1,6 +1,8 @@
 package com.daesung.sales.inventory.controller;
 
 import com.daesung.sales.common.response.ApiResponse;
+import com.daesung.sales.inventory.dto.BomWorkRequest;
+import com.daesung.sales.inventory.dto.BomWorkResponse;
 import com.daesung.sales.inventory.dto.InboundRequest;
 import com.daesung.sales.inventory.dto.InboundResponse;
 import com.daesung.sales.inventory.dto.TransferRequest;
@@ -40,5 +42,13 @@ public class InventoryController {
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<TransferResponse> transfer(@Valid @RequestBody TransferRequest req) {
         return ApiResponse.success(inventoryService.transfer(req));
+    }
+
+    @Operation(summary = "세트 조립/해체(BOM)",
+            description = "조립=완제품+/구성품−, 해체=반대. 구성품·비율은 상품 BOM 마스터에서 읽음. 음수재고 방지, 한 트랜잭션.")
+    @PostMapping("/bom")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResponse<BomWorkResponse> bom(@Valid @RequestBody BomWorkRequest req) {
+        return ApiResponse.success(inventoryService.bom(req));
     }
 }

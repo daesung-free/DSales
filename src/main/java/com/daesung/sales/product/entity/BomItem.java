@@ -35,4 +35,12 @@ public class BomItem extends BaseEntity {
 
     @Column(nullable = false)
     private int ratio;
+
+    public static BomItem create(Product parent, Product child, int ratio) {
+        BomItem b = new BomItem();
+        b.parent = parent;
+        b.child = child;
+        b.ratio = ratio;
+        return b;
+    }
 }

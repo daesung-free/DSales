@@ -99,4 +99,17 @@ public class InventoryTxn extends BaseEntity {
         t.memo = memo;
         return t;
     }
+
+    /** BOM 조립/해체 한 다리. txnType=BOM_ASSEMBLE|BOM_DISASSEMBLE, qty는 부호 포함. */
+    public static InventoryTxn bom(Product product, Warehouse warehouse, int qty,
+                                   TxnType txnType, LocalDate tradeDate, String memo) {
+        InventoryTxn t = new InventoryTxn();
+        t.product = product;
+        t.warehouse = warehouse;
+        t.txnType = txnType;
+        t.qty = qty;
+        t.tradeDate = tradeDate;
+        t.memo = memo;
+        return t;
+    }
 }

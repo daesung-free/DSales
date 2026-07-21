@@ -3,6 +3,8 @@ package com.daesung.sales.product.controller;
 import com.daesung.sales.common.dto.PageRequestDto;
 import com.daesung.sales.common.response.ApiResponse;
 import com.daesung.sales.common.response.PageResponse;
+import com.daesung.sales.product.dto.BomRegisterRequest;
+import com.daesung.sales.product.dto.BomResponse;
 import com.daesung.sales.product.dto.ProductCreateRequest;
 import com.daesung.sales.product.dto.ProductResponse;
 import com.daesung.sales.product.dto.ProductUpdateRequest;
@@ -64,5 +66,18 @@ public class ProductController {
     public ApiResponse<Void> delete(@PathVariable Long id) {
         productService.deactivate(id);
         return ApiResponse.success();
+    }
+
+    @Operation(summary = "BOM 구성 조회", description = "완제품(세트)의 구성품·비율")
+    @GetMapping("/{id}/bom")
+    public ApiResponse<BomResponse> getBom(@PathVariable Long id) {
+        return ApiResponse.success(productService.getBom(id));
+    }
+
+    @Operation(summary = "BOM 구성 등록", description = "완제품의 구성품·비율 등록(기존 구성 대체). 완제품은 세트로 표시됨")
+    @PutMapping("/{id}/bom")
+    public ApiResponse<BomResponse> registerBom(@PathVariable Long id,
+                                                @Valid @RequestBody BomRegisterRequest req) {
+        return ApiResponse.success(productService.registerBom(id, req));
     }
 }
