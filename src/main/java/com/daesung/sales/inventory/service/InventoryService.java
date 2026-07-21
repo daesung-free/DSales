@@ -4,6 +4,8 @@ import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.inventory.dto.BomWorkRequest;
 import com.daesung.sales.inventory.dto.BomWorkResponse;
+import com.daesung.sales.inventory.dto.DisposalRequest;
+import com.daesung.sales.inventory.dto.DisposalResponse;
 import com.daesung.sales.inventory.dto.InboundRequest;
 import com.daesung.sales.inventory.dto.InboundResponse;
 import com.daesung.sales.inventory.dto.TransferRequest;
@@ -23,6 +25,7 @@ import com.daesung.sales.product.repository.ProductRepository;
 import com.daesung.sales.warehouse.entity.Warehouse;
 import com.daesung.sales.warehouse.repository.WarehouseRepository;
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -32,6 +35,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class InventoryService {
+
+    private static final DateTimeFormatter YYYYMMDD = DateTimeFormatter.BASIC_ISO_DATE;
 
     private final InventoryRepository inventoryRepository;
     private final InventoryTxnRepository inventoryTxnRepository;
@@ -136,6 +141,28 @@ public class InventoryService {
         }
 
         return new BomWorkResponse(warehouse.getId(), warehouse.getName(), req.direction(), parentLine, compLines);
+    }
+
+    /** 폐기. 품목마다 재고 즉시 차감(음수재고 방지) + DISPOSE 이벤트. 폐기번호(P) 채번. 한 트랜잭션. */
+    @Transactional
+    public DisposalResponse dispose(DisposalRequest req) {
+        Warehouse warehouse = warehouseRepository.findById(req.warehouseId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                        "창고가 없습니다. id=" + req.warehouseId()));
+        String disposalNo = "P-" + req.processedDate().format(YYYYMMDD) + "-"
+                + inventoryTxnRepository.nextPurgeSeq();
+
+        List<DisposalResponse.Line> lines = new ArrayList<>();
+        for (DisposalRequest.Item item : req.items()) {
+            Product product = productRepository.findById(item.productId())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                            "상품이 없습니다. id=" + item.productId()));
+            int balance = applyDelta(product, warehouse, -item.qty());
+            inventoryTxnRepository.save(InventoryTxn.dispose(product, warehouse, -item.qty(),
+                    req.processedDate(), disposalNo, item.reason()));
+            lines.add(new DisposalResponse.Line(product.getId(), product.getCode(), item.qty(), balance));
+        }
+        return new DisposalResponse(disposalNo, warehouse.getId(), warehouse.getName(), lines);
     }
 
     /**

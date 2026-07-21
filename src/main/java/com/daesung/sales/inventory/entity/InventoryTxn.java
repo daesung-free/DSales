@@ -112,4 +112,18 @@ public class InventoryTxn extends BaseEntity {
         t.memo = memo;
         return t;
     }
+
+    /** 폐기. qty는 음수(재고 차감). refNo=폐기번호(P-...). */
+    public static InventoryTxn dispose(Product product, Warehouse warehouse, int qty,
+                                       LocalDate tradeDate, String refNo, String memo) {
+        InventoryTxn t = new InventoryTxn();
+        t.product = product;
+        t.warehouse = warehouse;
+        t.txnType = TxnType.DISPOSE;
+        t.qty = qty;
+        t.tradeDate = tradeDate;
+        t.refNo = refNo;
+        t.memo = memo;
+        return t;
+    }
 }
