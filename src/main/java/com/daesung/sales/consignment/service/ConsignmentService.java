@@ -1,5 +1,6 @@
 package com.daesung.sales.consignment.service;
 
+import com.daesung.sales.closing.service.PeriodLockService;
 import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.consignment.dto.ConsignPendingResponse;
@@ -48,6 +49,7 @@ public class ConsignmentService {
     private final ProductRepository productRepository;
     private final WarehouseRepository warehouseRepository;
     private final PartnerRepository partnerRepository;
+    private final PeriodLockService periodLockService;
 
     /** 위탁출고. 품목마다 물류→위탁 이고 + 미결(OPEN) 생성. 한 트랜잭션. 매출 미발생. */
     @Transactional
@@ -113,6 +115,7 @@ public class ConsignmentService {
      */
     @Transactional
     public ConsignSettleResponse settle(ConsignSettleRequest req) {
+        periodLockService.assertNotLocked(req.salesDate());
         String datePart = req.salesDate().format(YYYYMMDD);
         List<ConsignSettleResponse.Line> lines = new ArrayList<>();
 

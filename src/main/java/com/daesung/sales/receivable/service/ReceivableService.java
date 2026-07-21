@@ -1,5 +1,6 @@
 package com.daesung.sales.receivable.service;
 
+import com.daesung.sales.closing.service.PeriodLockService;
 import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.common.response.PageResponse;
@@ -49,10 +50,12 @@ public class ReceivableService {
     private final ReceivableCarryforwardRepository carryforwardRepository;
     private final SaleRepository saleRepository;
     private final PartnerRepository partnerRepository;
+    private final PeriodLockService periodLockService;
 
     /** 수금 등록. 수금번호(C) 채번. 어음정보는 유형=어음일 때만 저장(엔티티에서 처리). */
     @Transactional
     public CollectionResponse registerCollection(CollectionRequest req) {
+        periodLockService.assertNotLocked(req.collDate());
         Partner partner = partnerRepository.findById(req.partnerId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                         "거래처가 없습니다. id=" + req.partnerId()));

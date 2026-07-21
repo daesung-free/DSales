@@ -2,6 +2,7 @@ package com.daesung.sales.sale.service;
 
 import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
+import com.daesung.sales.closing.service.PeriodLockService;
 import com.daesung.sales.common.response.PageResponse;
 import com.daesung.sales.inventory.entity.TxnType;
 import com.daesung.sales.inventory.service.InventoryService;
@@ -44,6 +45,7 @@ public class SaleService {
     private final OutTypeMappingRepository outTypeMappingRepository;
     private final WarehouseRepository warehouseRepository;
     private final InventoryService inventoryService;
+    private final PeriodLockService periodLockService;
 
     /**
      * 수기 매출 등록(일반 매출) + 재고 반영을 한 트랜잭션으로. 품목마다 금액 산출 → 매출번호(I) 채번 →
@@ -51,6 +53,7 @@ public class SaleService {
      */
     @Transactional
     public SalesEntryResponse createEntries(SalesEntryRequest req) {
+        periodLockService.assertNotLocked(req.salesDate());
         Partner partner = partnerRepository.findById(req.partnerId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                         "거래처가 없습니다. id=" + req.partnerId()));
@@ -118,6 +121,7 @@ public class SaleService {
         if (sale.isCanceled()) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "이미 취소된 매출입니다: " + sale.getSalesNo());
         }
+        periodLockService.assertNotLocked(sale.getSalesDate());
         sale.cancel();
         // 취소 플래그를 먼저 확정(flush)하고 응답을 만든 뒤 역분개.
         // 역분개의 원자적 UPDATE(clearAutomatically)가 세션을 비우므로 순서가 중요.
