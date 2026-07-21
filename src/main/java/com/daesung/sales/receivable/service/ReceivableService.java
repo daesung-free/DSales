@@ -5,19 +5,25 @@ import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.common.response.PageResponse;
 import com.daesung.sales.partner.entity.Partner;
 import com.daesung.sales.partner.repository.PartnerRepository;
+import com.daesung.sales.receivable.dto.ArLedgerResponse;
 import com.daesung.sales.receivable.dto.ArStatusResponse;
 import com.daesung.sales.receivable.dto.CarryforwardResult;
 import com.daesung.sales.receivable.dto.CollectionRequest;
 import com.daesung.sales.receivable.dto.CollectionResponse;
 import com.daesung.sales.receivable.entity.Collection;
+import com.daesung.sales.receivable.entity.CollectionType;
 import com.daesung.sales.receivable.entity.ReceivableCarryforward;
 import com.daesung.sales.receivable.repository.CollectionRepository;
 import com.daesung.sales.receivable.repository.ReceivableCarryforwardRepository;
+import com.daesung.sales.sale.entity.Sale;
 import com.daesung.sales.sale.repository.SaleRepository;
+import com.daesung.sales.salestype.entity.SalesCategory;
+import com.daesung.sales.salestype.entity.ShipmentType;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -156,7 +162,79 @@ public class ReceivableService {
         return new ArStatusResponse(from, to, rows, total);
     }
 
+    /**
+     * 외상매출장(단일 거래처 러닝밸런스). 기초이월(시작일 직전 잔액) + 기간 내 매출/반품/수금 명세 + 일자별 누계.
+     * 누계 = 이월 + Σ(채권 증감). 매출/교사용/증정 +total, 반품 −total, 수금 −collAmt.
+     */
+    @Transactional(readOnly = true)
+    public ArLedgerResponse arLedger(Long partnerId, LocalDate fromDate, LocalDate toDate) {
+        Partner partner = partnerRepository.findById(partnerId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                        "거래처가 없습니다. id=" + partnerId));
+        LocalDate from = (fromDate != null) ? fromDate : LocalDate.now().withDayOfYear(1);
+        LocalDate to = (toDate != null) ? toDate : LocalDate.now();
+
+        long opening = balanceAsOf(partnerId, from.minusDays(1));
+
+        // 매출/반품 라인 + 수금 라인을 일자순으로 병합(같은 날은 매출 먼저).
+        record Entry(LocalDate date, int ord, String kind, String refNo, String desc, long amount) {}
+        List<Entry> entries = new ArrayList<>();
+        for (Sale s : saleRepository.findLedgerLines(partnerId, from, to)) {
+            long total = (s.getTotalAmount() == null) ? 0L : s.getTotalAmount();
+            long amount = (s.getSalesCategory() == SalesCategory.RETURN) ? -total : total;
+            entries.add(new Entry(s.getSalesDate(), 0, saleKind(s), s.getSalesNo(),
+                    s.getProduct().getCode() + " " + s.getProduct().getName(), amount));
+        }
+        for (Collection c : collectionRepository.findLedgerLines(partnerId, from, to)) {
+            entries.add(new Entry(c.getCollDate(), 1, "수금", c.getCollectionNo(),
+                    collLabel(c.getCollType()), -c.getCollAmt()));
+        }
+        entries.sort(Comparator.comparing(Entry::date).thenComparingInt(Entry::ord));
+
+        List<ArLedgerResponse.Line> lines = new ArrayList<>();
+        long running = opening;
+        for (Entry e : entries) {
+            running += e.amount();
+            lines.add(new ArLedgerResponse.Line(e.date(), e.kind(), e.refNo(), e.desc(), e.amount(), running));
+        }
+        return new ArLedgerResponse(partner.getId(), partner.getName(), from, to, opening, running, lines);
+    }
+
+    /** 특정 시점까지의 채권 잔액 = 이월(당해 스냅샷) + 당해 1/1~시점 채권발생 − 수금. */
+    private long balanceAsOf(Long partnerId, LocalDate asOf) {
+        int year = asOf.getYear();
+        LocalDate yStart = LocalDate.of(year, 1, 1);
+        long carry = firstAmount(carryforwardRepository.sumByYear(year, partnerId));
+        long gen = firstAmount(saleRepository.receivableByPartner(yStart, asOf, partnerId));
+        long coll = firstAmount(collectionRepository.sumByPartner(yStart, asOf, partnerId));
+        return carry + gen - coll;
+    }
+
+    private static String saleKind(Sale s) {
+        if (s.getSalesCategory() == SalesCategory.RETURN) {
+            return "반품";
+        }
+        if (s.getSalesCategory() == SalesCategory.SALE) {
+            return "매출";
+        }
+        return (s.getShipmentType() == ShipmentType.TEACHER_USE) ? "교사용" : "증정";
+    }
+
+    private static String collLabel(CollectionType t) {
+        return switch (t) {
+            case CASH -> "수금(현금)";
+            case PROMISSORY -> "수금(어음)";
+            case PREPAY -> "수금(선수금)";
+            case REPLACE -> "수금(대체)";
+        };
+    }
+
     // ── 매핑 헬퍼 ───────────────────────────────────────────────
+    /** [partnerId, amount] 단건(또는 0건) 목록에서 amount만. receivableByPartner의 gen도 index1이라 공용. */
+    private static long firstAmount(List<Object[]> rows) {
+        return rows.isEmpty() ? 0L : num(rows.get(0)[1]);
+    }
+
     private static long num(Object o) {
         return (o == null) ? 0L : ((Number) o).longValue();
     }

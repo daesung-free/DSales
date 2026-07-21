@@ -36,4 +36,11 @@ public interface CollectionRepository extends JpaRepository<Collection, Long> {
     List<Object[]> sumByPartner(@Param("fromDate") LocalDate fromDate,
                                 @Param("toDate") LocalDate toDate,
                                 @Param("partnerId") Long partnerId);
+
+    /** 외상매출장 명세: 특정 거래처의 기간 내 수금 라인(일자순). */
+    @Query("select c from Collection c where c.partner.id = :partnerId "
+            + "and c.collDate between :from and :to order by c.collDate, c.id")
+    List<Collection> findLedgerLines(@Param("partnerId") Long partnerId,
+                                     @Param("from") LocalDate from,
+                                     @Param("to") LocalDate to);
 }

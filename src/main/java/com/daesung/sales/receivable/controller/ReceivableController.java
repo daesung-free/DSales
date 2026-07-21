@@ -3,6 +3,7 @@ package com.daesung.sales.receivable.controller;
 import com.daesung.sales.common.dto.PageRequestDto;
 import com.daesung.sales.common.response.ApiResponse;
 import com.daesung.sales.common.response.PageResponse;
+import com.daesung.sales.receivable.dto.ArLedgerResponse;
 import com.daesung.sales.receivable.dto.ArStatusResponse;
 import com.daesung.sales.receivable.dto.CarryforwardResult;
 import com.daesung.sales.receivable.dto.CollectionRequest;
@@ -76,5 +77,18 @@ public class ReceivableController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @Parameter(description = "거래처 id 필터") @RequestParam(required = false) Long partnerId) {
         return ApiResponse.success(receivableService.arStatus(fromDate, toDate, partnerId));
+    }
+
+    @Operation(summary = "외상매출장 조회(거래처 상세)",
+            description = "단일 거래처의 기초이월 + 기간 내 매출/반품/수금 명세 + 일자별 누계(러닝밸런스). "
+                    + "기간 미지정 시 올해 1/1~오늘.")
+    @GetMapping("/ar-ledger")
+    public ApiResponse<ArLedgerResponse> arLedger(
+            @Parameter(description = "거래처 id", example = "1") @RequestParam Long partnerId,
+            @Parameter(description = "시작일(yyyy-MM-dd, 미지정 시 올해 1/1)") @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @Parameter(description = "종료일(yyyy-MM-dd, 미지정 시 오늘)") @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate) {
+        return ApiResponse.success(receivableService.arLedger(partnerId, fromDate, toDate));
     }
 }

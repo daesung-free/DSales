@@ -82,4 +82,11 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     List<Object[]> receivableByPartner(@Param("fromDate") LocalDate fromDate,
                                        @Param("toDate") LocalDate toDate,
                                        @Param("partnerId") Long partnerId);
+
+    /** 외상매출장 명세: 특정 거래처의 기간 내 매출 라인(취소 제외, 일자순). */
+    @Query("select s from Sale s where s.partner.id = :partnerId and s.canceled = false "
+            + "and s.salesDate between :from and :to order by s.salesDate, s.id")
+    List<Sale> findLedgerLines(@Param("partnerId") Long partnerId,
+                               @Param("from") LocalDate from,
+                               @Param("to") LocalDate to);
 }
