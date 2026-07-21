@@ -9,11 +9,12 @@ import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.Table;
+import java.time.LocalDate;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-/** 거래처(최소). 담보/여신/채권은 후속 Phase. 근거: custData. */
+/** 거래처. 담보/여신은 채권 도메인용(custData.assureAmt/Exp/Note). 근거: custData. */
 @Entity
 @Table(name = "partners")
 @Getter
@@ -34,6 +35,18 @@ public class Partner extends BaseEntity {
     @Column(nullable = false, length = 10)
     private PartnerType type = PartnerType.NORMAL;
 
+    /** 담보금액(여신한도). 채권 담보비율=잔액/assureAmount. */
+    @Column(name = "assure_amount")
+    private Long assureAmount;
+
+    /** 담보 만기일. */
+    @Column(name = "assure_expiry")
+    private LocalDate assureExpiry;
+
+    /** 담보 내용(비고). */
+    @Column(name = "assure_note", length = 500)
+    private String assureNote;
+
     public static Partner create(String code, String name, PartnerType type) {
         Partner p = new Partner();
         p.code = code;
@@ -46,5 +59,12 @@ public class Partner extends BaseEntity {
     public void update(String name, PartnerType type) {
         this.name = name;
         this.type = (type == null) ? PartnerType.NORMAL : type;
+    }
+
+    /** 담보(여신) 정보 설정. */
+    public void updateCredit(Long assureAmount, LocalDate assureExpiry, String assureNote) {
+        this.assureAmount = assureAmount;
+        this.assureExpiry = assureExpiry;
+        this.assureNote = assureNote;
     }
 }

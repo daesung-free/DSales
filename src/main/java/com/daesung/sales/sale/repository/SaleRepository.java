@@ -61,4 +61,25 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     List<Object[]> salesSummary(@Param("fromDate") LocalDate fromDate,
                                 @Param("toDate") LocalDate toDate,
                                 @Param("partnerId") Long partnerId);
+
+    /**
+     * 거래처별 채권 발생액(기간). 취소 제외. 반품은 채권 감소(−total).
+     * receivableGen = Σ(RETURN이면 −total_amount, else +total_amount) = 매출+세액+유가교사용 − 반품.
+     * 반환 Object[]: [partnerId, receivableGen, saleAmt, returnAmt, tax].
+     */
+    @Query(value = """
+            SELECT s.partner_id,
+              COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN -s.total_amount ELSE s.total_amount END),0) AS receivable_gen,
+              COALESCE(SUM(CASE WHEN s.sales_category='SALE' THEN s.supply_amount ELSE 0 END),0) AS sale_amt,
+              COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN s.supply_amount ELSE 0 END),0) AS return_amt,
+              COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN -s.tax ELSE s.tax END),0) AS tax_net
+            FROM sales s
+            WHERE s.canceled = false
+              AND s.sales_date BETWEEN :fromDate AND :toDate
+              AND (CAST(:partnerId AS bigint) IS NULL OR s.partner_id = :partnerId)
+            GROUP BY s.partner_id
+            """, nativeQuery = true)
+    List<Object[]> receivableByPartner(@Param("fromDate") LocalDate fromDate,
+                                       @Param("toDate") LocalDate toDate,
+                                       @Param("partnerId") Long partnerId);
 }

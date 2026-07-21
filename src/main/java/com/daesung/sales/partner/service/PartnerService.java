@@ -46,6 +46,7 @@ public class PartnerService {
     public PartnerResponse update(Long id, PartnerUpdateRequest req) {
         Partner partner = getOrThrow(id);
         partner.update(req.name(), req.type());
+        partner.updateCredit(req.assureAmount(), req.assureExpiry(), req.assureNote());
         return PartnerResponse.from(partner);
     }
 
