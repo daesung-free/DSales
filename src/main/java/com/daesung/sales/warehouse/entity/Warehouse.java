@@ -41,4 +41,10 @@ public class Warehouse extends BaseEntity {
         w.type = type;
         return w;
     }
+
+    /** 수정(코드는 불변). */
+    public void update(String name, WarehouseType type) {
+        this.name = name;
+        this.type = type;
+    }
 }

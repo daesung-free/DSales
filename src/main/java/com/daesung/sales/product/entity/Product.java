@@ -61,4 +61,21 @@ public class Product extends BaseEntity {
         p.useYn = useYn;
         return p;
     }
+
+    /** 수정(코드는 불변). */
+    public void update(String name, ContentType contentType, boolean set, Integer price,
+                       boolean taxFree, String grade, boolean useYn) {
+        this.name = name;
+        this.contentType = contentType;
+        this.set = set;
+        this.price = price;
+        this.taxFree = taxFree;
+        this.grade = grade;
+        this.useYn = useYn;
+    }
+
+    /** 논리삭제(비활성화). */
+    public void deactivate() {
+        this.useYn = false;
+    }
 }

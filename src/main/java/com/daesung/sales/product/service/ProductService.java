@@ -5,9 +5,11 @@ import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.common.response.PageResponse;
 import com.daesung.sales.product.dto.ProductCreateRequest;
 import com.daesung.sales.product.dto.ProductResponse;
+import com.daesung.sales.product.dto.ProductUpdateRequest;
 import com.daesung.sales.product.entity.Product;
 import com.daesung.sales.product.repository.ProductRepository;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -19,14 +21,16 @@ public class ProductService {
 
     private final ProductRepository productRepository;
 
-    public PageResponse<ProductResponse> findAll(Pageable pageable) {
-        return PageResponse.of(productRepository.findAll(pageable).map(ProductResponse::from));
+    public PageResponse<ProductResponse> findAll(String keyword, Pageable pageable) {
+        Page<Product> page = (keyword == null || keyword.isBlank())
+                ? productRepository.findAll(pageable)
+                : productRepository.findByCodeContainingIgnoreCaseOrNameContainingIgnoreCase(
+                        keyword, keyword, pageable);
+        return PageResponse.of(page.map(ProductResponse::from));
     }
 
     public ProductResponse findById(Long id) {
-        Product product = productRepository.findById(id)
-                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "상품이 없습니다. id=" + id));
-        return ProductResponse.from(product);
+        return ProductResponse.from(getOrThrow(id));
     }
 
     @Transactional
@@ -38,5 +42,23 @@ public class ProductService {
                 req.code(), req.name(), req.contentType(), req.set(),
                 req.price(), req.taxFree(), req.grade(), req.useYnOrDefault());
         return ProductResponse.from(productRepository.save(product));
+    }
+
+    @Transactional
+    public ProductResponse update(Long id, ProductUpdateRequest req) {
+        Product product = getOrThrow(id);
+        product.update(req.name(), req.contentType(), req.set(),
+                req.price(), req.taxFree(), req.grade(), req.useYn());
+        return ProductResponse.from(product);
+    }
+
+    @Transactional
+    public void deactivate(Long id) {
+        getOrThrow(id).deactivate();
+    }
+
+    private Product getOrThrow(Long id) {
+        return productRepository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "상품이 없습니다. id=" + id));
     }
 }

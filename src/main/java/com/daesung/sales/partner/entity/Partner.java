@@ -41,4 +41,10 @@ public class Partner extends BaseEntity {
         p.type = (type == null) ? PartnerType.NORMAL : type;
         return p;
     }
+
+    /** 수정(코드는 불변). */
+    public void update(String name, PartnerType type) {
+        this.name = name;
+        this.type = (type == null) ? PartnerType.NORMAL : type;
+    }
 }
