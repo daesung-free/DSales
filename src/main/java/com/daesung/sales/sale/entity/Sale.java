@@ -126,6 +126,31 @@ public class Sale extends BaseEntity {
         return s;
     }
 
+    /** 위탁 정산 확정 매출 라인. sales_type=위탁, shipment_type=위탁출고, 회계=매출. */
+    public static Sale createConsign(String salesNo, LocalDate salesDate, Partner partner, Product product,
+                                     Integer unitPrice, Integer supplyRate, int qty,
+                                     Long supplyAmount, Long tax, Long totalAmount,
+                                     String sourceOutNo, ConsignmentSettlement settlement, String memo) {
+        Sale s = new Sale();
+        s.salesNo = salesNo;
+        s.salesDate = salesDate;
+        s.partner = partner;
+        s.product = product;
+        s.salesType = SalesType.CONSIGN_SALES;
+        s.shipmentType = ShipmentType.CONSIGN_SHIP;
+        s.salesCategory = SalesCategory.SALE;
+        s.unitPrice = unitPrice;
+        s.supplyRate = supplyRate;
+        s.qty = qty;
+        s.supplyAmount = supplyAmount;
+        s.tax = tax;
+        s.totalAmount = totalAmount;
+        s.sourceOutNo = sourceOutNo;
+        s.settlement = settlement;
+        s.memo = memo;
+        return s;
+    }
+
     /** 논리 취소. */
     public void cancel() {
         this.canceled = true;

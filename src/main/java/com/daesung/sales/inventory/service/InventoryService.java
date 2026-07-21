@@ -90,18 +90,33 @@ public class InventoryService {
             Product product = productRepository.findById(item.productId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                             "상품이 없습니다. id=" + item.productId()));
-
-            int fromBal = applyDelta(product, from, -item.qty());
-            InventoryTxn outLeg = inventoryTxnRepository.save(
-                    InventoryTxn.transfer(product, from, -item.qty(), req.processedDate(), null, item.reason()));
-            int toBal = applyDelta(product, to, item.qty());
-            inventoryTxnRepository.save(
-                    InventoryTxn.transfer(product, to, item.qty(), req.processedDate(), outLeg, item.reason()));
-
-            lines.add(new TransferResponse.Line(
-                    product.getId(), product.getCode(), item.qty(), fromBal, toBal));
+            moveStock(product, from, to, item.qty(), req.processedDate(), item.reason());
+            lines.add(new TransferResponse.Line(product.getId(), product.getCode(), item.qty(),
+                    balanceOf(product.getId(), from.getId()), balanceOf(product.getId(), to.getId())));
         }
         return new TransferResponse(from.getId(), from.getName(), to.getId(), to.getName(), lines);
+    }
+
+    /**
+     * 재고 이동 1건(출발 −qty 음수방지, 도착 +qty) + 재고이벤트 2다리. 이고·위탁출고 공용 빌딩블록.
+     * 반환값 = 출발다리 이벤트(위탁출고의 origin_txn 링크에 사용). 반드시 호출자 트랜잭션 내에서.
+     */
+    public InventoryTxn moveStock(Product product, Warehouse from, Warehouse to, int qty,
+                                  LocalDate tradeDate, String reason) {
+        applyDelta(product, from, -qty);
+        InventoryTxn outLeg = inventoryTxnRepository.save(
+                InventoryTxn.transfer(product, from, -qty, tradeDate, null, reason));
+        applyDelta(product, to, qty);
+        inventoryTxnRepository.save(
+                InventoryTxn.transfer(product, to, qty, tradeDate, outLeg, reason));
+        return outLeg;
+    }
+
+    /** 상품×창고 현재 잔량(캐시). 없으면 0. */
+    public int balanceOf(Long productId, Long warehouseId) {
+        return inventoryRepository.findByProductIdAndWarehouseId(productId, warehouseId)
+                .map(Inventory::getQty)
+                .orElse(0);
     }
 
     /**

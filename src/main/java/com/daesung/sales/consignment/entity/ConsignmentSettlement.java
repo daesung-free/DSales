@@ -38,4 +38,14 @@ public class ConsignmentSettlement extends BaseEntity {
 
     @Column(name = "settled_at", nullable = false)
     private LocalDateTime settledAt;
+
+    public static ConsignmentSettlement create(ConsignmentOut consignmentOut, int settleQty,
+                                               String salesRefNo, LocalDateTime settledAt) {
+        ConsignmentSettlement s = new ConsignmentSettlement();
+        s.consignmentOut = consignmentOut;
+        s.settleQty = settleQty;
+        s.salesRefNo = salesRefNo;
+        s.settledAt = settledAt;
+        return s;
+    }
 }
