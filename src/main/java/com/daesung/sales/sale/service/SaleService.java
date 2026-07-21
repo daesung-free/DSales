@@ -12,6 +12,8 @@ import com.daesung.sales.product.repository.ProductRepository;
 import com.daesung.sales.sale.dto.SaleResponse;
 import com.daesung.sales.sale.dto.SalesEntryRequest;
 import com.daesung.sales.sale.dto.SalesEntryResponse;
+import com.daesung.sales.sale.dto.SalesSummaryResponse;
+import com.daesung.sales.sale.dto.SalesSummaryRow;
 import com.daesung.sales.sale.entity.Sale;
 import com.daesung.sales.sale.entity.SalesType;
 import com.daesung.sales.sale.repository.SaleRepository;
@@ -133,5 +135,38 @@ public class SaleService {
         return PageResponse.of(
                 saleRepository.search(from, to, salesCategory, shipmentType, partnerId, includeCanceled, pageable)
                         .map(SaleResponse::from));
+    }
+
+    /**
+     * 순매출 집계(상품별 + 합계행). 취소 제외. 매출/증정/교사용/반품 버킷 + 순매출(매출−반품).
+     * 기간 미지정 시 올해 1/1~오늘.
+     */
+    @Transactional(readOnly = true)
+    public SalesSummaryResponse summary(LocalDate fromDate, LocalDate toDate, Long partnerId) {
+        LocalDate from = (fromDate != null) ? fromDate : LocalDate.now().withDayOfYear(1);
+        LocalDate to = (toDate != null) ? toDate : LocalDate.now();
+
+        List<SalesSummaryRow> rows = new ArrayList<>();
+        long tSaleQ = 0, tSaleA = 0, tFreeQ = 0, tFreeA = 0, tTchQ = 0, tTchA = 0,
+                tRetQ = 0, tRetA = 0, tTax = 0, tTotal = 0;
+        for (Object[] r : saleRepository.salesSummary(from, to, partnerId)) {
+            long saleQty = num(r[3]), saleAmt = num(r[4]), freeQty = num(r[5]), freeAmt = num(r[6]),
+                    tchQty = num(r[7]), tchAmt = num(r[8]), retQty = num(r[9]), retAmt = num(r[10]),
+                    tax = num(r[11]), total = num(r[12]);
+            rows.add(new SalesSummaryRow(
+                    num(r[0]), (String) r[1], (String) r[2],
+                    saleQty, saleAmt, freeQty, freeAmt, tchQty, tchAmt, retQty, retAmt,
+                    saleQty - retQty, saleAmt - retAmt, tax, total));
+            tSaleQ += saleQty; tSaleA += saleAmt; tFreeQ += freeQty; tFreeA += freeAmt;
+            tTchQ += tchQty; tTchA += tchAmt; tRetQ += retQty; tRetA += retAmt; tTax += tax; tTotal += total;
+        }
+        SalesSummaryRow total = new SalesSummaryRow(null, "합계", null,
+                tSaleQ, tSaleA, tFreeQ, tFreeA, tTchQ, tTchA, tRetQ, tRetA,
+                tSaleQ - tRetQ, tSaleA - tRetA, tTax, tTotal);
+        return new SalesSummaryResponse(from, to, rows, total);
+    }
+
+    private static long num(Object o) {
+        return (o == null) ? 0L : ((Number) o).longValue();
     }
 }

@@ -6,6 +6,7 @@ import com.daesung.sales.common.response.PageResponse;
 import com.daesung.sales.sale.dto.SaleResponse;
 import com.daesung.sales.sale.dto.SalesEntryRequest;
 import com.daesung.sales.sale.dto.SalesEntryResponse;
+import com.daesung.sales.sale.dto.SalesSummaryResponse;
 import com.daesung.sales.sale.service.SaleService;
 import com.daesung.sales.salestype.entity.SalesCategory;
 import com.daesung.sales.salestype.entity.ShipmentType;
@@ -60,9 +61,23 @@ public class SaleController {
     }
 
     @Operation(summary = "매출 취소(논리 취소)",
-            description = "원 매출을 삭제하지 않고 취소 표시. 이미 취소된 건은 400. 재고 복구는 주문/출고 통합 단계에서.")
+            description = "원 매출을 삭제하지 않고 취소 표시 + 원출고 재고 역분개(복구). 이미 취소된 건은 400. "
+                    + "위탁정산 매출은 연결 재고이벤트가 없어 재고 불변.")
     @PostMapping("/{id}/cancel")
     public ApiResponse<SaleResponse> cancel(@PathVariable Long id) {
         return ApiResponse.success(saleService.cancel(id));
+    }
+
+    @Operation(summary = "순매출 집계 조회",
+            description = "기간·거래처로 상품별 매출/증정/교사용/반품 버킷 + 순매출(매출−반품) 집계 + 합계행. "
+                    + "취소건 제외. 기간 미지정 시 올해 1/1~오늘.")
+    @GetMapping("/summary")
+    public ApiResponse<SalesSummaryResponse> summary(
+            @Parameter(description = "시작일(yyyy-MM-dd, 미지정 시 올해 1/1)") @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @Parameter(description = "종료일(yyyy-MM-dd, 미지정 시 오늘)") @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @Parameter(description = "거래처 id 필터") @RequestParam(required = false) Long partnerId) {
+        return ApiResponse.success(saleService.summary(fromDate, toDate, partnerId));
     }
 }
