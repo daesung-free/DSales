@@ -8,6 +8,7 @@ import com.daesung.sales.inventory.dto.DisposalRequest;
 import com.daesung.sales.inventory.dto.DisposalResponse;
 import com.daesung.sales.inventory.dto.InboundRequest;
 import com.daesung.sales.inventory.dto.InboundResponse;
+import com.daesung.sales.inventory.dto.StockLedgerRow;
 import com.daesung.sales.inventory.dto.TransferRequest;
 import com.daesung.sales.inventory.dto.TransferResponse;
 import com.daesung.sales.inventory.entity.BomDirection;
@@ -163,6 +164,32 @@ public class InventoryService {
             lines.add(new DisposalResponse.Line(product.getId(), product.getCode(), item.qty(), balance));
         }
         return new DisposalResponse(disposalNo, warehouse.getId(), warehouse.getName(), lines);
+    }
+
+    /**
+     * 제품수불부. inventory_txn을 이월/입고/이고/BOM/폐기/출고 버킷으로 집계 → 현재재고(단일 공식).
+     * closing(이벤트 합계)과 cachedBalance(inventory.qty)를 대사(reconciled)로 검증.
+     */
+    @Transactional(readOnly = true)
+    public List<StockLedgerRow> stockLedger(LocalDate fromDate, LocalDate toDate,
+                                            Long productId, Long warehouseId) {
+        LocalDate from = (fromDate != null) ? fromDate : LocalDate.now().withDayOfYear(1);
+        LocalDate to = (toDate != null) ? toDate : LocalDate.now();
+
+        List<StockLedgerRow> result = new ArrayList<>();
+        for (Object[] r : inventoryTxnRepository.stockLedger(from, to, productId, warehouseId)) {
+            long closing = num(r[11]);
+            long cached = num(r[12]);
+            result.add(new StockLedgerRow(
+                    num(r[0]), (String) r[1], (String) r[2], num(r[3]), (String) r[4],
+                    num(r[5]), num(r[6]), num(r[7]), num(r[8]), num(r[9]), num(r[10]),
+                    closing, cached, closing == cached));
+        }
+        return result;
+    }
+
+    private static long num(Object o) {
+        return (o == null) ? 0L : ((Number) o).longValue();
     }
 
     /**
