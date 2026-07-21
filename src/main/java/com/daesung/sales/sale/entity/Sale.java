@@ -94,4 +94,27 @@ public class Sale extends BaseEntity {
 
     @Column(length = 1000)
     private String memo;
+
+    /** 일반(직접) 매출 라인 생성. 위탁 정산 매출은 별도(from-consign)로 생성. */
+    public static Sale create(String salesNo, LocalDate salesDate, Partner partner, Product product,
+                              SalesType salesType, ShipmentType shipmentType, SalesCategory salesCategory,
+                              Integer unitPrice, Integer supplyRate, int qty,
+                              Long supplyAmount, Long tax, Long totalAmount, String memo) {
+        Sale s = new Sale();
+        s.salesNo = salesNo;
+        s.salesDate = salesDate;
+        s.partner = partner;
+        s.product = product;
+        s.salesType = salesType;
+        s.shipmentType = shipmentType;
+        s.salesCategory = salesCategory;
+        s.unitPrice = unitPrice;
+        s.supplyRate = supplyRate;
+        s.qty = qty;
+        s.supplyAmount = supplyAmount;
+        s.tax = tax;
+        s.totalAmount = totalAmount;
+        s.memo = memo;
+        return s;
+    }
 }
