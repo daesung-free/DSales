@@ -3,6 +3,8 @@ package com.daesung.sales.inventory.controller;
 import com.daesung.sales.common.response.ApiResponse;
 import com.daesung.sales.inventory.dto.InboundRequest;
 import com.daesung.sales.inventory.dto.InboundResponse;
+import com.daesung.sales.inventory.dto.TransferRequest;
+import com.daesung.sales.inventory.dto.TransferResponse;
 import com.daesung.sales.inventory.service.InventoryService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -30,5 +32,13 @@ public class InventoryController {
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<InboundResponse> inbound(@Valid @RequestBody InboundRequest req) {
         return ApiResponse.success(inventoryService.inbound(req));
+    }
+
+    @Operation(summary = "단순 이고(창고 이동)",
+            description = "출발창고 −qty(음수재고 방지) / 도착창고 +qty. 매출 미발생. 재고이벤트 2다리를 한 트랜잭션으로.")
+    @PostMapping("/transfer")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResponse<TransferResponse> transfer(@Valid @RequestBody TransferRequest req) {
+        return ApiResponse.success(inventoryService.transfer(req));
     }
 }

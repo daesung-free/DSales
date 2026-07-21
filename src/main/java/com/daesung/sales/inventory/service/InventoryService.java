@@ -4,6 +4,8 @@ import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.inventory.dto.InboundRequest;
 import com.daesung.sales.inventory.dto.InboundResponse;
+import com.daesung.sales.inventory.dto.TransferRequest;
+import com.daesung.sales.inventory.dto.TransferResponse;
 import com.daesung.sales.inventory.entity.Inventory;
 import com.daesung.sales.inventory.entity.InventoryTxn;
 import com.daesung.sales.inventory.repository.InventoryRepository;
@@ -67,5 +69,54 @@ public class InventoryService {
                     product.getId(), product.getCode(), item.qty(), currentQty));
         }
         return new InboundResponse(warehouse.getId(), warehouse.getName(), lines);
+    }
+
+    /**
+     * 단순 이고(창고 이동). 출발창고 −qty(음수재고 방지), 도착창고 +qty. 매출 미발생.
+     * 품목마다 재고이벤트 2다리(출발 −, 도착 +)를 source로 연결. 전체 한 트랜잭션.
+     */
+    @Transactional
+    public TransferResponse transfer(TransferRequest req) {
+        if (req.fromWarehouseId().equals(req.toWarehouseId())) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "출발/도착 창고가 같습니다.");
+        }
+        Warehouse from = warehouseRepository.findById(req.fromWarehouseId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                        "출발 창고가 없습니다. id=" + req.fromWarehouseId()));
+        Warehouse to = warehouseRepository.findById(req.toWarehouseId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                        "도착 창고가 없습니다. id=" + req.toWarehouseId()));
+
+        List<TransferResponse.Line> lines = new ArrayList<>();
+        for (TransferRequest.Item item : req.items()) {
+            Product product = productRepository.findById(item.productId())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                            "상품이 없습니다. id=" + item.productId()));
+
+            // 출발창고 차감(음수재고 방지)
+            int dec = inventoryRepository.addQtyIfEnough(product.getId(), from.getId(), -item.qty());
+            if (dec == 0) {
+                throw new BusinessException(ErrorCode.NEGATIVE_STOCK,
+                        "재고 부족: 창고[" + from.getName() + "] 상품[" + product.getCode() + "]");
+            }
+            InventoryTxn outLeg = inventoryTxnRepository.save(
+                    InventoryTxn.transfer(product, from, -item.qty(), req.processedDate(), null, item.reason()));
+
+            // 도착창고 증가(없으면 생성)
+            int inc = inventoryRepository.addQty(product.getId(), to.getId(), item.qty());
+            if (inc == 0) {
+                inventoryRepository.save(Inventory.create(product, to, item.qty()));
+            }
+            inventoryTxnRepository.save(
+                    InventoryTxn.transfer(product, to, item.qty(), req.processedDate(), outLeg, item.reason()));
+
+            int fromBal = inventoryRepository.findByProductIdAndWarehouseId(product.getId(), from.getId())
+                    .map(Inventory::getQty).orElse(0);
+            int toBal = inventoryRepository.findByProductIdAndWarehouseId(product.getId(), to.getId())
+                    .map(Inventory::getQty).orElse(item.qty());
+            lines.add(new TransferResponse.Line(
+                    product.getId(), product.getCode(), item.qty(), fromBal, toBal));
+        }
+        return new TransferResponse(from.getId(), from.getName(), to.getId(), to.getName(), lines);
     }
 }

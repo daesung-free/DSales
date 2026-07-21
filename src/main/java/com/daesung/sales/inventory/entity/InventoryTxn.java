@@ -85,4 +85,18 @@ public class InventoryTxn extends BaseEntity {
         t.memo = memo;
         return t;
     }
+
+    /** 이고(창고 이동) 한 다리. 출발=−qty(sourceTxn=null), 도착=+qty(sourceTxn=출발 이벤트). */
+    public static InventoryTxn transfer(Product product, Warehouse warehouse, int qty,
+                                        LocalDate tradeDate, InventoryTxn sourceTxn, String memo) {
+        InventoryTxn t = new InventoryTxn();
+        t.product = product;
+        t.warehouse = warehouse;
+        t.txnType = TxnType.TRANSFER;
+        t.qty = qty;
+        t.tradeDate = tradeDate;
+        t.sourceTxn = sourceTxn;
+        t.memo = memo;
+        return t;
+    }
 }
