@@ -89,4 +89,27 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     List<Sale> findLedgerLines(@Param("partnerId") Long partnerId,
                                @Param("from") LocalDate from,
                                @Param("to") LocalDate to);
+
+    /**
+     * 수익신고: 거래처×월 순매출/세액 집계. 취소 제외. 반품은 −(순매출·세액 감소).
+     * taxFilter: 'ALL'=전체, 'FREE'=면세(tax=0), 'TAXABLE'=과세(tax≠0).
+     * 반환 Object[]: [partnerId, partnerName, yyyymm, count, netSupply, netTax].
+     */
+    @Query(value = """
+            SELECT s.partner_id, pt.name, TO_CHAR(s.sales_date,'YYYYMM') AS ym,
+              COUNT(*) AS cnt,
+              COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN -s.supply_amount ELSE s.supply_amount END),0) AS net_supply,
+              COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN -s.tax ELSE s.tax END),0) AS net_tax
+            FROM sales s JOIN partners pt ON pt.id = s.partner_id
+            WHERE s.canceled = false
+              AND s.sales_date BETWEEN :fromDate AND :toDate
+              AND ( :taxFilter = 'ALL'
+                    OR (:taxFilter = 'FREE' AND s.tax = 0)
+                    OR (:taxFilter = 'TAXABLE' AND s.tax <> 0) )
+            GROUP BY s.partner_id, pt.name, TO_CHAR(s.sales_date,'YYYYMM')
+            ORDER BY pt.name, ym
+            """, nativeQuery = true)
+    List<Object[]> revenueReport(@Param("fromDate") LocalDate fromDate,
+                                 @Param("toDate") LocalDate toDate,
+                                 @Param("taxFilter") String taxFilter);
 }
