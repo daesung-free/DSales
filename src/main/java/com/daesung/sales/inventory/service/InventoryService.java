@@ -126,6 +126,22 @@ public class InventoryService {
         return balance;
     }
 
+    /**
+     * 매출취소 역분개. refNo(매출번호)로 생성된 출고/반품 이벤트를 찾아, 같은 버킷에 반대 부호로 되돌린다.
+     * 재고 복구(반대 delta) + 상쇄 이벤트 생성 → 수불부 버킷도 상쇄(net 0). 원출고 없으면(위탁정산 등) no-op.
+     * 반드시 호출자 트랜잭션 내에서. 반품 취소로 차감 시 음수재고면 NEGATIVE_STOCK.
+     */
+    public void reverseShipments(String refNo, LocalDate reverseDate) {
+        for (InventoryTxn origin : inventoryTxnRepository.findShipmentsByRefNo(refNo)) {
+            int reverseDelta = -origin.getQty();
+            applyDelta(origin.getProduct(), origin.getWarehouse(), reverseDelta);
+            inventoryTxnRepository.save(InventoryTxn.shipment(
+                    origin.getProduct(), origin.getWarehouse(), reverseDelta,
+                    origin.getTxnType(), origin.getShipmentType(), reverseDate, refNo,
+                    "매출취소 역분개: " + refNo));
+        }
+    }
+
     /** 상품×창고 현재 잔량(캐시). 없으면 0. */
     public int balanceOf(Long productId, Long warehouseId) {
         return inventoryRepository.findByProductIdAndWarehouseId(productId, warehouseId)

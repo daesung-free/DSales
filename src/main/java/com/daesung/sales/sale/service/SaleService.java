@@ -104,7 +104,11 @@ public class SaleService {
         };
     }
 
-    /** 매출 취소(논리 취소). 이미 취소된 건은 400. 재고 복구는 주문/출고 통합 단계에서. */
+    /**
+     * 매출 취소(논리 취소) + 재고 역분개를 한 트랜잭션으로. 이미 취소된 건은 400.
+     * 원출고 이벤트(refNo=매출번호)를 반대 부호로 되돌려 재고 복구 + 수불부 버킷 상쇄.
+     * 원출고 이벤트가 없으면(위탁정산 매출 등) 재고는 건드리지 않음.
+     */
     @Transactional
     public SaleResponse cancel(Long id) {
         Sale sale = saleRepository.findById(id)
@@ -113,7 +117,12 @@ public class SaleService {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "이미 취소된 매출입니다: " + sale.getSalesNo());
         }
         sale.cancel();
-        return SaleResponse.from(sale);
+        // 취소 플래그를 먼저 확정(flush)하고 응답을 만든 뒤 역분개.
+        // 역분개의 원자적 UPDATE(clearAutomatically)가 세션을 비우므로 순서가 중요.
+        saleRepository.flush();
+        SaleResponse response = SaleResponse.from(sale);
+        inventoryService.reverseShipments(sale.getSalesNo(), LocalDate.now());
+        return response;
     }
 
     /** 통합 매출 조회. */

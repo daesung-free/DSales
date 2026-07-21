@@ -14,6 +14,11 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
     @Query(value = "SELECT nextval('seq_purge_no')", nativeQuery = true)
     long nextPurgeSeq();
 
+    /** 특정 전표(refNo)로 생성된 출고/반품 이벤트(매출취소 역분개용). product·warehouse 즉시 로드. */
+    @Query("select t from InventoryTxn t join fetch t.product join fetch t.warehouse"
+            + " where t.refNo = :refNo and t.shipmentType is not null")
+    List<InventoryTxn> findShipmentsByRefNo(String refNo);
+
     /**
      * 제품수불부 집계(상품×창고). 물류 이벤트를 CASE 버킷으로 합산 + 이월/마감.
      * 출고는 shipment_type으로 매출/무상/교사용/반품 분해(스펙 수불부 컬럼 대응).
