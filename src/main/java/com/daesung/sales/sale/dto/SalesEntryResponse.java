@@ -44,7 +44,10 @@ public record SalesEntryResponse(
             long tax,
 
             @Schema(description = "총금액", example = "1650000")
-            long totalAmount
+            long totalAmount,
+
+            @Schema(description = "출고 후 물류창고 재고 잔량", example = "900")
+            int stockBalance
     ) {
     }
 }

@@ -3,6 +3,7 @@ package com.daesung.sales.inventory.entity;
 import com.daesung.sales.common.entity.BaseEntity;
 import com.daesung.sales.partner.entity.Partner;
 import com.daesung.sales.product.entity.Product;
+import com.daesung.sales.salestype.entity.ShipmentType;
 import com.daesung.sales.warehouse.entity.Warehouse;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -55,6 +56,11 @@ public class InventoryTxn extends BaseEntity {
 
     @Column(name = "ref_no", length = 30)
     private String refNo;
+
+    /** 출고/반품 이벤트의 출고유형 태그(수불부 매출/무상/교사용/반품 버킷 분해용). 그 외 이벤트는 null. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "shipment_type", length = 20)
+    private ShipmentType shipmentType;
 
     @Column(name = "trade_date", nullable = false)
     private LocalDate tradeDate;
@@ -109,6 +115,24 @@ public class InventoryTxn extends BaseEntity {
         t.txnType = txnType;
         t.qty = qty;
         t.tradeDate = tradeDate;
+        t.memo = memo;
+        return t;
+    }
+
+    /**
+     * 출고/반품(매출 연동). 정상출고=OUTBOUND(qty 음수), 반품=RETURN(qty 양수).
+     * shipmentType을 실어 수불부가 매출/무상/교사용/반품으로 분해. refNo=매출번호(I-...).
+     */
+    public static InventoryTxn shipment(Product product, Warehouse warehouse, int qty, TxnType txnType,
+                                        ShipmentType shipmentType, LocalDate tradeDate, String refNo, String memo) {
+        InventoryTxn t = new InventoryTxn();
+        t.product = product;
+        t.warehouse = warehouse;
+        t.txnType = txnType;
+        t.qty = qty;
+        t.shipmentType = shipmentType;
+        t.tradeDate = tradeDate;
+        t.refNo = refNo;
         t.memo = memo;
         return t;
     }

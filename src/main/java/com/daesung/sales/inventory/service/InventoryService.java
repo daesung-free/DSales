@@ -23,6 +23,7 @@ import com.daesung.sales.product.entity.BomItem;
 import com.daesung.sales.product.entity.Product;
 import com.daesung.sales.product.repository.BomItemRepository;
 import com.daesung.sales.product.repository.ProductRepository;
+import com.daesung.sales.salestype.entity.ShipmentType;
 import com.daesung.sales.warehouse.entity.Warehouse;
 import com.daesung.sales.warehouse.repository.WarehouseRepository;
 import java.time.LocalDate;
@@ -112,6 +113,19 @@ public class InventoryService {
         return outLeg;
     }
 
+    /**
+     * 출고/반품 재고 반영 + 이벤트 1건. 정상출고=OUTBOUND(delta 음수, 음수재고 방지), 반품=RETURN(delta 양수).
+     * shipmentType을 이벤트에 태그해 수불부가 매출/무상/교사용/반품으로 분해. 반환값 = 갱신 후 잔량.
+     * 반드시 호출자 트랜잭션 내에서(매출등록과 한 트랜잭션).
+     */
+    public int applyShipment(Product product, Warehouse warehouse, int delta, TxnType txnType,
+                             ShipmentType shipmentType, LocalDate tradeDate, String refNo, String memo) {
+        int balance = applyDelta(product, warehouse, delta);
+        inventoryTxnRepository.save(
+                InventoryTxn.shipment(product, warehouse, delta, txnType, shipmentType, tradeDate, refNo, memo));
+        return balance;
+    }
+
     /** 상품×창고 현재 잔량(캐시). 없으면 0. */
     public int balanceOf(Long productId, Long warehouseId) {
         return inventoryRepository.findByProductIdAndWarehouseId(productId, warehouseId)
@@ -193,11 +207,12 @@ public class InventoryService {
 
         List<StockLedgerRow> result = new ArrayList<>();
         for (Object[] r : inventoryTxnRepository.stockLedger(from, to, productId, warehouseId)) {
-            long closing = num(r[11]);
-            long cached = num(r[12]);
+            long closing = num(r[14]);
+            long cached = num(r[15]);
             result.add(new StockLedgerRow(
                     num(r[0]), (String) r[1], (String) r[2], num(r[3]), (String) r[4],
-                    num(r[5]), num(r[6]), num(r[7]), num(r[8]), num(r[9]), num(r[10]),
+                    num(r[5]), num(r[6]), num(r[7]), num(r[8]), num(r[9]),
+                    num(r[10]), num(r[11]), num(r[12]), num(r[13]),
                     closing, cached, closing == cached));
         }
         return result;

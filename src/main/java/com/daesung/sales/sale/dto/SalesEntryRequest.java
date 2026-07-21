@@ -19,6 +19,10 @@ public record SalesEntryRequest(
         @Schema(description = "거래처 id", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotNull Long partnerId,
 
+        @Schema(description = "출고 물류창고 id(정상출고=−차감 / 반품=+복구)", example = "1",
+                requiredMode = Schema.RequiredMode.REQUIRED)
+        @NotNull Long warehouseId,
+
         @Schema(description = "매출 품목 목록", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotEmpty @Valid List<Item> items
 ) {
