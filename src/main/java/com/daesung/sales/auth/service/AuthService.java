@@ -1,21 +1,17 @@
 package com.daesung.sales.auth.service;
 
-import com.daesung.sales.auth.config.JwtProperties;
 import com.daesung.sales.auth.dto.AuthDtos.LoginRequest;
 import com.daesung.sales.auth.dto.AuthDtos.TokenResponse;
 import com.daesung.sales.auth.dto.AuthDtos.UserCreateRequest;
 import com.daesung.sales.auth.dto.AuthDtos.UserResponse;
 import com.daesung.sales.auth.entity.AppUser;
-import com.daesung.sales.auth.entity.RefreshToken;
 import com.daesung.sales.auth.entity.Role;
 import com.daesung.sales.auth.jwt.JwtProvider;
 import com.daesung.sales.auth.repository.AppUserRepository;
-import com.daesung.sales.auth.repository.RefreshTokenRepository;
 import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.time.LocalDateTime;
 import java.util.HexFormat;
 import java.util.UUID;
 import lombok.RequiredArgsConstructor;
@@ -32,10 +28,9 @@ import org.springframework.transaction.annotation.Transactional;
 public class AuthService {
 
     private final AppUserRepository userRepository;
-    private final RefreshTokenRepository refreshTokenRepository;
+    private final RefreshTokenStore refreshTokenStore;
     private final PasswordEncoder passwordEncoder;
     private final JwtProvider jwtProvider;
-    private final JwtProperties jwtProperties;
 
     /** 최초 관리자 부트스트랩. 사용자가 하나도 없을 때만 허용(이후 400). */
     @Transactional
@@ -76,15 +71,14 @@ public class AuthService {
     @Transactional
     public TokenResponse refresh(String refreshToken) {
         String hash = sha256(refreshToken);
-        RefreshToken stored = refreshTokenRepository.findByTokenHash(hash)
-                .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED, "유효하지 않은 refresh 토큰입니다."));
-        if (!stored.isValidNow(LocalDateTime.now())) {
-            throw new BusinessException(ErrorCode.UNAUTHORIZED, "만료되었거나 무효화된 refresh 토큰입니다.");
+        Long userId = refreshTokenStore.findUserId(hash);  // 만료(TTL)·무효면 null
+        if (userId == null) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "만료되었거나 유효하지 않은 refresh 토큰입니다.");
         }
-        AppUser user = userRepository.findById(stored.getUserId())
+        AppUser user = userRepository.findById(userId)
                 .filter(AppUser::isActive)
                 .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED, "계정을 찾을 수 없습니다."));
-        stored.revoke(); // 회전: 기존 토큰 폐기
+        refreshTokenStore.revoke(hash); // 회전: 기존 토큰 폐기
         return issueTokens(user);
     }
 
@@ -92,15 +86,14 @@ public class AuthService {
     @Transactional
     public void logout(String username) {
         userRepository.findByUsername(username)
-                .ifPresent(u -> refreshTokenRepository.revokeAllByUser(u.getId()));
+                .ifPresent(u -> refreshTokenStore.revokeAllByUser(u.getId()));
     }
 
     private TokenResponse issueTokens(AppUser user) {
         String access = jwtProvider.generateAccessToken(user.getId(), user.getUsername(), user.getRole());
         String refreshRaw = UUID.randomUUID().toString().replace("-", "")
                 + UUID.randomUUID().toString().replace("-", "");
-        LocalDateTime exp = LocalDateTime.now().plusDays(jwtProperties.refreshTokenDaysOrDefault());
-        refreshTokenRepository.save(RefreshToken.issue(user.getId(), sha256(refreshRaw), exp));
+        refreshTokenStore.save(user.getId(), sha256(refreshRaw));
         return new TokenResponse(access, refreshRaw, "Bearer",
                 user.getUsername(), user.getRole().name(), jwtProvider.accessMinutes());
     }

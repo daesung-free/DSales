@@ -50,6 +50,9 @@ dependencies {
 	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'
 	runtimeOnly 'io.jsonwebtoken:jjwt-jackson:0.12.6'
 
+	// --- Redis (refresh 토큰 저장·TTL 자동만료. 캐시 확장 여지) ---
+	implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+
 	// --- Excel (홈택스 양식·명세서·RAW export) ---
 	implementation "org.apache.poi:poi-ooxml:${poiVersion}"
 
