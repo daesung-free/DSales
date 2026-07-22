@@ -30,6 +30,26 @@ services:
       timeout: 3s
       retries: 10
 
+  # DSRE2(MySQL) 로컬 복제본. 운영 DSRE2는 재구축 대상 아님 — 개발/검증용 복제(스키마·함수는 reference/legacy로 로드).
+  # ⚠️ 로컬 개발 전용. 운영 DSRE2 접속은 배포 시 별도 시크릿.
+  dsre-mysql:
+    image: mysql:8
+    container_name: sales-dsre-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: root
+      MYSQL_DATABASE: dsre2
+      MYSQL_USER: dsre
+      MYSQL_PASSWORD: dsre
+    ports:
+      - "3307:3306"      # 로컬 5432/3306 충돌 회피
+    volumes:
+      - sales-dsredata:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-uroot", "-proot"]
+      interval: 5s
+      timeout: 3s
+      retries: 15
+
   app:
     build: .
     container_name: sales-app
@@ -50,3 +70,4 @@ services:
 volumes:
   sales-pgdata:
   sales-redisdata:
+  sales-dsredata:

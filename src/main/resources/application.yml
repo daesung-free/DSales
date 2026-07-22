@@ -46,3 +46,11 @@ daesung:
     jwt-secret: "local-dev-only-change-me-please-32bytes-minimum-secret-key"
     access-token-minutes: 30
     refresh-token-days: 14
+  # DSRE2(기존 라이브 유지) 연결. 기본 off — 켜면 별도 DataSource로 함수 호출/조회.
+  # ★운영 접속정보는 배포 시 시크릿으로 주입. 로컬은 docker dsre-mysql(3307) 복제본.
+  dsre:
+    enabled: false
+    url: "jdbc:mysql://localhost:3307/dsre2"
+    username: "dsre"
+    password: "dsre"
+    read-only: true      # 조회/함수호출 위주(라이브 안전). write-back은 후속 단계에서 별도.

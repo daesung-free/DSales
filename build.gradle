@@ -63,9 +63,9 @@ dependencies {
 	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'
 
-	// --- 조건부(Phase0 DSRE2 결정 후 활성화): 레거시/DSRE2 접속 드라이버 ---
-	// runtimeOnly 'com.microsoft.sqlserver:mssql-jdbc'   // DSLab / DSTxtBook (SQL Server)
-	// runtimeOnly 'com.mysql:mysql-connector-j'          // DSRE2 (MySQL)
+	// --- DSRE2(MySQL) 접속 드라이버. 분리(기존 유지) 확정 → 별도 DataSource로 read+제한적 write-back ---
+	runtimeOnly 'com.mysql:mysql-connector-j'            // DSRE2 (MySQL)
+	// runtimeOnly 'com.microsoft.sqlserver:mssql-jdbc'  // DSLab / DSTxtBook (SQL Server) — 필요 시
 
 	// --- Test (트랜잭션 원자성·동시성은 실제 DB로 검증) ---
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
