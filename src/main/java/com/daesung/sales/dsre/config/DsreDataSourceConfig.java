@@ -24,6 +24,7 @@ public class DsreDataSourceConfig {
         ds.setReadOnly(props.readOnly());     // 라이브 안전: 조회/함수호출 위주
         ds.setMaximumPoolSize(3);
         ds.setPoolName("dsre-pool");
+        ds.setConnectionInitSql("SET NAMES utf8mb4"); // 한글 자재명 비교 정확성(연결 문자셋 고정)
         return new JdbcTemplate(ds);
     }
 }

@@ -50,7 +50,7 @@ daesung:
   # ★운영 접속정보는 배포 시 시크릿으로 주입. 로컬은 docker dsre-mysql(3307) 복제본.
   dsre:
     enabled: false
-    url: "jdbc:mysql://localhost:3307/dsre2"
+    url: "jdbc:mysql://localhost:3307/dsre2?characterEncoding=UTF-8&useUnicode=true"
     username: "dsre"
     password: "dsre"
     read-only: true      # 조회/함수호출 위주(라이브 안전). write-back은 후속 단계에서 별도.

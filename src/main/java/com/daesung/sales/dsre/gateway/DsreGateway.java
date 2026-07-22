@@ -8,4 +8,7 @@ public interface DsreGateway {
 
     /** 신청 인원 산출(DSRE2 저장함수 FUNC_REQINWON_GET 호출). 물류비 인원기준 계산에 사용. */
     Integer reqInwon(int reqCd);
+
+    /** 출고 물류비 계산(신청 REQ 단위). DSRE2에서 자재수량×단가 집계 + 인원함수 호출. */
+    OutboundLogisCost calcOutbound(int reqCd);
 }
