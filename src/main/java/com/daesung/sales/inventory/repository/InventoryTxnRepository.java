@@ -14,6 +14,18 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
     @Query(value = "SELECT nextval('seq_purge_no')", nativeQuery = true)
     long nextPurgeSeq();
 
+    /**
+     * 상품별 매입원가(입고 unit_cost 가중평균 = Σ(qty×unit_cost)/Σqty). 외부콘텐츠 이익 계산용.
+     * 반환 Object[]: [productId, avgCost].
+     */
+    @Query(value = """
+            SELECT product_id, COALESCE(SUM(qty * unit_cost) / NULLIF(SUM(qty), 0), 0) AS avg_cost
+            FROM inventory_txn
+            WHERE txn_type = 'INBOUND' AND unit_cost IS NOT NULL
+            GROUP BY product_id
+            """, nativeQuery = true)
+    List<Object[]> avgInboundCostByProduct();
+
     /** 특정 전표(refNo)로 생성된 출고/반품 이벤트(매출취소 역분개용). product·warehouse 즉시 로드. */
     @Query("select t from InventoryTxn t join fetch t.product join fetch t.warehouse"
             + " where t.refNo = :refNo and t.shipmentType is not null")

@@ -86,6 +86,30 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
                                        @Param("toDate") LocalDate toDate,
                                        @Param("partnerId") Long partnerId);
 
+    /**
+     * 콘텐츠구분 순매출: 상품별 매출/무상/반품 집계 + 콘텐츠구분. 취소 제외.
+     * 외부콘텐츠 이익은 서비스에서 매입원가(입고 unit_cost 평균)와 결합.
+     * contentType: null=전체, 'SELF'/'EXTERNAL'.
+     * 반환 Object[]: [productId, code, name, contentType, saleQty, saleAmt, freeAmt, returnQty, returnAmt].
+     */
+    @Query(value = """
+            SELECT s.product_id, p.code, p.name, p.content_type,
+              COALESCE(SUM(CASE WHEN s.sales_category='SALE' THEN s.qty ELSE 0 END),0) sale_qty,
+              COALESCE(SUM(CASE WHEN s.sales_category='SALE' THEN s.supply_amount ELSE 0 END),0) sale_amt,
+              COALESCE(SUM(CASE WHEN s.sales_category='FREE' THEN s.supply_amount ELSE 0 END),0) free_amt,
+              COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN s.qty ELSE 0 END),0) return_qty,
+              COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN s.supply_amount ELSE 0 END),0) return_amt
+            FROM sales s JOIN products p ON p.id = s.product_id
+            WHERE s.canceled = false
+              AND s.sales_date BETWEEN :fromDate AND :toDate
+              AND (CAST(:contentType AS varchar) IS NULL OR p.content_type = :contentType)
+            GROUP BY s.product_id, p.code, p.name, p.content_type
+            ORDER BY p.code
+            """, nativeQuery = true)
+    List<Object[]> netSalesByProduct(@Param("fromDate") LocalDate fromDate,
+                                     @Param("toDate") LocalDate toDate,
+                                     @Param("contentType") String contentType);
+
     /** 외상매출장 명세: 특정 거래처의 기간 내 매출 라인(취소 제외, 일자순). */
     @Query("select s from Sale s where s.partner.id = :partnerId and s.canceled = false "
             + "and s.salesDate between :from and :to order by s.salesDate, s.id")

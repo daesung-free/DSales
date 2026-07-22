@@ -3,6 +3,7 @@ package com.daesung.sales.sale.controller;
 import com.daesung.sales.common.dto.PageRequestDto;
 import com.daesung.sales.common.response.ApiResponse;
 import com.daesung.sales.common.response.PageResponse;
+import com.daesung.sales.sale.dto.NetSalesResponse;
 import com.daesung.sales.sale.dto.SaleResponse;
 import com.daesung.sales.sale.dto.SalesEntryRequest;
 import com.daesung.sales.sale.dto.SalesEntryResponse;
@@ -79,5 +80,18 @@ public class SaleController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @Parameter(description = "거래처 id 필터") @RequestParam(required = false) Long partnerId) {
         return ApiResponse.success(saleService.summary(fromDate, toDate, partnerId));
+    }
+
+    @Operation(summary = "콘텐츠구분 순매출 조회",
+            description = "상품별 순매출(매출−반품). 외부콘텐츠(EXTERNAL)는 매입원가(입고 unit_cost 평균)로 "
+                    + "매입액·이익·이익률까지 산출. contentType=SELF(자체교재)/EXTERNAL(외부콘텐츠)/미지정(전체).")
+    @GetMapping("/net-summary")
+    public ApiResponse<NetSalesResponse> netSummary(
+            @Parameter(description = "시작일(yyyy-MM-dd)") @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @Parameter(description = "종료일(yyyy-MM-dd)") @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @Parameter(description = "콘텐츠구분(SELF/EXTERNAL)") @RequestParam(required = false) String contentType) {
+        return ApiResponse.success(saleService.netSales(fromDate, toDate, contentType));
     }
 }

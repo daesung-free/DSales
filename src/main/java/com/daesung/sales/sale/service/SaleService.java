@@ -5,6 +5,7 @@ import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.closing.service.PeriodLockService;
 import com.daesung.sales.common.response.PageResponse;
 import com.daesung.sales.inventory.entity.TxnType;
+import com.daesung.sales.inventory.repository.InventoryTxnRepository;
 import com.daesung.sales.inventory.service.InventoryService;
 import com.daesung.sales.partner.entity.Partner;
 import com.daesung.sales.partner.repository.PartnerRepository;
@@ -13,6 +14,7 @@ import com.daesung.sales.product.repository.ProductRepository;
 import com.daesung.sales.sale.dto.SaleResponse;
 import com.daesung.sales.sale.dto.SalesEntryRequest;
 import com.daesung.sales.sale.dto.SalesEntryResponse;
+import com.daesung.sales.sale.dto.NetSalesResponse;
 import com.daesung.sales.sale.dto.SalesSummaryResponse;
 import com.daesung.sales.sale.dto.SalesSummaryRow;
 import com.daesung.sales.sale.entity.Sale;
@@ -26,7 +28,9 @@ import com.daesung.sales.warehouse.repository.WarehouseRepository;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -44,6 +48,7 @@ public class SaleService {
     private final OutTypeLookupService outTypeLookupService;
     private final WarehouseRepository warehouseRepository;
     private final InventoryService inventoryService;
+    private final InventoryTxnRepository inventoryTxnRepository;
     private final PeriodLockService periodLockService;
 
     /**
@@ -165,6 +170,58 @@ public class SaleService {
                 tSaleQ, tSaleA, tFreeQ, tFreeA, tTchQ, tTchA, tRetQ, tRetA,
                 tSaleQ - tRetQ, tSaleA - tRetA, tTax, tTotal);
         return new SalesSummaryResponse(from, to, rows, total);
+    }
+
+    /**
+     * 콘텐츠구분 순매출. SELF=매출−반품, EXTERNAL=매출−매입=이익(매입원가=입고 unit_cost 가중평균).
+     * 기간 미지정 시 올해 1/1~오늘. contentType: null/전체, SELF, EXTERNAL.
+     */
+    @Transactional(readOnly = true)
+    public NetSalesResponse netSales(LocalDate fromDate, LocalDate toDate, String contentType) {
+        LocalDate from = (fromDate != null) ? fromDate : LocalDate.now().withDayOfYear(1);
+        LocalDate to = (toDate != null) ? toDate : LocalDate.now();
+        String filter = (contentType == null || contentType.isBlank()) ? null : contentType.trim().toUpperCase();
+
+        // 상품별 매입원가(입고 가중평균)
+        Map<Long, Long> avgCost = new HashMap<>();
+        for (Object[] r : inventoryTxnRepository.avgInboundCostByProduct()) {
+            avgCost.put(num(r[0]), num(r[1]));
+        }
+
+        List<NetSalesResponse.Row> rows = new ArrayList<>();
+        long tSaleQ = 0, tSaleA = 0, tFreeA = 0, tRetQ = 0, tRetA = 0, tPurch = 0;
+        boolean anyExternal = false;
+        for (Object[] r : saleRepository.netSalesByProduct(from, to, filter)) {
+            long pid = num(r[0]);
+            String ct = (String) r[3];
+            long saleQty = num(r[4]), saleAmt = num(r[5]), freeAmt = num(r[6]), retQty = num(r[7]), retAmt = num(r[8]);
+            long netQty = saleQty - retQty;
+            long netAmt = saleAmt - retAmt;
+
+            Long unitCost = null, purchase = null, profit = null;
+            Double margin = null;
+            if ("EXTERNAL".equals(ct)) {
+                anyExternal = true;
+                unitCost = avgCost.getOrDefault(pid, 0L);
+                purchase = unitCost * netQty;
+                profit = netAmt - purchase;
+                margin = (netAmt != 0) ? Math.round((double) profit / netAmt * 100 * 10) / 10.0 : null;
+                tPurch += purchase;
+            }
+            rows.add(new NetSalesResponse.Row(pid, (String) r[1], (String) r[2], ct,
+                    saleQty, saleAmt, freeAmt, retQty, retAmt, netQty, netAmt,
+                    unitCost, purchase, profit, margin));
+            tSaleQ += saleQty; tSaleA += saleAmt; tFreeA += freeAmt; tRetQ += retQty; tRetA += retAmt;
+        }
+
+        long tNetAmt = tSaleA - tRetA;
+        Long totalPurchase = anyExternal ? tPurch : null;
+        Long totalProfit = anyExternal ? (tNetAmt - tPurch) : null;
+        Double totalMargin = (anyExternal && tNetAmt != 0) ? Math.round((double) totalProfit / tNetAmt * 100 * 10) / 10.0 : null;
+        NetSalesResponse.Row total = new NetSalesResponse.Row(null, "합계", null, null,
+                tSaleQ, tSaleA, tFreeA, tRetQ, tRetA, tSaleQ - tRetQ, tNetAmt,
+                null, totalPurchase, totalProfit, totalMargin);
+        return new NetSalesResponse(from, to, filter, rows, total);
     }
 
     private static long num(Object o) {
