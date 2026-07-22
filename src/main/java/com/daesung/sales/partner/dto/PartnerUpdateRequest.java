@@ -21,6 +21,15 @@ public record PartnerUpdateRequest(
         LocalDate assureExpiry,
 
         @Schema(description = "담보 내용(비고)", example = "부동산 근저당")
-        String assureNote
+        String assureNote,
+
+        @Schema(description = "사업자번호", example = "123-45-67890") String bizNo,
+        @Schema(description = "대표자 성명", example = "홍길동") String bossName,
+        @Schema(description = "주소", example = "서울시 강남구") String addr1,
+        @Schema(description = "상세주소", example = "테헤란로 1") String addr2,
+        @Schema(description = "업태", example = "도소매") String bizStatus,
+        @Schema(description = "종목", example = "서적") String bizItem,
+        @Schema(description = "이메일1", example = "a@b.com") String email1,
+        @Schema(description = "이메일2") String email2
 ) {
 }

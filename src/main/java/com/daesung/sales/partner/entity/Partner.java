@@ -47,6 +47,31 @@ public class Partner extends BaseEntity {
     @Column(name = "assure_note", length = 500)
     private String assureNote;
 
+    // ── 세무(계산서 공급받는자) 정보 ──
+    @Column(name = "biz_no", length = 20)
+    private String bizNo;          // 사업자번호
+
+    @Column(name = "boss_name", length = 50)
+    private String bossName;       // 대표자
+
+    @Column(length = 200)
+    private String addr1;
+
+    @Column(length = 200)
+    private String addr2;
+
+    @Column(name = "biz_status", length = 100)
+    private String bizStatus;      // 업태
+
+    @Column(name = "biz_item", length = 100)
+    private String bizItem;        // 종목
+
+    @Column(length = 100)
+    private String email1;
+
+    @Column(length = 100)
+    private String email2;
+
     public static Partner create(String code, String name, PartnerType type) {
         Partner p = new Partner();
         p.code = code;
@@ -66,5 +91,18 @@ public class Partner extends BaseEntity {
         this.assureAmount = assureAmount;
         this.assureExpiry = assureExpiry;
         this.assureNote = assureNote;
+    }
+
+    /** 세무(계산서 공급받는자) 정보 설정. */
+    public void updateTaxInfo(String bizNo, String bossName, String addr1, String addr2,
+                              String bizStatus, String bizItem, String email1, String email2) {
+        this.bizNo = bizNo;
+        this.bossName = bossName;
+        this.addr1 = addr1;
+        this.addr2 = addr2;
+        this.bizStatus = bizStatus;
+        this.bizItem = bizItem;
+        this.email1 = email1;
+        this.email2 = email2;
     }
 }

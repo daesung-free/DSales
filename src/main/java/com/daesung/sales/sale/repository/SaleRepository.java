@@ -112,4 +112,28 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     List<Object[]> revenueReport(@Param("fromDate") LocalDate fromDate,
                                  @Param("toDate") LocalDate toDate,
                                  @Param("taxFilter") String taxFilter);
+
+    /**
+     * 계산서신고: 거래처×상품×과세구분 집계(품목 라인). 취소 제외, 반품 차감.
+     * tax_bucket: 'FREE'(면세, tax=0) / 'TAXABLE'(과세). 순매출 0인 품목은 제외.
+     * 반환 Object[]: [partnerId, partnerName, productId, productName, taxBucket, supply, tax].
+     */
+    @Query(value = """
+            SELECT s.partner_id, pt.name, s.product_id, p.name,
+              CASE WHEN s.tax = 0 THEN 'FREE' ELSE 'TAXABLE' END AS tax_bucket,
+              COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN -s.supply_amount ELSE s.supply_amount END),0) AS supply,
+              COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN -s.tax ELSE s.tax END),0) AS tax
+            FROM sales s
+              JOIN partners pt ON pt.id = s.partner_id
+              JOIN products p ON p.id = s.product_id
+            WHERE s.canceled = false
+              AND s.sales_date BETWEEN :fromDate AND :toDate
+              AND (CAST(:partnerId AS bigint) IS NULL OR s.partner_id = :partnerId)
+            GROUP BY s.partner_id, pt.name, s.product_id, p.name, CASE WHEN s.tax = 0 THEN 'FREE' ELSE 'TAXABLE' END
+            HAVING COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN -s.supply_amount ELSE s.supply_amount END),0) <> 0
+            ORDER BY pt.name, s.partner_id, tax_bucket, p.name
+            """, nativeQuery = true)
+    List<Object[]> taxInvoiceLines(@Param("fromDate") LocalDate fromDate,
+                                   @Param("toDate") LocalDate toDate,
+                                   @Param("partnerId") Long partnerId);
 }

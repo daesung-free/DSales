@@ -26,3 +26,14 @@ springdoc:
 logging:
   level:
     org.hibernate.SQL: debug
+
+# 계산서(홈택스) 공급자(자사) 정보. ★실값은 배포 시 환경변수/시크릿으로 주입 — 소스에 커밋 금지.
+# 예: DAESUNG_SUPPLIER_BIZ-NO=... (2법인 지원은 후속: default/consign 분리)
+daesung:
+  supplier:
+    biz-no: ""
+    name: ""
+    boss-name: ""
+    addr: ""
+    biz-status: ""
+    biz-item: ""

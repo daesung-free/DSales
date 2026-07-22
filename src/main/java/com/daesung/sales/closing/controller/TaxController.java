@@ -1,6 +1,7 @@
 package com.daesung.sales.closing.controller;
 
 import com.daesung.sales.closing.dto.RevenueReportResponse;
+import com.daesung.sales.closing.dto.TaxInvoiceResponse;
 import com.daesung.sales.closing.service.TaxService;
 import com.daesung.sales.common.response.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -34,5 +35,18 @@ public class TaxController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @Parameter(description = "과세구분(FREE=면세/TAXABLE=과세/미지정=전체)") @RequestParam(required = false) String taxType) {
         return ApiResponse.success(taxService.revenueReport(fromDate, toDate, taxType));
+    }
+
+    @Operation(summary = "계산서신고 데이터 조회",
+            description = "거래처×과세구분 단위 계산서(품목=도서별) 목록. 면세'05'/과세'01', 공급가액·세액·합계검증. "
+                    + "공급자(자사)는 설정 주입. 홈택스 파일 export는 후속 엔드포인트. 기간 미지정 시 올해 1/1~오늘.")
+    @GetMapping("/tax-invoices")
+    public ApiResponse<TaxInvoiceResponse> taxInvoices(
+            @Parameter(description = "시작일(yyyy-MM-dd, 미지정 시 올해 1/1)") @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @Parameter(description = "종료일(yyyy-MM-dd=작성일자, 미지정 시 오늘)") @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @Parameter(description = "거래처 id 필터") @RequestParam(required = false) Long partnerId) {
+        return ApiResponse.success(taxService.taxInvoices(fromDate, toDate, partnerId));
     }
 }
