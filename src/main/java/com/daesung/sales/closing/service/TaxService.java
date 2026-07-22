@@ -23,6 +23,7 @@ public class TaxService {
     private final SaleRepository saleRepository;
     private final PartnerRepository partnerRepository;
     private final SupplierProperties supplier;
+    private final TaxInvoiceExcelExporter excelExporter;
 
     /**
      * 수익신고: 거래처×월 순매출/세액 집계 + 거래처 소계 + 전체 합계.
@@ -104,6 +105,19 @@ public class TaxService {
                     itemSupplySum == tot[0]));
         }
         return new TaxInvoiceResponse(to, invoices, invoices.size());
+    }
+
+    /** 계산서 데이터를 홈택스 대량발행 xlsx로 export. 공급받는자 전체 세무정보를 Partner에서 로드. */
+    @Transactional(readOnly = true)
+    public byte[] exportTaxInvoices(LocalDate fromDate, LocalDate toDate, Long partnerId) {
+        TaxInvoiceResponse data = taxInvoices(fromDate, toDate, partnerId);
+        List<Long> ids = data.invoices().stream()
+                .map(TaxInvoiceResponse.Invoice::partnerId)
+                .distinct()
+                .toList();
+        Map<Long, Partner> partners = new LinkedHashMap<>();
+        partnerRepository.findAllById(ids).forEach(p -> partners.put(p.getId(), p));
+        return excelExporter.export(data, partners, supplier);
     }
 
     private static String normalizeTaxType(String taxType) {

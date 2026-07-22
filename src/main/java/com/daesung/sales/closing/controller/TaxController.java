@@ -10,6 +10,9 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import java.time.LocalDate;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -49,4 +52,24 @@ public class TaxController {
             @Parameter(description = "거래처 id 필터") @RequestParam(required = false) Long partnerId) {
         return ApiResponse.success(taxService.taxInvoices(fromDate, toDate, partnerId));
     }
+
+    @Operation(summary = "계산서신고 홈택스 파일(xlsx) 다운로드",
+            description = "계산서 데이터를 홈택스 대량발행 양식(면세'05' 시트/과세'01' 시트)으로 xlsx 생성·다운로드. "
+                    + "사업자번호·일자는 텍스트(앞자리0 보존), 품목 4개 초과 시 계산서 분할. "
+                    + "⚠️ 공급자 실값은 설정 주입, 컬럼 위치는 배포 전 실제 홈택스 템플릿 대조 필요.")
+    @GetMapping("/tax-invoices/export")
+    public ResponseEntity<byte[]> exportTaxInvoices(
+            @Parameter(description = "시작일(yyyy-MM-dd)") @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @Parameter(description = "종료일(yyyy-MM-dd=작성일자)") @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @Parameter(description = "거래처 id 필터") @RequestParam(required = false) Long partnerId) {
+        byte[] xlsx = taxService.exportTaxInvoices(fromDate, toDate, partnerId);
+        return ResponseEntity.ok()
+                .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"tax-invoices.xlsx\"")
+                .contentType(MediaType.parseMediaType(
+                        "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
+                .body(xlsx);
+    }
 }
+
