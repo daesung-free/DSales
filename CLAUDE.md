@@ -123,7 +123,7 @@ python3 <script> --sheet <ID> --tab <탭명>   # scratchpad의 read_*.py 참고.
   - **Swagger 한글 문서화 필수**: 컨트롤러 `@Tag(name,description)`, 메서드 `@Operation(summary,description)`, 요청 DTO 필드 `@Schema(description,example, requiredMode)`. → Swagger가 한글 설명+예시값 자동 노출.
   - 등록 검증: `@Valid` + 코드 중복 등 도메인 검증은 서비스에서 `BusinessException`.
   - **참고 템플릿**: `product`/`warehouse`/`partner` 패키지(상품·창고·거래처 CRUD)가 표준 예시. 새 API는 이걸 복제·변형.
-  - 보안은 현재 **전체 허용**(SecurityConfig, RBAC 도입 시 제한 — TODO). Swagger는 `/swagger-ui/index.html`.
+  - 보안: **인증 필수(JWT)**. 로그인/토큰재발급/부트스트랩·Swagger만 공개, 그 외 인증 요구. 새 API는 기본적으로 인증 하에 동작(테스트 시 `POST /auth/login`으로 토큰 받아 `Authorization: Bearer` 헤더). **역할별 세부 권한 매트릭스(마감=FINANCE 등)는 발주처 확정 후 경로/@PreAuthorize로 확장** — 현재는 "인증된 사용자면 허용"까지. `created_by/updated_by`는 로그인 사용자 자동. Swagger는 `/swagger-ui/index.html`.
 - 언어: 산출물·주석·커밋 메시지는 한국어 우선(팀 문서가 한국어).
 
 ## 10. 지금까지의 진행 (세션 컨텍스트)
