@@ -20,29 +20,32 @@ import org.springframework.transaction.annotation.Transactional;
 public class PeriodLockService {
 
     private final PeriodLockRepository periodLockRepository;
+    private final PeriodLockCache periodLockCache;
 
-    /** 해당 일자가 속한 월이 마감이면 PERIOD_LOCKED. 모든 재무 쓰기 API의 횡단 검사. */
+    /** 해당 일자가 속한 월이 마감이면 PERIOD_LOCKED. 모든 재무 쓰기 API의 횡단 검사(캐시 조회). */
     @Transactional(readOnly = true)
     public void assertNotLocked(LocalDate date) {
-        if (periodLockRepository.isLocked(date.getYear(), date.getMonthValue())) {
+        if (periodLockCache.isLocked(date.getYear(), date.getMonthValue())) {
             throw new BusinessException(ErrorCode.PERIOD_LOCKED,
                     date.getYear() + "년 " + date.getMonthValue() + "월은 마감되어 재무 등록/수정이 불가합니다.");
         }
     }
 
-    /** 월마감(잠금). 없으면 생성 후 잠금. */
+    /** 월마감(잠금). 없으면 생성 후 잠금. 캐시 무효화. */
     @Transactional
     public PeriodLockResponse lock(int year, int month, String memo) {
         PeriodLock pl = getOrCreate(year, month);
         pl.lock(null, memo); // lockedBy는 RBAC 도입 시 인증 주체로
+        periodLockCache.evict(year, month);
         return PeriodLockResponse.from(pl);
     }
 
-    /** 월마감 해제(재오픈). */
+    /** 월마감 해제(재오픈). 캐시 무효화. */
     @Transactional
     public PeriodLockResponse unlock(int year, int month) {
         PeriodLock pl = getOrCreate(year, month);
         pl.unlock();
+        periodLockCache.evict(year, month);
         return PeriodLockResponse.from(pl);
     }
 

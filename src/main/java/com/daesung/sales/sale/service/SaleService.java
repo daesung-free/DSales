@@ -18,10 +18,9 @@ import com.daesung.sales.sale.dto.SalesSummaryRow;
 import com.daesung.sales.sale.entity.Sale;
 import com.daesung.sales.sale.entity.SalesType;
 import com.daesung.sales.sale.repository.SaleRepository;
-import com.daesung.sales.salestype.entity.OutTypeMapping;
 import com.daesung.sales.salestype.entity.SalesCategory;
 import com.daesung.sales.salestype.entity.ShipmentType;
-import com.daesung.sales.salestype.repository.OutTypeMappingRepository;
+import com.daesung.sales.salestype.service.OutTypeLookupService;
 import com.daesung.sales.warehouse.entity.Warehouse;
 import com.daesung.sales.warehouse.repository.WarehouseRepository;
 import java.time.LocalDate;
@@ -42,7 +41,7 @@ public class SaleService {
     private final SaleRepository saleRepository;
     private final PartnerRepository partnerRepository;
     private final ProductRepository productRepository;
-    private final OutTypeMappingRepository outTypeMappingRepository;
+    private final OutTypeLookupService outTypeLookupService;
     private final WarehouseRepository warehouseRepository;
     private final InventoryService inventoryService;
     private final PeriodLockService periodLockService;
@@ -68,10 +67,8 @@ public class SaleService {
             Product product = productRepository.findById(item.productId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                             "상품이 없습니다. id=" + item.productId()));
-            OutTypeMapping mapping = outTypeMappingRepository.findById(item.shipmentType())
-                    .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_INPUT,
-                            "출고유형 매핑이 없습니다: " + item.shipmentType()));
-            SalesCategory salesCategory = mapping.getSalesCategory();
+            SalesCategory salesCategory = SalesCategory.valueOf(
+                    outTypeLookupService.salesCategoryNameOf(item.shipmentType()));
 
             long supplyAmount = (long) ((double) item.unitPrice() * item.supplyRate() / 100.0 * item.qty());
             long tax = product.isTaxFree() ? 0L : supplyAmount / 10L;
