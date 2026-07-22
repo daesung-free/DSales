@@ -96,6 +96,10 @@ public class Sale extends BaseEntity {
     @Column(length = 1000)
     private String memo;
 
+    /** DSRE 매출일괄등록 소스키(req_cd:lst_cd:dtl_cd:req_gn). 멱등 dedup용. 일반 매출은 null. */
+    @Column(name = "bulk_import_key", length = 60)
+    private String bulkImportKey;
+
     /** 논리 취소 여부(물리삭제 아님, 이력 보존). */
     @Column(nullable = false)
     private boolean canceled = false;
@@ -148,6 +152,30 @@ public class Sale extends BaseEntity {
         s.sourceOutNo = sourceOutNo;
         s.settlement = settlement;
         s.memo = memo;
+        return s;
+    }
+
+    /** DSRE 매출일괄등록 라인. 재무 매출(재고 미반영). bulkImportKey로 멱등. */
+    public static Sale createBulk(String salesNo, LocalDate salesDate, Partner partner, Product product,
+                                  ShipmentType shipmentType, SalesCategory salesCategory,
+                                  Integer unitPrice, Integer supplyRate, int qty,
+                                  Long supplyAmount, Long tax, Long totalAmount, String memo, String bulkImportKey) {
+        Sale s = new Sale();
+        s.salesNo = salesNo;
+        s.salesDate = salesDate;
+        s.partner = partner;
+        s.product = product;
+        s.salesType = SalesType.NORMAL_SALES;
+        s.shipmentType = shipmentType;
+        s.salesCategory = salesCategory;
+        s.unitPrice = unitPrice;
+        s.supplyRate = supplyRate;
+        s.qty = qty;
+        s.supplyAmount = supplyAmount;
+        s.tax = tax;
+        s.totalAmount = totalAmount;
+        s.memo = memo;
+        s.bulkImportKey = bulkImportKey;
         return s;
     }
 

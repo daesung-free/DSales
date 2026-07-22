@@ -53,4 +53,4 @@ daesung:
     url: "jdbc:mysql://localhost:3307/dsre2?characterEncoding=UTF-8&useUnicode=true"
     username: "dsre"
     password: "dsre"
-    read-only: true      # 조회/함수호출 위주(라이브 안전). write-back은 후속 단계에서 별도.
+    read-only: false     # 매출일괄등록 write-back(state='T')이 있어 쓰기 필요. 그 외는 SELECT/함수호출만.

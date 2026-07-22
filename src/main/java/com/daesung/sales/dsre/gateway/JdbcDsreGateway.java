@@ -1,5 +1,8 @@
 package com.daesung.sales.dsre.gateway;
 
+import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
+import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -64,5 +67,47 @@ public class JdbcDsreGateway implements DsreGateway {
 
     private static long num(Object o) {
         return (o == null) ? 0L : ((Number) o).longValue();
+    }
+
+    private static final DateTimeFormatter YYYYMMDD = DateTimeFormatter.BASIC_ISO_DATE;
+
+    private static final String BOOKLIST_SQL = """
+            SELECT BLC.REQ_CD reqcd,
+              (SELECT machul_cd FROM tbl_cust_info CUI WHERE CUI.CUST_CD=BLF.cust_cd) cust_cd,
+              (SELECT cust_fnm FROM tbl_cust_info CUI WHERE CUI.CUST_CD=BLF.cust_cd) cust_nm,
+              BLC.LST_CD lst_cd, BLC.DTL_CD dtl_cd, max(BLD.DTL_NM) book_nm, max(BLC.PRICE) price,
+              IFNULL(max(CASE WHEN req_gn='M' THEN dissusu END),0) sale_rate, IFNULL(sum(CASE WHEN req_gn='M' THEN reqcnt END),0) sale_qty,
+              IFNULL(max(CASE WHEN req_gn='J' THEN dissusu END),0) gift_rate, IFNULL(sum(CASE WHEN req_gn='J' THEN reqcnt END),0) gift_qty,
+              IFNULL(max(CASE WHEN req_gn='B' THEN dissusu END),0) free_rate, IFNULL(sum(CASE WHEN req_gn='B' THEN reqcnt END),0) free_qty,
+              max(BLF.memo) memo
+            FROM tbf_booklist_cnt BLC
+              LEFT JOIN tbf_booklist_ref BLF ON BLF.req_cd=BLC.req_cd
+              LEFT JOIN tbl_booklist_dtl BLD ON BLC.lst_cd=BLD.lst_cd AND BLC.dtl_cd=BLD.dtl_cd
+            WHERE BLC.state='A' AND BLF.reqdt BETWEEN ? AND ?
+            GROUP BY BLC.REQ_CD, BLF.cust_cd, BLC.lst_cd, BLC.dtl_cd
+            HAVING sum(reqcnt) > 0
+            ORDER BY BLC.REQ_CD, BLC.lst_cd, BLC.dtl_cd
+            """;
+
+    @Override
+    public List<BooklistImportRow> readPendingBooklist(LocalDate from, LocalDate to) {
+        return dsreJdbcTemplate.query(BOOKLIST_SQL,
+                (rs, i) -> new BooklistImportRow(
+                        rs.getInt("reqcd"), rs.getString("cust_cd"), rs.getString("cust_nm"),
+                        rs.getString("lst_cd"), rs.getString("dtl_cd"), rs.getString("book_nm"),
+                        rs.getInt("price"),
+                        rs.getInt("sale_rate"), rs.getInt("sale_qty"),
+                        rs.getInt("gift_rate"), rs.getInt("gift_qty"),
+                        rs.getInt("free_rate"), rs.getInt("free_qty"),
+                        rs.getString("memo")),
+                from.format(YYYYMMDD), to.format(YYYYMMDD));
+    }
+
+    @Override
+    public void markBooklistDone(int reqCd, String lstCd, String dtlCd) {
+        // 해당 (신청×분류×도서)의 M/J/B 전 행을 처리완료(state='T')로. 중복방지.
+        dsreJdbcTemplate.update(
+                "UPDATE tbf_booklist_cnt SET state='T' WHERE req_cd=? AND lst_cd=? AND dtl_cd=?",
+                reqCd, lstCd, dtlCd);
     }
 }

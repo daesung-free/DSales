@@ -11,4 +11,10 @@ public interface DsreGateway {
 
     /** 출고 물류비 계산(신청 REQ 단위). DSRE2에서 자재수량×단가 집계 + 인원함수 호출. */
     OutboundLogisCost calcOutbound(int reqCd);
+
+    /** 매출일괄등록 대상(미처리 state='A') 조회. 신청일자 기간 필터. */
+    java.util.List<BooklistImportRow> readPendingBooklist(java.time.LocalDate from, java.time.LocalDate to);
+
+    /** write-back: 해당 (신청×분류×도서)를 처리완료(state='T')로. 중복방지. */
+    void markBooklistDone(int reqCd, String lstCd, String dtlCd);
 }

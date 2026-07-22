@@ -17,6 +17,9 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     @Query(value = "SELECT nextval('seq_invoice_no')", nativeQuery = true)
     long nextInvoiceSeq();
 
+    /** 매출일괄등록 멱등: 이미 등록된 소스키인지. */
+    boolean existsByBulkImportKey(String bulkImportKey);
+
     /** 통합 매출 조회(기간·회계구분·출고유형·거래처·취소포함 여부 필터). null이면 미적용. */
     @Query("select s from Sale s "
             + "where (:from is null or s.salesDate >= :from) "
