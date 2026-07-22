@@ -37,3 +37,8 @@ daesung:
     addr: ""
     biz-status: ""
     biz-item: ""
+  # 인증/JWT. ★jwt-secret은 배포 시 환경변수(DAESUNG_SECURITY_JWT-SECRET)로 override — 아래는 로컬 개발 전용 더미.
+  security:
+    jwt-secret: "local-dev-only-change-me-please-32bytes-minimum-secret-key"
+    access-token-minutes: 30
+    refresh-token-days: 14

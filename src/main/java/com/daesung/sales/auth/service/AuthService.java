@@ -1,0 +1,121 @@
+package com.daesung.sales.auth.service;
+
+import com.daesung.sales.auth.config.JwtProperties;
+import com.daesung.sales.auth.dto.AuthDtos.LoginRequest;
+import com.daesung.sales.auth.dto.AuthDtos.TokenResponse;
+import com.daesung.sales.auth.dto.AuthDtos.UserCreateRequest;
+import com.daesung.sales.auth.dto.AuthDtos.UserResponse;
+import com.daesung.sales.auth.entity.AppUser;
+import com.daesung.sales.auth.entity.RefreshToken;
+import com.daesung.sales.auth.entity.Role;
+import com.daesung.sales.auth.jwt.JwtProvider;
+import com.daesung.sales.auth.repository.AppUserRepository;
+import com.daesung.sales.auth.repository.RefreshTokenRepository;
+import com.daesung.sales.common.exception.BusinessException;
+import com.daesung.sales.common.exception.ErrorCode;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.time.LocalDateTime;
+import java.util.HexFormat;
+import java.util.UUID;
+import lombok.RequiredArgsConstructor;
+import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+/**
+ * 인증(로그인/재발급/로그아웃) + 계정 생성. access(JWT)+refresh(DB 저장·회전).
+ * 비밀번호 BCrypt(평문 금지). refresh는 해시 저장, 재발급 시 회전, 로그아웃 시 무효화.
+ */
+@Service
+@RequiredArgsConstructor
+public class AuthService {
+
+    private final AppUserRepository userRepository;
+    private final RefreshTokenRepository refreshTokenRepository;
+    private final PasswordEncoder passwordEncoder;
+    private final JwtProvider jwtProvider;
+    private final JwtProperties jwtProperties;
+
+    /** 최초 관리자 부트스트랩. 사용자가 하나도 없을 때만 허용(이후 400). */
+    @Transactional
+    public UserResponse bootstrapAdmin(UserCreateRequest req) {
+        if (userRepository.count() > 0) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "이미 계정이 존재합니다. 관리자 계정으로 생성하세요.");
+        }
+        return toUserResponse(saveUser(req.username(), req.password(), req.name(), Role.ADMIN));
+    }
+
+    /** 계정 생성(관리자 전용 — SecurityConfig에서 ROLE_ADMIN 강제). */
+    @Transactional
+    public UserResponse createUser(UserCreateRequest req) {
+        return toUserResponse(saveUser(req.username(), req.password(), req.name(), req.role()));
+    }
+
+    private AppUser saveUser(String username, String rawPassword, String name, Role role) {
+        if (userRepository.existsByUsername(username)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "이미 사용 중인 아이디입니다: " + username);
+        }
+        return userRepository.save(AppUser.create(username, passwordEncoder.encode(rawPassword), name, role));
+    }
+
+    /** 로그인. 아이디/비번 검증 후 access+refresh 발급. */
+    @Transactional
+    public TokenResponse login(LoginRequest req) {
+        AppUser user = userRepository.findByUsername(req.username())
+                .filter(AppUser::isActive)
+                .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED,
+                        "아이디 또는 비밀번호가 올바르지 않습니다."));
+        if (!passwordEncoder.matches(req.password(), user.getPassword())) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "아이디 또는 비밀번호가 올바르지 않습니다.");
+        }
+        return issueTokens(user);
+    }
+
+    /** refresh 토큰으로 재발급(회전). 기존 refresh는 무효화하고 새 access+refresh 발급. */
+    @Transactional
+    public TokenResponse refresh(String refreshToken) {
+        String hash = sha256(refreshToken);
+        RefreshToken stored = refreshTokenRepository.findByTokenHash(hash)
+                .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED, "유효하지 않은 refresh 토큰입니다."));
+        if (!stored.isValidNow(LocalDateTime.now())) {
+            throw new BusinessException(ErrorCode.UNAUTHORIZED, "만료되었거나 무효화된 refresh 토큰입니다.");
+        }
+        AppUser user = userRepository.findById(stored.getUserId())
+                .filter(AppUser::isActive)
+                .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED, "계정을 찾을 수 없습니다."));
+        stored.revoke(); // 회전: 기존 토큰 폐기
+        return issueTokens(user);
+    }
+
+    /** 로그아웃. 해당 사용자의 모든 refresh 토큰 무효화. */
+    @Transactional
+    public void logout(String username) {
+        userRepository.findByUsername(username)
+                .ifPresent(u -> refreshTokenRepository.revokeAllByUser(u.getId()));
+    }
+
+    private TokenResponse issueTokens(AppUser user) {
+        String access = jwtProvider.generateAccessToken(user.getId(), user.getUsername(), user.getRole());
+        String refreshRaw = UUID.randomUUID().toString().replace("-", "")
+                + UUID.randomUUID().toString().replace("-", "");
+        LocalDateTime exp = LocalDateTime.now().plusDays(jwtProperties.refreshTokenDaysOrDefault());
+        refreshTokenRepository.save(RefreshToken.issue(user.getId(), sha256(refreshRaw), exp));
+        return new TokenResponse(access, refreshRaw, "Bearer",
+                user.getUsername(), user.getRole().name(), jwtProvider.accessMinutes());
+    }
+
+    private static UserResponse toUserResponse(AppUser u) {
+        return new UserResponse(u.getId(), u.getUsername(), u.getName(), u.getRole());
+    }
+
+    /** refresh 토큰은 원문 대신 SHA-256 해시로 저장. */
+    private static String sha256(String s) {
+        try {
+            byte[] digest = MessageDigest.getInstance("SHA-256").digest(s.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (Exception e) {
+            throw new BusinessException(ErrorCode.INTERNAL_ERROR, "토큰 해시 실패");
+        }
+    }
+}
