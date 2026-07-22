@@ -142,6 +142,17 @@ public class InventoryService {
         }
     }
 
+    /**
+     * 재고실사 조정. delta=실물−시스템(부호 포함). 캐시 갱신 + ADJUST 이벤트. 반환값=조정 후 잔량(=실물수량).
+     * 반드시 호출자 트랜잭션 내에서(실사 등록과 한 트랜잭션).
+     */
+    public int adjust(Product product, Warehouse warehouse, int delta,
+                      LocalDate tradeDate, String refNo, String memo) {
+        int balance = applyDelta(product, warehouse, delta);
+        inventoryTxnRepository.save(InventoryTxn.adjust(product, warehouse, delta, tradeDate, refNo, memo));
+        return balance;
+    }
+
     /** 상품×창고 현재 잔량(캐시). 없으면 0. */
     public int balanceOf(Long productId, Long warehouseId) {
         return inventoryRepository.findByProductIdAndWarehouseId(productId, warehouseId)
@@ -223,12 +234,12 @@ public class InventoryService {
 
         List<StockLedgerRow> result = new ArrayList<>();
         for (Object[] r : inventoryTxnRepository.stockLedger(from, to, productId, warehouseId)) {
-            long closing = num(r[14]);
-            long cached = num(r[15]);
+            long closing = num(r[15]);
+            long cached = num(r[16]);
             result.add(new StockLedgerRow(
                     num(r[0]), (String) r[1], (String) r[2], num(r[3]), (String) r[4],
                     num(r[5]), num(r[6]), num(r[7]), num(r[8]), num(r[9]),
-                    num(r[10]), num(r[11]), num(r[12]), num(r[13]),
+                    num(r[10]), num(r[11]), num(r[12]), num(r[13]), num(r[14]),
                     closing, cached, closing == cached));
         }
         return result;

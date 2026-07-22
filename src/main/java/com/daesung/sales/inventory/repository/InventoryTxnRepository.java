@@ -23,7 +23,7 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
      * 제품수불부 집계(상품×창고). 물류 이벤트를 CASE 버킷으로 합산 + 이월/마감.
      * 출고는 shipment_type으로 매출/무상/교사용/반품 분해(스펙 수불부 컬럼 대응).
      * 반환 Object[]: [productId, code, name, warehouseId, whName,
-     *   opening, inbound, transfer, bom, dispose, sale, free, teacher, salesReturn, closing, cached]
+     *   opening, inbound, transfer, bom, dispose, sale, free, teacher, salesReturn, adjust, closing, cached]
      */
     @Query(value = """
             SELECT t.product_id, p.code, p.name, t.warehouse_id, w.name,
@@ -36,6 +36,7 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
               COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.shipment_type = 'GIFT' THEN t.qty ELSE 0 END), 0) AS free,
               COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.shipment_type = 'TEACHER_USE' THEN t.qty ELSE 0 END), 0) AS teacher,
               COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.shipment_type = 'RETURN' THEN t.qty ELSE 0 END), 0) AS sales_return,
+              COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.txn_type = 'ADJUST' THEN t.qty ELSE 0 END), 0) AS adjust,
               COALESCE(SUM(CASE WHEN t.trade_date <= :toDate THEN t.qty ELSE 0 END), 0) AS closing,
               COALESCE(MAX(inv.qty), 0) AS cached
             FROM inventory_txn t

@@ -8,5 +8,6 @@ public enum TxnType {
     BOM_ASSEMBLE,     // 세트 조립
     BOM_DISASSEMBLE,  // 세트 해체
     DISPOSE,          // 폐기
-    RETURN            // 반품
+    RETURN,           // 반품
+    ADJUST            // 재고실사 조정(실물−시스템 차이)
 }

@@ -150,4 +150,18 @@ public class InventoryTxn extends BaseEntity {
         t.memo = memo;
         return t;
     }
+
+    /** 재고실사 조정. qty=실물−시스템(부호 포함). refNo=실사번호(ST-...). */
+    public static InventoryTxn adjust(Product product, Warehouse warehouse, int qty,
+                                      LocalDate tradeDate, String refNo, String memo) {
+        InventoryTxn t = new InventoryTxn();
+        t.product = product;
+        t.warehouse = warehouse;
+        t.txnType = TxnType.ADJUST;
+        t.qty = qty;
+        t.tradeDate = tradeDate;
+        t.refNo = refNo;
+        t.memo = memo;
+        return t;
+    }
 }
