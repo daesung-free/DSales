@@ -20,6 +20,22 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     /** 매출일괄등록 멱등: 이미 등록된 소스키인지. */
     boolean existsByBulkImportKey(String bulkImportKey);
 
+    /**
+     * 월별 실적(순매출액 = 매출−반품). 취소 제외. 상품 필터(null=전체). 대시보드 목표대비용.
+     * 반환 Object[]: [month(1~12), netAmount].
+     */
+    @Query(value = """
+            SELECT EXTRACT(MONTH FROM s.sales_date) AS mon,
+              COALESCE(SUM(CASE WHEN s.sales_category='SALE' THEN s.supply_amount
+                                WHEN s.sales_category='RETURN' THEN -s.supply_amount ELSE 0 END),0) AS net_amt
+            FROM sales s
+            WHERE s.canceled = false
+              AND EXTRACT(YEAR FROM s.sales_date) = :year
+              AND (CAST(:productId AS bigint) IS NULL OR s.product_id = :productId)
+            GROUP BY EXTRACT(MONTH FROM s.sales_date)
+            """, nativeQuery = true)
+    List<Object[]> monthlyNetSales(@Param("year") int year, @Param("productId") Long productId);
+
     /** 통합 매출 조회(기간·회계구분·출고유형·거래처·취소포함 여부 필터). null이면 미적용. */
     @Query("select s from Sale s "
             + "where (:from is null or s.salesDate >= :from) "

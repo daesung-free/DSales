@@ -49,6 +49,14 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.fail(ErrorResponse.of(ErrorCode.NOT_FOUND, e.getMessage())));
     }
 
+    /** 메서드 보안(@PreAuthorize) 권한 부족 → 403. (경로 규칙 거부는 SecurityConfig에서 처리) */
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleAccessDenied(
+            org.springframework.security.access.AccessDeniedException e) {
+        return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN)
+                .body(ApiResponse.fail(ErrorResponse.of(ErrorCode.INVALID_INPUT, "접근 권한이 없습니다.")));
+    }
+
     /** 처리되지 않은 그 외 예외. */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleEtc(Exception e) {
