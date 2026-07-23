@@ -22,8 +22,10 @@ import com.daesung.sales.sale.dto.SalesEntryResponse;
 import com.daesung.sales.sale.dto.NetSalesResponse;
 import com.daesung.sales.sale.dto.SalesStatementAgg;
 import com.daesung.sales.sale.dto.SalesStatementResponse;
+import com.daesung.sales.sale.dto.PartnerProductSalesAgg;
 import com.daesung.sales.sale.dto.SalesStatementRow;
 import com.daesung.sales.sale.dto.TransactionStatementResponse;
+import com.daesung.sales.sale.dto.YoyComparisonResponse;
 import com.daesung.sales.sale.dto.SalesSummaryResponse;
 import com.daesung.sales.sale.dto.SalesSummaryRow;
 import com.daesung.sales.sale.entity.Sale;
@@ -419,6 +421,69 @@ public class SaleService {
 
     private static Double round2(double v) {
         return Math.round(v * 100.0) / 100.0;
+    }
+
+    /**
+     * 거래처별 매출대비표(당해 vs 전년 동기간). 근거: 레거시 거래처별_매출대비표.vb.
+     * 전년은 salesDate 기준 [from−1년, to−1년](우리 catCode엔 연도 미인코딩 → 날짜 비교). SALE만.
+     * groupBy=PARTNER(거래처)/CATEGORY(거래처×분류)/BOOK(거래처×도서). 비율=당해÷전년×100.
+     */
+    @Transactional(readOnly = true)
+    public YoyComparisonResponse yoyComparison(LocalDate from, LocalDate to,
+                                               YoyComparisonResponse.GroupBy groupBy,
+                                               Long partnerId, String catCode) {
+        LocalDate prevFrom = from.minusYears(1);
+        LocalDate prevTo = to.minusYears(1);
+        List<PartnerProductSalesAgg> curList = saleRepository.salesByPartnerProduct(from, to, partnerId, catCode);
+        List<PartnerProductSalesAgg> prevList = saleRepository.salesByPartnerProduct(prevFrom, prevTo, partnerId, catCode);
+
+        Map<String, PartnerProductSalesAgg> labels = new HashMap<>();
+        Map<String, long[]> cur = accumulate(curList, groupBy, labels);
+        Map<String, long[]> prev = accumulate(prevList, groupBy, labels);
+
+        List<YoyComparisonResponse.Row> rows = new ArrayList<>();
+        java.util.Set<String> keys = new java.util.HashSet<>(cur.keySet());
+        keys.addAll(prev.keySet());
+        for (String k : keys) {
+            long[] c = cur.getOrDefault(k, new long[2]);
+            long[] p = prev.getOrDefault(k, new long[2]);
+            PartnerProductSalesAgg lb = labels.get(k);
+            boolean withCat = groupBy != YoyComparisonResponse.GroupBy.PARTNER;
+            boolean withBook = groupBy == YoyComparisonResponse.GroupBy.BOOK;
+            rows.add(new YoyComparisonResponse.Row(
+                    lb.getPartnerId(), lb.getPartnerCode(), lb.getPartnerName(),
+                    withCat ? lb.getCatCode() : null, withCat ? lb.getCatName() : null,
+                    withBook ? lb.getBookCode() : null, withBook ? lb.getBookName() : null,
+                    c[0], c[1], p[0], p[1],
+                    c[0] - p[0], c[1] - p[1],
+                    p[0] == 0 ? null : round2(c[0] * 100.0 / p[0]),
+                    p[1] == 0 ? null : round2(c[1] * 100.0 / p[1])));
+        }
+        rows.sort(java.util.Comparator
+                .comparing(YoyComparisonResponse.Row::partnerCode, java.util.Comparator.nullsLast(String::compareTo))
+                .thenComparing(r -> r.catCode(), java.util.Comparator.nullsLast(String::compareTo))
+                .thenComparing(r -> r.bookCode(), java.util.Comparator.nullsLast(String::compareTo)));
+
+        return new YoyComparisonResponse(from, to, prevFrom, prevTo, groupBy, rows);
+    }
+
+    /** groupBy 수준으로 (qty,amount) 누적 + 라벨(첫 등장) 수집. */
+    private static Map<String, long[]> accumulate(List<PartnerProductSalesAgg> list,
+                                                  YoyComparisonResponse.GroupBy groupBy,
+                                                  Map<String, PartnerProductSalesAgg> labels) {
+        Map<String, long[]> map = new HashMap<>();
+        for (PartnerProductSalesAgg a : list) {
+            String key = switch (groupBy) {
+                case PARTNER -> "P" + a.getPartnerId();
+                case CATEGORY -> "P" + a.getPartnerId() + "|C" + (a.getCatCode() == null ? "" : a.getCatCode());
+                case BOOK -> "P" + a.getPartnerId() + "|B" + a.getProductId();
+            };
+            long[] acc = map.computeIfAbsent(key, x -> new long[2]);
+            acc[0] += a.getQty();
+            acc[1] += a.getAmount();
+            labels.putIfAbsent(key, a);
+        }
+        return map;
     }
 
     /**

@@ -2,6 +2,7 @@ package com.daesung.sales.sale.repository;
 
 import com.daesung.sales.sale.dto.BookSalesAgg;
 import com.daesung.sales.sale.dto.CategorySalesAgg;
+import com.daesung.sales.sale.dto.PartnerProductSalesAgg;
 import com.daesung.sales.sale.dto.SalesStatementAgg;
 import com.daesung.sales.sale.entity.Sale;
 import com.daesung.sales.salestype.entity.SalesCategory;
@@ -92,6 +93,26 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
             + "where s.canceled = false and s.salesDate between :from and :to "
             + "group by p.id")
     List<BookSalesAgg> bookSalesAgg(@Param("from") LocalDate from, @Param("to") LocalDate to);
+
+    /**
+     * 거래처×상품 매출집계(SALE만, 취소 제외). 거래처별 매출대비표(전년 동기간 비교)용.
+     * 근거: 레거시 거래처별_매출대비표.vb(매출+유상무상=우리 SALE로 정규화). 거래처·분류 옵션 필터.
+     */
+    @Query("select pt.id as partnerId, pt.code as partnerCode, pt.name as partnerName, "
+            + "p.catCode as catCode, p.catName as catName, "
+            + "p.id as productId, p.code as bookCode, p.name as bookName, "
+            + "sum(s.qty) as qty, sum(coalesce(s.supplyAmount,0)) as amount "
+            + "from Sale s join s.partner pt join s.product p "
+            + "where s.canceled = false "
+            + "and s.salesCategory = com.daesung.sales.salestype.entity.SalesCategory.SALE "
+            + "and s.salesDate between :from and :to "
+            + "and (:partnerId is null or pt.id = :partnerId) "
+            + "and (:catCode is null or p.catCode = :catCode) "
+            + "group by pt.id, pt.code, pt.name, p.catCode, p.catName, p.id, p.code, p.name")
+    List<PartnerProductSalesAgg> salesByPartnerProduct(@Param("from") LocalDate from,
+                                                       @Param("to") LocalDate to,
+                                                       @Param("partnerId") Long partnerId,
+                                                       @Param("catCode") String catCode);
 
     /** 매출일괄등록 멱등: 이미 등록된 소스키인지. */
     boolean existsByBulkImportKey(String bulkImportKey);

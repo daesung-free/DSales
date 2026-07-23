@@ -12,6 +12,7 @@ import com.daesung.sales.sale.dto.SalesEntryResponse;
 import com.daesung.sales.sale.dto.SalesStatementResponse;
 import com.daesung.sales.sale.dto.SalesSummaryResponse;
 import com.daesung.sales.sale.dto.TransactionStatementResponse;
+import com.daesung.sales.sale.dto.YoyComparisonResponse;
 import com.daesung.sales.sale.service.SaleService;
 import com.daesung.sales.salestype.entity.SalesCategory;
 import com.daesung.sales.salestype.entity.ShipmentType;
@@ -157,5 +158,21 @@ public class SaleController {
             @Parameter(description = "분류코드 필터(미지정=전체)") @RequestParam(required = false) String catCode,
             @Parameter(description = "상품 id 필터(미지정=전체)") @RequestParam(required = false) Long productId) {
         return ApiResponse.success(saleService.bookInout(from, to, catCode, productId));
+    }
+
+    @Operation(summary = "거래처별 매출대비표(전년 동기간)",
+            description = "당해 기간 매출을 전년 동기간([from−1년, to−1년])과 비교. 수량·금액 + 증감 + 비율(%, 당해÷전년×100). "
+                    + "groupBy=PARTNER(거래처)/CATEGORY(거래처×분류)/BOOK(거래처×도서). SALE만, 취소 제외. 거래처·분류 옵션 필터.")
+    @GetMapping("/yoy-comparison")
+    public ApiResponse<YoyComparisonResponse> yoyComparison(
+            @Parameter(description = "당해 시작일(yyyy-MM-dd)", required = true) @RequestParam
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @Parameter(description = "당해 종료일(yyyy-MM-dd)", required = true) @RequestParam
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @Parameter(description = "집계 단위(PARTNER/CATEGORY/BOOK)") @RequestParam(defaultValue = "PARTNER")
+            YoyComparisonResponse.GroupBy groupBy,
+            @Parameter(description = "거래처 id 필터(미지정=전체)") @RequestParam(required = false) Long partnerId,
+            @Parameter(description = "분류코드 필터(미지정=전체)") @RequestParam(required = false) String catCode) {
+        return ApiResponse.success(saleService.yoyComparison(from, to, groupBy, partnerId, catCode));
     }
 }
