@@ -64,4 +64,28 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
                                @Param("toDate") LocalDate toDate,
                                @Param("productId") Long productId,
                                @Param("warehouseId") Long warehouseId);
+
+    /**
+     * 도서입출고현황의 매입측(상품별 입고/취소) + 재고. 근거: 레거시 도서입출고현황.vb 입고/취소 버킷.
+     * 입고=INBOUND qty&gt;0(원가금액=qty×unit_cost), 취소(매입취소)=INBOUND qty&lt;0(역분개), 재고=SUM(qty≤종료일)(정본 재고).
+     * 상품 전 창고 합산. 반환 Object[]: [productId, code, name, catCode, catName, price,
+     *   inboundQty, inboundAmt, cancelQty, cancelAmt, stockQty].
+     */
+    @Query(value = """
+            SELECT t.product_id, p.code, p.name, p.cat_code, p.cat_name, p.price,
+              COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.txn_type='INBOUND' AND t.qty>0 THEN t.qty ELSE 0 END),0) AS inbound_qty,
+              COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.txn_type='INBOUND' AND t.qty>0 THEN t.qty*COALESCE(t.unit_cost,0) ELSE 0 END),0) AS inbound_amt,
+              COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.txn_type='INBOUND' AND t.qty<0 THEN -t.qty ELSE 0 END),0) AS cancel_qty,
+              COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.txn_type='INBOUND' AND t.qty<0 THEN -t.qty*COALESCE(t.unit_cost,0) ELSE 0 END),0) AS cancel_amt,
+              COALESCE(SUM(CASE WHEN t.trade_date <= :toDate THEN t.qty ELSE 0 END),0) AS stock_qty
+            FROM inventory_txn t JOIN products p ON p.id = t.product_id
+            WHERE (CAST(:catCode AS varchar) IS NULL OR p.cat_code = :catCode)
+              AND (CAST(:productId AS bigint) IS NULL OR t.product_id = :productId)
+            GROUP BY t.product_id, p.code, p.name, p.cat_code, p.cat_name, p.price
+            ORDER BY p.code
+            """, nativeQuery = true)
+    List<Object[]> bookPurchaseAgg(@Param("fromDate") LocalDate fromDate,
+                                   @Param("toDate") LocalDate toDate,
+                                   @Param("catCode") String catCode,
+                                   @Param("productId") Long productId);
 }

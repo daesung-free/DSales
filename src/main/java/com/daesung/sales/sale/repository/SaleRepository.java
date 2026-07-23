@@ -1,5 +1,6 @@
 package com.daesung.sales.sale.repository;
 
+import com.daesung.sales.sale.dto.BookSalesAgg;
 import com.daesung.sales.sale.dto.CategorySalesAgg;
 import com.daesung.sales.sale.dto.SalesStatementAgg;
 import com.daesung.sales.sale.entity.Sale;
@@ -77,6 +78,20 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
                                          @Param("to") LocalDate to,
                                          @Param("partnerId") Long partnerId,
                                          @Param("catCode") String catCode);
+
+    /**
+     * 도서입출고현황의 매출측(상품별 출고/반품 수량·금액). 취소 제외.
+     * 근거: 레거시 도서입출고현황.vb 매출/반품 버킷. 매입측·재고는 InventoryTxnRepository에서 병합.
+     */
+    @Query("select p.id as productId, "
+            + "sum(case when s.salesCategory = com.daesung.sales.salestype.entity.SalesCategory.SALE then s.qty else 0 end) as outQty, "
+            + "sum(case when s.salesCategory = com.daesung.sales.salestype.entity.SalesCategory.SALE then coalesce(s.supplyAmount,0) else 0 end) as outAmt, "
+            + "sum(case when s.salesCategory = com.daesung.sales.salestype.entity.SalesCategory.RETURN then s.qty else 0 end) as retQty, "
+            + "sum(case when s.salesCategory = com.daesung.sales.salestype.entity.SalesCategory.RETURN then coalesce(s.supplyAmount,0) else 0 end) as retAmt "
+            + "from Sale s join s.product p "
+            + "where s.canceled = false and s.salesDate between :from and :to "
+            + "group by p.id")
+    List<BookSalesAgg> bookSalesAgg(@Param("from") LocalDate from, @Param("to") LocalDate to);
 
     /** 매출일괄등록 멱등: 이미 등록된 소스키인지. */
     boolean existsByBulkImportKey(String bulkImportKey);

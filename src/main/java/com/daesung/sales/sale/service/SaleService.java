@@ -12,6 +12,8 @@ import com.daesung.sales.partner.entity.Partner;
 import com.daesung.sales.partner.repository.PartnerRepository;
 import com.daesung.sales.product.entity.Product;
 import com.daesung.sales.product.repository.ProductRepository;
+import com.daesung.sales.sale.dto.BookInoutResponse;
+import com.daesung.sales.sale.dto.BookSalesAgg;
 import com.daesung.sales.sale.dto.CategorySalesAgg;
 import com.daesung.sales.sale.dto.CategorySalesResponse;
 import com.daesung.sales.sale.dto.SaleResponse;
@@ -362,6 +364,61 @@ public class SaleService {
             return a2;
         }
         return (a2 == null || a2.isEmpty()) ? a1 : a1 + " " + a2;
+    }
+
+    /**
+     * 도서입출고현황. 근거: 레거시 도서입출고현황.vb(매입+매출 이중장부 종합).
+     * 매입측(입고/취소, inventory_txn 원가) + 매출측(출고/반품, sales 공급가) + 정본 재고(종료일 기준)를 상품키로 병합.
+     * 취소=매입취소(INBOUND 역분개, 현재 미모델링이면 0), 매출총이익=실판매−실매입.
+     * 매입 거래처≠매출 거래처(이중장부)라 거래처 그룹은 제외(도서 단위). catCode·productId 옵션 필터.
+     */
+    @Transactional(readOnly = true)
+    public BookInoutResponse bookInout(LocalDate from, LocalDate to, String catCode, Long productId) {
+        // 매출측(상품별 출고/반품) → productId 맵
+        Map<Long, BookSalesAgg> salesByProduct = new HashMap<>();
+        for (BookSalesAgg a : saleRepository.bookSalesAgg(from, to)) {
+            salesByProduct.put(a.getProductId(), a);
+        }
+
+        List<BookInoutResponse.Row> rows = new ArrayList<>();
+        for (Object[] r : inventoryTxnRepository.bookPurchaseAgg(from, to, catCode, productId)) {
+            long pid = ((Number) r[0]).longValue();
+            long inQty = num(r[6]);
+            long inAmt = num(r[7]);
+            long cancQty = num(r[8]);
+            long cancAmt = num(r[9]);
+            long stockQty = num(r[10]);
+
+            BookSalesAgg s = salesByProduct.get(pid);
+            long outQty = (s == null) ? 0 : s.getOutQty();
+            long outAmt = (s == null) ? 0 : s.getOutAmt();
+            long retQty = (s == null) ? 0 : s.getRetQty();
+            long retAmt = (s == null) ? 0 : s.getRetAmt();
+
+            // 움직임·재고 모두 없으면 스킵
+            if (inQty == 0 && cancQty == 0 && outQty == 0 && retQty == 0 && stockQty == 0) {
+                continue;
+            }
+
+            Double cancelRate = (inQty == 0) ? null : round2(cancQty * 100.0 / inQty);
+            Double returnRate = (outQty == 0) ? null : round2(retQty * 100.0 / outQty);
+            long netPurQty = inQty - cancQty;
+            long netPurAmt = inAmt - cancAmt;
+            long netSalesQty = outQty - retQty;
+            long netSalesAmt = outAmt - retAmt;
+
+            rows.add(new BookInoutResponse.Row(
+                    pid, (String) r[1], (String) r[2], (String) r[3], (String) r[4],
+                    (r[5] == null) ? null : ((Number) r[5]).intValue(),
+                    inQty, inAmt, cancQty, cancAmt, cancelRate, netPurQty, netPurAmt,
+                    outQty, outAmt, retQty, retAmt, returnRate, netSalesQty, netSalesAmt,
+                    stockQty, netSalesAmt - netPurAmt));
+        }
+        return new BookInoutResponse(from, to, catCode, rows);
+    }
+
+    private static Double round2(double v) {
+        return Math.round(v * 100.0) / 100.0;
     }
 
     /**

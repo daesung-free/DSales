@@ -3,6 +3,7 @@ package com.daesung.sales.sale.controller;
 import com.daesung.sales.common.dto.PageRequestDto;
 import com.daesung.sales.common.response.ApiResponse;
 import com.daesung.sales.common.response.PageResponse;
+import com.daesung.sales.sale.dto.BookInoutResponse;
 import com.daesung.sales.sale.dto.CategorySalesResponse;
 import com.daesung.sales.sale.dto.NetSalesResponse;
 import com.daesung.sales.sale.dto.SaleResponse;
@@ -141,5 +142,20 @@ public class SaleController {
             @Parameter(description = "거래처 id 필터(미지정=전체)") @RequestParam(required = false) Long partnerId,
             @Parameter(description = "분류코드 필터(미지정=전체)") @RequestParam(required = false) String catCode) {
         return ApiResponse.success(saleService.categorySales(from, to, partnerId, catCode));
+    }
+
+    @Operation(summary = "도서입출고현황",
+            description = "도서별 매입+매출 이중장부 종합. 매입측(입고·취소·취소율·실매입) + "
+                    + "매출측(출고·반품·반품률·실판매) + 정본 재고(종료일 기준) + 매출총이익(실판매−실매입). "
+                    + "취소=매입취소(INBOUND 역분개), 반품=매출반품. 취소건 제외. 분류·상품 옵션 필터.")
+    @GetMapping("/book-inout")
+    public ApiResponse<BookInoutResponse> bookInout(
+            @Parameter(description = "시작일(yyyy-MM-dd)", required = true) @RequestParam
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @Parameter(description = "종료일(yyyy-MM-dd)", required = true) @RequestParam
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @Parameter(description = "분류코드 필터(미지정=전체)") @RequestParam(required = false) String catCode,
+            @Parameter(description = "상품 id 필터(미지정=전체)") @RequestParam(required = false) Long productId) {
+        return ApiResponse.success(saleService.bookInout(from, to, catCode, productId));
     }
 }
