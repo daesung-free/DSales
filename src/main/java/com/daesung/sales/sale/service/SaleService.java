@@ -12,6 +12,8 @@ import com.daesung.sales.partner.entity.Partner;
 import com.daesung.sales.partner.repository.PartnerRepository;
 import com.daesung.sales.product.entity.Product;
 import com.daesung.sales.product.repository.ProductRepository;
+import com.daesung.sales.sale.dto.CategorySalesAgg;
+import com.daesung.sales.sale.dto.CategorySalesResponse;
 import com.daesung.sales.sale.dto.SaleResponse;
 import com.daesung.sales.sale.dto.SalesEntryRequest;
 import com.daesung.sales.sale.dto.SalesEntryResponse;
@@ -360,5 +362,25 @@ public class SaleService {
             return a2;
         }
         return (a2 == null || a2.isEmpty()) ? a1 : a1 + " " + a2;
+    }
+
+    /**
+     * 과목별매출현황. 근거: 레거시 과목별매출현황.vb(거래처×분류×도서 수량·반품률).
+     * 순매출수량=매출−반품, 반품률(%)=반품÷매출×100(매출0이면 null, 소수 2자리). 취소 제외.
+     */
+    @Transactional(readOnly = true)
+    public CategorySalesResponse categorySales(LocalDate from, LocalDate to, Long partnerId, String catCode) {
+        List<CategorySalesAgg> aggs = saleRepository.categorySales(from, to, partnerId, catCode);
+        List<CategorySalesResponse.Row> rows = new ArrayList<>(aggs.size());
+        for (CategorySalesAgg a : aggs) {
+            long sale = a.getSaleQty();
+            long ret = a.getReturnQty();
+            Double rate = (sale == 0) ? null : Math.round(ret * 100.0 / sale * 100.0) / 100.0;
+            rows.add(new CategorySalesResponse.Row(
+                    a.getPartnerId(), a.getPartnerCode(), a.getPartnerName(),
+                    a.getCatCode(), a.getCatName(), a.getBookCode(), a.getBookName(),
+                    sale, ret, sale - ret, a.getTeacherQty(), rate));
+        }
+        return new CategorySalesResponse(from, to, partnerId, catCode, rows);
     }
 }

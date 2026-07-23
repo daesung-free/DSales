@@ -1,5 +1,6 @@
 package com.daesung.sales.sale.repository;
 
+import com.daesung.sales.sale.dto.CategorySalesAgg;
 import com.daesung.sales.sale.dto.SalesStatementAgg;
 import com.daesung.sales.sale.entity.Sale;
 import com.daesung.sales.salestype.entity.SalesCategory;
@@ -53,6 +54,29 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
                               @Param("from") LocalDate from,
                               @Param("to") LocalDate to,
                               @Param("categories") java.util.Collection<SalesCategory> categories);
+
+    /**
+     * 과목별매출현황 집계(거래처×분류×도서). 취소 제외, 거래처·분류 옵션 필터.
+     * 매출/반품/교사용 수량을 salesCategory로 버킷. 근거: 레거시 과목별매출현황.vb.
+     */
+    @Query("""
+            select pt.id as partnerId, pt.code as partnerCode, pt.name as partnerName,
+                   p.catCode as catCode, p.catName as catName, p.code as bookCode, p.name as bookName,
+                   sum(case when s.salesCategory = com.daesung.sales.salestype.entity.SalesCategory.SALE then s.qty else 0 end) as saleQty,
+                   sum(case when s.salesCategory = com.daesung.sales.salestype.entity.SalesCategory.RETURN then s.qty else 0 end) as returnQty,
+                   sum(case when s.salesCategory = com.daesung.sales.salestype.entity.SalesCategory.FREE then s.qty else 0 end) as teacherQty
+            from Sale s join s.product p join s.partner pt
+            where s.canceled = false
+              and s.salesDate between :from and :to
+              and (:partnerId is null or pt.id = :partnerId)
+              and (:catCode is null or p.catCode = :catCode)
+            group by pt.id, pt.code, pt.name, p.catCode, p.catName, p.code, p.name
+            order by pt.code asc, p.catCode asc, p.code asc
+            """)
+    List<CategorySalesAgg> categorySales(@Param("from") LocalDate from,
+                                         @Param("to") LocalDate to,
+                                         @Param("partnerId") Long partnerId,
+                                         @Param("catCode") String catCode);
 
     /** 매출일괄등록 멱등: 이미 등록된 소스키인지. */
     boolean existsByBulkImportKey(String bulkImportKey);
