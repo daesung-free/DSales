@@ -24,6 +24,8 @@ ext {
 	querydslVersion = '5.1.0'
 	poiVersion = '5.3.0'
 	springdocVersion = '2.7.0'
+	// Docker Engine 29.x(min API 1.40) 대응 — Boot 3.4.5 기본 TC(1.20.6)의 docker-java가 구 API로 핑해 실패.
+	set('testcontainers.version', '1.21.3')
 }
 
 dependencies {
@@ -88,6 +90,18 @@ sourceSets {
 
 tasks.named('test') {
 	useJUnitPlatform()
+	// 로컬 Docker Desktop(macOS) 소켓을 Testcontainers에 전달. CI/타 환경은 환경변수 우선.
+	def dockerHost = System.getenv('DOCKER_HOST')
+	if (dockerHost) {
+		environment 'DOCKER_HOST', dockerHost
+	} else if (file("${System.getProperty('user.home')}/.docker/run/docker.sock").exists()) {
+		environment 'DOCKER_HOST', "unix://${System.getProperty('user.home')}/.docker/run/docker.sock"
+	}
+	environment 'TESTCONTAINERS_RYUK_DISABLED', 'true'
+	// Docker Engine 29.x는 min API 1.40 — docker-java 기본값(1.32)이 낮아 400. env·시스템프로퍼티 양쪽 주입.
+	def apiVer = System.getenv('DOCKER_API_VERSION') ?: '1.44'
+	environment 'DOCKER_API_VERSION', apiVer
+	systemProperty 'api.version', apiVer          // docker-java Properties 키
 }
 
 clean {
