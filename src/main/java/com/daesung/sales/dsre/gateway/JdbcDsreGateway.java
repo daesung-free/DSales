@@ -140,6 +140,58 @@ public class JdbcDsreGateway implements DsreGateway {
     private static final String WOL_ACCIDENT = "SELECT MAT_CD, CNT, REPLACE(REG_DATE,'-','') SDATE FROM tbl_wol_dtl";
     private static final String WOL_NORMAL = "SELECT MAT_CD, CNT, REPLACE(REG_DATE,'-','') SDATE FROM tbl_wol_dtl_b";
 
+    // ── 물류단가 관리(DSRE2 tbl_logis_cost write-back) ─────────────────────────────
+    private static final String RATE_LIST_SQL = """
+            SELECT DTL_CD, PAPER, OMR, ETC, LABEL, BASIC, TRADE, PACKTYPE, bSpare
+            FROM tbl_logis_cost ORDER BY DTL_CD
+            """;
+
+    @Override
+    public List<LogisCostRate> listLogisCosts() {
+        return dsreJdbcTemplate.query(RATE_LIST_SQL,
+                (rs, i) -> new LogisCostRate(
+                        rs.getInt("DTL_CD"), rs.getInt("PAPER"), rs.getInt("OMR"), rs.getInt("ETC"),
+                        rs.getInt("LABEL"), rs.getInt("BASIC"), rs.getInt("TRADE"),
+                        rs.getInt("PACKTYPE"), rs.getString("bSpare")));
+    }
+
+    @Override
+    public void upsertLogisCost(int dtlCd, int paper, int omr, int etc, int label,
+                                int basic, int trade, int packtype, String bSpare) {
+        // PK가 (idx, dtl_cd)라 dtl_cd 단일 ON DUPLICATE 불가 → 존재검사 후 UPDATE/INSERT(레거시 동일).
+        Integer cnt = dsreJdbcTemplate.queryForObject(
+                "SELECT COUNT(*) FROM tbl_logis_cost WHERE dtl_cd=?", Integer.class, dtlCd);
+        if (cnt != null && cnt > 0) {
+            dsreJdbcTemplate.update("""
+                    UPDATE tbl_logis_cost SET PAPER=?,OMR=?,ETC=?,LABEL=?,BASIC=?,TRADE=?,PACKTYPE=?,bSpare=?,INPUTDATE=now()
+                    WHERE dtl_cd=?
+                    """, paper, omr, etc, label, basic, trade, packtype, bSpare, dtlCd);
+        } else {
+            dsreJdbcTemplate.update("""
+                    INSERT INTO tbl_logis_cost (dtl_cd,paper,omr,etc,label,basic,trade,packtype,bSpare,inputDate)
+                    VALUES (?,?,?,?,?,?,?,?,?,now())
+                    """, dtlCd, paper, omr, etc, label, basic, trade, packtype, bSpare);
+        }
+    }
+
+    @Override
+    public int deleteLogisCost(int dtlCd) {
+        return dsreJdbcTemplate.update("DELETE FROM tbl_logis_cost WHERE dtl_cd=?", dtlCd);
+    }
+
+    @Override
+    public void updateReturnRate(int paper, int omr, int etc) {
+        int updated = dsreJdbcTemplate.update(
+                "UPDATE tbl_logis_cost SET PAPER=?,OMR=?,ETC=?,INPUTDATE=now() WHERE dtl_cd=0", paper, omr, etc);
+        if (updated == 0) {
+            // 회수단가 행(dtl_cd=0) 부재 시 생성(LABEL/BASIC/TRADE=0, packtype=1).
+            dsreJdbcTemplate.update("""
+                    INSERT INTO tbl_logis_cost (dtl_cd,paper,omr,etc,label,basic,trade,packtype,bSpare,inputDate)
+                    VALUES (0,?,?,?,0,0,0,1,'Y',now())
+                    """, paper, omr, etc);
+        }
+    }
+
     @Override
     public PeriodLogisCost calcReturnPeriod(LocalDate from, LocalDate to, LogisMode mode) {
         String source = switch (mode) {

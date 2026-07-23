@@ -26,6 +26,21 @@ public interface DsreGateway {
      */
     PeriodLogisCost calcReturnPeriod(java.time.LocalDate from, java.time.LocalDate to, LogisMode mode);
 
+    // ── 물류단가 관리(DSRE2 tbl_logis_cost write-back) — 근거: 레거시 물류비용등록.vb ──
+
+    /** 물류단가 전체 목록(DTL_CD 오름차순). */
+    java.util.List<LogisCostRate> listLogisCosts();
+
+    /** 물류단가 등록/수정(dtl_cd 기준 upsert). */
+    void upsertLogisCost(int dtlCd, int paper, int omr, int etc, int label,
+                         int basic, int trade, int packtype, String bSpare);
+
+    /** 물류단가 삭제(dtl_cd). 삭제 행수 반환. */
+    int deleteLogisCost(int dtlCd);
+
+    /** 회수단가(dtl_cd=0) 수정(PAPER/OMR/ETC만). 없으면 생성. */
+    void updateReturnRate(int paper, int omr, int etc);
+
     /** 매출일괄등록 대상(미처리 state='A') 조회. 신청일자 기간 필터. */
     java.util.List<BooklistImportRow> readPendingBooklist(java.time.LocalDate from, java.time.LocalDate to);
 

@@ -1,25 +1,36 @@
 package com.daesung.sales.logistics.controller;
 
+import com.daesung.sales.common.exception.BusinessException;
+import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.common.response.ApiResponse;
 import com.daesung.sales.dsre.gateway.DsreGateway;
+import com.daesung.sales.dsre.gateway.LogisCostRate;
 import com.daesung.sales.dsre.gateway.LogisMode;
 import com.daesung.sales.dsre.gateway.OutboundLogisCost;
 import com.daesung.sales.dsre.gateway.PeriodLogisCost;
+import com.daesung.sales.logistics.dto.LogisCostUpsertRequest;
+import com.daesung.sales.logistics.dto.ReturnRateRequest;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import java.time.LocalDate;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 물류/작업 · 물류비. DSRE2 의존(단가·수량·인원이 전부 DSRE2에 있음) → daesung.dsre.enabled=true일 때만.
- * 신청(REQ) 단위 출고금액 + 기간 출고·회수(반품/사고) 집계.
+ * 신청(REQ) 단위 출고금액 + 기간 출고·회수 집계 + 물류단가 관리(DSRE2 write-back).
  */
 @Tag(name = "물류/작업 · 물류비", description = "DSRE2 기반 출고 물류비 계산(자재금액+인원비)")
 @RestController
@@ -69,5 +80,45 @@ public class LogisticsController {
             @Parameter(description = "구분(전체/반품/사고)", example = "ALL")
             @RequestParam(defaultValue = "ALL") LogisMode mode) {
         return ApiResponse.success(dsreGateway.calcReturnPeriod(from, to, mode));
+    }
+
+    // ── 물류단가 관리(기초관리 · DSRE2 tbl_logis_cost write-back) — 근거: 레거시 물류비용등록.vb ──
+
+    @Operation(summary = "물류단가 목록",
+            description = "DSRE2 tbl_logis_cost 전체 단가(시행코드별). dtl_cd=0은 회수단가.")
+    @GetMapping("/rates")
+    public ApiResponse<List<LogisCostRate>> listRates() {
+        return ApiResponse.success(dsreGateway.listLogisCosts());
+    }
+
+    @Operation(summary = "물류단가 등록/수정",
+            description = "시행코드(dtl_cd)별 단가 upsert(있으면 수정, 없으면 등록). DSRE2에 직접 write-back.")
+    @PutMapping("/rates/{dtlCd}")
+    public ApiResponse<Void> upsertRate(
+            @Parameter(description = "시행코드(DTL_CD)", example = "10") @PathVariable int dtlCd,
+            @Valid @RequestBody LogisCostUpsertRequest req) {
+        dsreGateway.upsertLogisCost(dtlCd, req.paper(), req.omr(), req.etc(), req.label(),
+                req.basic(), req.trade(), req.packtype(), req.bSpare());
+        return ApiResponse.success(null);
+    }
+
+    @Operation(summary = "물류단가 삭제",
+            description = "시행코드(dtl_cd)의 단가 삭제. 없으면 404.")
+    @DeleteMapping("/rates/{dtlCd}")
+    public ApiResponse<Void> deleteRate(
+            @Parameter(description = "시행코드(DTL_CD)", example = "10") @PathVariable int dtlCd) {
+        int deleted = dsreGateway.deleteLogisCost(dtlCd);
+        if (deleted == 0) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "물류단가가 없습니다. dtl_cd=" + dtlCd);
+        }
+        return ApiResponse.success(null);
+    }
+
+    @Operation(summary = "회수단가 수정",
+            description = "회수 단가(dtl_cd=0 특수행)의 PAPER/OMR/ETC 수정. 없으면 생성. 근거: 레거시 회수단가 수정.")
+    @PutMapping("/rates/return")
+    public ApiResponse<Void> updateReturnRate(@Valid @RequestBody ReturnRateRequest req) {
+        dsreGateway.updateReturnRate(req.paper(), req.omr(), req.etc());
+        return ApiResponse.success(null);
     }
 }
