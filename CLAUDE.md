@@ -126,7 +126,7 @@ python3 <script> --sheet <ID> --tab <탭명>   # scratchpad의 read_*.py 참고.
   - 보안: **인증 필수(JWT)**. 로그인/토큰재발급/부트스트랩·Swagger만 공개, 그 외 인증 요구. 새 API는 기본적으로 인증 하에 동작(테스트 시 `POST /auth/login`으로 토큰 받아 `Authorization: Bearer` 헤더). **역할별 세부 권한 매트릭스(마감=FINANCE 등)는 발주처 확정 후 경로/@PreAuthorize로 확장** — 현재는 "인증된 사용자면 허용"까지. `created_by/updated_by`는 로그인 사용자 자동. Swagger는 `/swagger-ui/index.html`.
 - 언어: 산출물·주석·커밋 메시지는 한국어 우선(팀 문서가 한국어).
 
-## 10. 지금까지의 진행 (세션 컨텍스트) — 실측 최신(스키마 V1~V12, git 57커밋)
+## 10. 지금까지의 진행 (세션 컨텍스트) — 실측 최신(스키마 V1~V13, git 52커밋)
 
 **인프라**: Postgres(sales) + Redis(refresh·캐시) + DSRE2 MySQL 복제본(docker `sales-dsre-mysql:3307`, 볼륨 `sales-dsredata`에 영속). 로컬 테스트는 **DB만 docker, 앱은 `./gradlew bootRun` (테스트 포트 8081)**. DSRE 기능은 `--daesung.dsre.enabled=true`로 켬(기본 off).
 
@@ -141,9 +141,18 @@ python3 <script> --sheet <ID> --tab <탭명>   # scratchpad의 read_*.py 참고.
 - Redis 캐시: 출고유형룩업·월마감상태(@Cacheable/@CacheEvict)
 - **DSRE 연동(분리 확정)**: DsreGateway(호출만) + **인원산출·물류비 출고금액·매출일괄등록(state='T' write-back + 소스키 멱등)**
 - **대시보드**: 매출목표 마스터(V12) + 목표대비 실적·달성률·전년비
+- **★상품 카테고리축(V13 `cat_code`/`cat_name`)**: 계층 분류코드(첫 글자=대분류). 매출 리포트 5종의 공유 축. CRUD 노출. ⚠️ **실 데이터 출처 미정**(현재 수동입력만) — 이슈2 참고.
+- **매출 리포트 6종(레거시 재현, `sale`/`inventory` 재사용)**:
+  - 매출액명세서(`/sales/statement`): 분류 3계층 rollup(대분류→분류→도서), 합계=금액+세액
+  - 거래명세서(`/sales/transaction-statement`): 공급자(SupplierProperties 단일법인)·공급받는자(거래처)·유가/무가 분리
+  - 과목별매출현황(`/sales/category-summary`): 거래처×분류×도서 매출/반품/교사용 수량·반품률
+  - 도서입출고현황(`/sales/book-inout`): **매입(inventory_txn 원가)+매출(sales 공급가) 이중장부 종합** + 정본 재고(SUM txn)·매출총이익. 취소=INBOUND 음수(현재 미모델링→0)
+  - 거래처별 매출대비표(`/sales/yoy-comparison`): 당해 vs **전년 동기간**(salesDate 기준) 증감·비율, groupBy PARTNER/CATEGORY/BOOK
+  - 물류비 회수·기간집계(`/logistics-costs`): 출고(기간·구분)+회수(반품/사고), DSRE
+- **✅테스트(회귀 방어)**: 매출 리포트 6종 **통합테스트**(Testcontainers Postgres+Redis, `IntegrationTestSupport` 베이스). `./gradlew test` → 7통과. ⚠️ Docker 29 대응 위해 TC **1.21.3** override(build.gradle).
 
-**⬜ 미구현(결정 없이 가능)**: 물류비 회수(반품)·기간집계 / 매출액명세서(catCode rollup, 상품 카테고리축 필요) / 리포트 데이터 API 13종 / 마이그레이션 스크립트
+**⬜ 미구현(결정 없이 가능)**: 정산내역서(위탁정산 내역, ⏸위탁 회계기준 회신 걸림) / 리포트 데이터 API 잔여(응시·회차현황=DSRE 의존) / 매출액명세서 등 리포트의 **프론트 RDLC 렌더링(나눔고딕, 백엔드 밖)** / 마이그레이션 스크립트(Phase6)
 
-**⏸ 회신 대기(발주처·재무팀)**: 상태머신(상태전이도 승인=하드블로커) / 위탁 회계기준 적정성 / 매입원가 기준 / 여신한도(별개?) / 수금 건별매칭 / **법인 축(멀티테넌트: 현재 단일법인 가정 — 월마감·계산서 공급자)** / 세금 반올림(현재 버림) / 취소 30% 재분류(우리 모델이 이미 커버).
+**⏸ 회신 대기(발주처·재무팀)**: 상태머신(상태전이도 승인=하드블로커) / **catCode 데이터 출처·연도 정의(이슈2·3 — 리포트 5종 급소: 레거시는 catCode에 연도 인코딩, 우리는 자유문자열)** / 위탁 회계기준 적정성 / 매입원가·매입취소 이벤트 / 여신한도(별개?) / 수금 건별매칭 / **법인 축(멀티테넌트: 현재 단일법인 가정 — 월마감·계산서·거래명세서 공급자)** / 세금 반올림(현재 버림) / 취소 30% 재분류(우리 모델이 이미 커버).
 
-**규율(반드시 지킬 것)**: 신규 기능은 착수 전 **레거시 `.vb` + 정본 시트 3중 확인**(mis-scope 방지 — 물류비가 DSRE 의존인 걸 이렇게 잡음) → 만들고 → **로컬 E2E(로그인 토큰 포함) 검증** → 커밋(한국어, 검증 요약 포함). DSRE 픽스처는 scratchpad(비커밋), 데이터는 docker 볼륨에 영속.
+**규율(반드시 지킬 것)**: 신규 기능은 착수 전 **레거시 `.vb` + 정본 시트 3중 확인**(mis-scope 방지 — 물류비가 DSRE 의존인 걸 이렇게 잡음) → 만들고 → **로컬 E2E(로그인 토큰 포함) 검증** → 커밋(한국어, 검증 요약 포함). **핵심 로직·리포트는 통합테스트로 회귀 고정**(`IntegrationTestSupport` 상속, Testcontainers). DSRE 픽스처는 scratchpad(비커밋), 데이터는 docker 볼륨에 영속.
