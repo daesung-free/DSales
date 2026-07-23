@@ -1,8 +1,6 @@
 package com.daesung.sales.inventory.entity;
 
 import com.daesung.sales.common.entity.BaseEntity;
-import com.daesung.sales.common.exception.BusinessException;
-import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.product.entity.Product;
 import com.daesung.sales.warehouse.entity.Warehouse;
 import jakarta.persistence.Column;
@@ -48,15 +46,5 @@ public class Inventory extends BaseEntity {
         inv.warehouse = warehouse;
         inv.qty = qty;
         return inv;
-    }
-
-    /** 잔량 증감(입고 +, 출고 -). 음수재고는 불변식 위반 → 예외. */
-    public void addQty(int delta) {
-        int result = this.qty + delta;
-        if (result < 0) {
-            throw new BusinessException(ErrorCode.NEGATIVE_STOCK,
-                    "재고 부족: 현재 " + this.qty + ", 요청 " + delta);
-        }
-        this.qty = result;
     }
 }

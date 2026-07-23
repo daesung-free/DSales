@@ -58,7 +58,7 @@
 - 출고유형(6)→회계구분(3) **룩업**(레거시는 tradeType 자유문자열+하드코딩 CASE). **취소는 공급률 30% 기준**으로 매출/무가 분기.
 - 채권/여신: 미수금 러닝밸런스, 담보(여신한도 컬럼 신규), 수금/어음.
 - 매출목표(대시보드용), RBAC(부서별), 감사컬럼(created_by/updated_by/modified_at 전 테이블 표준), **월마감 `period_locks`**(§7 갭 참고).
-- 채번: 레거시 `Max+1`(동시성 없음) 폐기 → **시퀀스+분산락**. 전표 접두어 S(출고)/I(매출)/P(폐기)/OUT(위탁원본).
+- 채번: 레거시 `Max+1`(동시성 없음) 폐기 → **PostgreSQL 시퀀스**(`nextval` — 동시성 안전, 별도 분산락 불필요). 전표 접두어 I(매출)/P(폐기)/OUT(위탁원본)/수금·실사 등. (정상출고는 별도 S전표 없이 매출번호 I로 흡수 — `seq_shipment_no`는 V14에서 제거.)
 
 ## 6. Phase 로드맵 (개발문서 기준)
 - **Phase 0 · 사전조치**: 🔴 order IDOR 핫픽스 / 시크릿·계정 로테이션 / ~~DSRE2 통합·분리 결정~~ **✅ 분리(기존 유지)로 확정** → 남은 건 운영 DSRE2 접속정보·마스킹 덤프 확보 / 과거 위탁미결 복원불가 서면합의 / 재견적 협의.
@@ -114,7 +114,7 @@ python3 <script> --sheet <ID> --tab <탭명>   # scratchpad의 read_*.py 참고.
 - **★ 재고 정의 단일화(레거시 #4 근절)**: 레거시는 재고 잔고를 저장 안 하고 화면마다 다른 공식으로 계산 → 같은 도서가 화면마다 재고 다름. 우리는 **`inventory_txn`(이벤트 로그)이 유일 진실**, 재고 = `SUM(qty) by 상품×창고`라는 **단 하나의 공식(=제품수불부)**. `inventory.qty`는 그 공식의 **재생성 가능한 캐시**일 뿐(언제든 txn에서 재계산·대사 가능). **화면마다 다른 재고 계산식 금지.**
 - **재고 잔량 갱신 동시성**: read-modify-write 금지. **원자적 UPDATE** `qty = qty + :delta`(`InventoryRepository.addQty`, `@Modifying`)로 갱신 → 동시 갱신에도 lost update 없음(DB 행 잠금 직렬화). 최초 생성(행 없음) 경합은 (product_id, warehouse_id) UNIQUE가 방어. (병렬 20건 입고 검증: 정확히 누적됨. 참고로 파생쿼리 `@Lock`은 이 케이스에서 유실 재현돼 원자 UPDATE 채택.)
 - **화면 선개발 금지**: 대응 백엔드 로직·스키마가 확정되기 전 화면 착수 금지(원칙②).
-- **공통 API 응답 형식**(Claude 추가, 시트 미명시): 모든 컨트롤러는 `ApiResponse<T>`로 감싸 반환(`{success, data, error}`). 도메인 오류는 `throw new BusinessException(ErrorCode.XXX)` → `GlobalExceptionHandler`가 공통 실패 응답으로 변환. 에러코드는 `common/exception/ErrorCode`에 추가(예: PERIOD_LOCKED·NEGATIVE_STOCK·OVER_SETTLEMENT).
+- **공통 API 응답 형식**(Claude 추가, 시트 미명시): 모든 컨트롤러는 `ApiResponse<T>`로 감싸 반환(`{success, data, error}`). 도메인 오류는 `throw new BusinessException(ErrorCode.XXX)` → `GlobalExceptionHandler`가 공통 실패 응답으로 변환. 에러코드는 `common/exception/ErrorCode`에 추가(예: PERIOD_LOCKED·NEGATIVE_STOCK·OVER_SETTLEMENT). **예외: 파일 다운로드(예: 계산서 xlsx `TaxController.export`)는 `ResponseEntity<byte[]>`로 반환**(바이너리라 래핑 안 함).
 - **★ API 작성 규약(신규 API는 항상 이 형태로)**:
   - 경로: `/api/v1` 자동 prefix(WebConfig). 컨트롤러엔 `/masters/...` 처럼만 매핑.
   - 계층: `controller` → `service`(@Transactional) → `repository`. DTO는 각 기능 `dto/` 패키지(record 권장).
@@ -123,7 +123,7 @@ python3 <script> --sheet <ID> --tab <탭명>   # scratchpad의 read_*.py 참고.
   - **Swagger 한글 문서화 필수**: 컨트롤러 `@Tag(name,description)`, 메서드 `@Operation(summary,description)`, 요청 DTO 필드 `@Schema(description,example, requiredMode)`. → Swagger가 한글 설명+예시값 자동 노출.
   - 등록 검증: `@Valid` + 코드 중복 등 도메인 검증은 서비스에서 `BusinessException`.
   - **참고 템플릿**: `product`/`warehouse`/`partner` 패키지(상품·창고·거래처 CRUD)가 표준 예시. 새 API는 이걸 복제·변형.
-  - 보안: **인증 필수(JWT)**. 로그인/토큰재발급/부트스트랩·Swagger만 공개, 그 외 인증 요구. 새 API는 기본적으로 인증 하에 동작(테스트 시 `POST /auth/login`으로 토큰 받아 `Authorization: Bearer` 헤더). **역할별 세부 권한 매트릭스(마감=FINANCE 등)는 발주처 확정 후 경로/@PreAuthorize로 확장** — 현재는 "인증된 사용자면 허용"까지. `created_by/updated_by`는 로그인 사용자 자동. Swagger는 `/swagger-ui/index.html`.
+  - 보안: **인증 필수(JWT)**. 로그인/토큰재발급/부트스트랩·Swagger·`/actuator/health`만 공개, 그 외 인증 요구. 새 API는 기본적으로 인증 하에 동작(테스트 시 `POST /auth/login`으로 토큰 받아 `Authorization: Bearer` 헤더). **역할별 세부 권한 매트릭스(마감=FINANCE 등)는 발주처 확정 후 경로/@PreAuthorize로 확장** — 현재는 "인증된 사용자면 허용"까지. `created_by/updated_by`는 로그인 사용자 자동. Swagger는 `/swagger-ui/index.html`.
 - 언어: 산출물·주석·커밋 메시지는 한국어 우선(팀 문서가 한국어).
 
 ## 10. 지금까지의 진행 (세션 컨텍스트) — 실측 최신(스키마 V1~V13, git 52커밋)
