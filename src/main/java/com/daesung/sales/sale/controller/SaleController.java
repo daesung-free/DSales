@@ -9,6 +9,7 @@ import com.daesung.sales.sale.dto.SalesEntryRequest;
 import com.daesung.sales.sale.dto.SalesEntryResponse;
 import com.daesung.sales.sale.dto.SalesStatementResponse;
 import com.daesung.sales.sale.dto.SalesSummaryResponse;
+import com.daesung.sales.sale.dto.TransactionStatementResponse;
 import com.daesung.sales.sale.service.SaleService;
 import com.daesung.sales.salestype.entity.SalesCategory;
 import com.daesung.sales.salestype.entity.ShipmentType;
@@ -109,5 +110,21 @@ public class SaleController {
             @Parameter(description = "회계구분(SALE/FREE/RETURN, 미지정=전체)") @RequestParam(required = false)
             SalesCategory category) {
         return ApiResponse.success(saleService.statement(from, to, category));
+    }
+
+    @Operation(summary = "거래명세서",
+            description = "거래처×기간의 거래명세서 데이터. 공급자(자사)·공급받는자(거래처 세무정보) + "
+                    + "유가(공급가액>0)/무가(교사용·증정) 라인 분리 + 합계(공급가액·세액·합계). 취소 제외. "
+                    + "category 미지정=매출(SALE)+무가(FREE), category=RETURN이면 반품명세서.")
+    @GetMapping("/transaction-statement")
+    public ApiResponse<TransactionStatementResponse> transactionStatement(
+            @Parameter(description = "거래처 id", required = true) @RequestParam Long partnerId,
+            @Parameter(description = "시작일(yyyy-MM-dd)", required = true) @RequestParam
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @Parameter(description = "종료일(yyyy-MM-dd)", required = true) @RequestParam
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @Parameter(description = "회계구분(미지정=매출+무가, RETURN=반품명세서)") @RequestParam(required = false)
+            SalesCategory category) {
+        return ApiResponse.success(saleService.transactionStatement(partnerId, from, to, category));
     }
 }

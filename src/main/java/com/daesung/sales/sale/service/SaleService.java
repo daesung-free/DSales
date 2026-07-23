@@ -2,6 +2,7 @@ package com.daesung.sales.sale.service;
 
 import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
+import com.daesung.sales.closing.config.SupplierProperties;
 import com.daesung.sales.closing.service.PeriodLockService;
 import com.daesung.sales.common.response.PageResponse;
 import com.daesung.sales.inventory.entity.TxnType;
@@ -18,6 +19,7 @@ import com.daesung.sales.sale.dto.NetSalesResponse;
 import com.daesung.sales.sale.dto.SalesStatementAgg;
 import com.daesung.sales.sale.dto.SalesStatementResponse;
 import com.daesung.sales.sale.dto.SalesStatementRow;
+import com.daesung.sales.sale.dto.TransactionStatementResponse;
 import com.daesung.sales.sale.dto.SalesSummaryResponse;
 import com.daesung.sales.sale.dto.SalesSummaryRow;
 import com.daesung.sales.sale.entity.Sale;
@@ -53,6 +55,7 @@ public class SaleService {
     private final InventoryService inventoryService;
     private final InventoryTxnRepository inventoryTxnRepository;
     private final PeriodLockService periodLockService;
+    private final SupplierProperties supplier;
 
     /**
      * 수기 매출 등록(일반 매출) + 재고 반영을 한 트랜잭션으로. 품목마다 금액 산출 → 매출번호(I) 채번 →
@@ -294,5 +297,68 @@ public class SaleService {
     /** 대분류코드 = catCode 첫 글자. null/빈값은 미분류(null). */
     private static String majorOf(String catCode) {
         return (catCode == null || catCode.isEmpty()) ? null : catCode.substring(0, 1);
+    }
+
+    /**
+     * 거래명세서. 근거: 레거시 UC_TabPages_ETC.vb 거래명세서 데이터셋(공급자/공급받는자 + 유가/무가 라인).
+     * 공급자=자사(SupplierProperties, 단일법인 가정), 공급받는자=거래처. 취소 제외.
+     * category=null이면 매출(SALE)+무가(FREE), 지정 시 해당 구분만(예: RETURN=반품명세서).
+     * 유가(공급가액≠0)/무가(=0) 분리, 합계=공급가액+세액.
+     */
+    @Transactional(readOnly = true)
+    public TransactionStatementResponse transactionStatement(Long partnerId, LocalDate from, LocalDate to,
+                                                             SalesCategory category) {
+        Partner partner = partnerRepository.findById(partnerId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "거래처가 없습니다. id=" + partnerId));
+        java.util.Collection<SalesCategory> cats = (category != null)
+                ? List.of(category)
+                : List.of(SalesCategory.SALE, SalesCategory.FREE);
+        List<Sale> sales = saleRepository.statementLines(partnerId, from, to, cats);
+
+        List<TransactionStatementResponse.Line> priced = new ArrayList<>();
+        List<TransactionStatementResponse.Line> free = new ArrayList<>();
+        long pQty = 0, pSupply = 0, pTax = 0, fQty = 0;
+        int pSeq = 0, fSeq = 0;
+
+        for (Sale s : sales) {
+            long supply = s.getSupplyAmount() == null ? 0 : s.getSupplyAmount();
+            long tax = s.getTax() == null ? 0 : s.getTax();
+            Product p = s.getProduct();
+            String label = (p.getCatName() == null || p.getCatName().isEmpty())
+                    ? p.getName() : p.getCatName() + " / " + p.getName();
+            long unit = (s.getQty() != 0) ? supply / s.getQty() : 0;
+            String cat = s.getSalesCategory().name();
+
+            if (supply != 0) {
+                priced.add(new TransactionStatementResponse.Line(++pSeq, label, p.getCode(), s.getQty(),
+                        s.getUnitPrice(), s.getSupplyRate(), unit, supply, tax, cat, s.getMemo()));
+                pQty += s.getQty();
+                pSupply += supply;
+                pTax += tax;
+            } else {
+                free.add(new TransactionStatementResponse.Line(++fSeq, label, p.getCode(), s.getQty(),
+                        s.getUnitPrice(), s.getSupplyRate(), 0, 0, 0, cat, s.getMemo()));
+                fQty += s.getQty();
+            }
+        }
+
+        TransactionStatementResponse.Totals totals =
+                new TransactionStatementResponse.Totals(pQty, pSupply, pTax, pSupply + pTax, fQty);
+        TransactionStatementResponse.Party provider = new TransactionStatementResponse.Party(
+                null, supplier.name(), supplier.bizNo(), supplier.bossName(),
+                supplier.addr(), supplier.bizStatus(), supplier.bizItem());
+        TransactionStatementResponse.Party receiver = new TransactionStatementResponse.Party(
+                partner.getCode(), partner.getName(), partner.getBizNo(), partner.getBossName(),
+                joinAddr(partner.getAddr1(), partner.getAddr2()), partner.getBizStatus(), partner.getBizItem());
+
+        return new TransactionStatementResponse(from, to, category == null ? null : category.name(),
+                provider, receiver, priced, free, totals);
+    }
+
+    private static String joinAddr(String a1, String a2) {
+        if (a1 == null || a1.isEmpty()) {
+            return a2;
+        }
+        return (a2 == null || a2.isEmpty()) ? a1 : a1 + " " + a2;
     }
 }

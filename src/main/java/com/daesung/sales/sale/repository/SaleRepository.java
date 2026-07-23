@@ -40,6 +40,20 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
                                          @Param("to") LocalDate to,
                                          @Param("category") SalesCategory category);
 
+    /**
+     * 거래명세서 라인(거래처×기간). 취소 제외, 지정 회계구분(들)만. 상품 fetch join으로 N+1 방지.
+     * 정렬: 분류코드→도서코드→매출일자. 근거: 레거시 거래명세서 데이터셋.
+     */
+    @Query("select s from Sale s join fetch s.product p "
+            + "where s.partner.id = :partnerId and s.canceled = false "
+            + "and s.salesDate between :from and :to "
+            + "and s.salesCategory in :categories "
+            + "order by p.catCode asc, p.code asc, s.salesDate asc")
+    List<Sale> statementLines(@Param("partnerId") Long partnerId,
+                              @Param("from") LocalDate from,
+                              @Param("to") LocalDate to,
+                              @Param("categories") java.util.Collection<SalesCategory> categories);
+
     /** 매출일괄등록 멱등: 이미 등록된 소스키인지. */
     boolean existsByBulkImportKey(String bulkImportKey);
 
