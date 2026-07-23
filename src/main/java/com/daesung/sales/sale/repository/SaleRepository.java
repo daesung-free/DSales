@@ -1,5 +1,6 @@
 package com.daesung.sales.sale.repository;
 
+import com.daesung.sales.sale.dto.SalesStatementAgg;
 import com.daesung.sales.sale.entity.Sale;
 import com.daesung.sales.salestype.entity.SalesCategory;
 import com.daesung.sales.salestype.entity.ShipmentType;
@@ -16,6 +17,28 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     /** 매출번호(I) 채번용 시퀀스. 레거시 Max+1(동시성 없음) 대체. */
     @Query(value = "SELECT nextval('seq_invoice_no')", nativeQuery = true)
     long nextInvoiceSeq();
+
+    /**
+     * 매출액명세서 도서 단위 집계(취소 제외, 기간·회계구분 필터). 근거: 레거시 매출액명세서.vb.
+     * 금액=Σ공급가, 세액=Σ세액. 합계(금액+세액)와 대분류·소계·총계 rollup은 서비스에서 조립.
+     * 정렬은 rollup 조립 위해 catCode·code 오름차순.
+     */
+    @Query("""
+            select p.catCode as catCode, p.catName as catName,
+                   p.code as bookCode, p.name as bookName,
+                   sum(s.qty) as qty,
+                   sum(coalesce(s.supplyAmount, 0)) as amount,
+                   sum(coalesce(s.tax, 0)) as tax
+            from Sale s join s.product p
+            where s.canceled = false
+              and s.salesDate between :from and :to
+              and (:category is null or s.salesCategory = :category)
+            group by p.catCode, p.catName, p.code, p.name
+            order by p.catCode asc, p.code asc
+            """)
+    List<SalesStatementAgg> statementAgg(@Param("from") LocalDate from,
+                                         @Param("to") LocalDate to,
+                                         @Param("category") SalesCategory category);
 
     /** 매출일괄등록 멱등: 이미 등록된 소스키인지. */
     boolean existsByBulkImportKey(String bulkImportKey);

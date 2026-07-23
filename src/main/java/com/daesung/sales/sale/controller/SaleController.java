@@ -7,6 +7,7 @@ import com.daesung.sales.sale.dto.NetSalesResponse;
 import com.daesung.sales.sale.dto.SaleResponse;
 import com.daesung.sales.sale.dto.SalesEntryRequest;
 import com.daesung.sales.sale.dto.SalesEntryResponse;
+import com.daesung.sales.sale.dto.SalesStatementResponse;
 import com.daesung.sales.sale.dto.SalesSummaryResponse;
 import com.daesung.sales.sale.service.SaleService;
 import com.daesung.sales.salestype.entity.SalesCategory;
@@ -93,5 +94,20 @@ public class SaleController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @Parameter(description = "콘텐츠구분(SELF/EXTERNAL)") @RequestParam(required = false) String contentType) {
         return ApiResponse.success(saleService.netSales(fromDate, toDate, contentType));
+    }
+
+    @Operation(summary = "매출액명세서",
+            description = "분류코드(catCode) 계층으로 rollup한 매출 명세. 대분류(catCode 첫 글자)→분류→도서 "
+                    + "3계층 소계·총계. 금액=공급가, 세액, 합계=금액+세액. 취소건 제외. "
+                    + "category=SALE(매출)/FREE(무가)/RETURN(반품)/미지정(전체).")
+    @GetMapping("/statement")
+    public ApiResponse<SalesStatementResponse> statement(
+            @Parameter(description = "시작일(yyyy-MM-dd)", required = true) @RequestParam
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @Parameter(description = "종료일(yyyy-MM-dd)", required = true) @RequestParam
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @Parameter(description = "회계구분(SALE/FREE/RETURN, 미지정=전체)") @RequestParam(required = false)
+            SalesCategory category) {
+        return ApiResponse.success(saleService.statement(from, to, category));
     }
 }

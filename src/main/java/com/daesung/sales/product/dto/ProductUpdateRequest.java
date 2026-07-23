@@ -26,6 +26,12 @@ public record ProductUpdateRequest(
         @Schema(description = "학년", example = "고3")
         String grade,
 
+        @Schema(description = "분류코드(계층, 첫 글자=대분류)", example = "A01")
+        String catCode,
+
+        @Schema(description = "분류명", example = "국어 모의고사")
+        String catName,
+
         @Schema(description = "사용 여부", example = "true")
         boolean useYn
 ) {

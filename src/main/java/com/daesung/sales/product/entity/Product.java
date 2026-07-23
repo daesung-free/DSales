@@ -45,11 +45,20 @@ public class Product extends BaseEntity {
     @Column(length = 5)
     private String grade;
 
+    /** 분류코드(계층, 첫 글자=대분류). 매출액명세서 rollup 축. 근거: 레거시 catCode. */
+    @Column(name = "cat_code", length = 20)
+    private String catCode;
+
+    /** 분류명. 근거: 레거시 catName. */
+    @Column(name = "cat_name", length = 100)
+    private String catName;
+
     @Column(name = "use_yn", nullable = false)
     private boolean useYn = true;
 
     public static Product create(String code, String name, ContentType contentType, boolean set,
-                                 Integer price, boolean taxFree, String grade, boolean useYn) {
+                                 Integer price, boolean taxFree, String grade,
+                                 String catCode, String catName, boolean useYn) {
         Product p = new Product();
         p.code = code;
         p.name = name;
@@ -58,19 +67,23 @@ public class Product extends BaseEntity {
         p.price = price;
         p.taxFree = taxFree;
         p.grade = grade;
+        p.catCode = catCode;
+        p.catName = catName;
         p.useYn = useYn;
         return p;
     }
 
     /** 수정(코드는 불변). */
     public void update(String name, ContentType contentType, boolean set, Integer price,
-                       boolean taxFree, String grade, boolean useYn) {
+                       boolean taxFree, String grade, String catCode, String catName, boolean useYn) {
         this.name = name;
         this.contentType = contentType;
         this.set = set;
         this.price = price;
         this.taxFree = taxFree;
         this.grade = grade;
+        this.catCode = catCode;
+        this.catName = catName;
         this.useYn = useYn;
     }
 

@@ -15,6 +15,9 @@ import com.daesung.sales.sale.dto.SaleResponse;
 import com.daesung.sales.sale.dto.SalesEntryRequest;
 import com.daesung.sales.sale.dto.SalesEntryResponse;
 import com.daesung.sales.sale.dto.NetSalesResponse;
+import com.daesung.sales.sale.dto.SalesStatementAgg;
+import com.daesung.sales.sale.dto.SalesStatementResponse;
+import com.daesung.sales.sale.dto.SalesStatementRow;
 import com.daesung.sales.sale.dto.SalesSummaryResponse;
 import com.daesung.sales.sale.dto.SalesSummaryRow;
 import com.daesung.sales.sale.entity.Sale;
@@ -226,5 +229,70 @@ public class SaleService {
 
     private static long num(Object o) {
         return (o == null) ? 0L : ((Number) o).longValue();
+    }
+
+    /**
+     * 매출액명세서. 근거: 레거시 매출액명세서.vb rollup(left(catCode,1), catCode, bookCode).
+     * flat 도서집계를 상세→소계(분류)→분류계(대분류)→총계 순 계층으로 조립.
+     * 합계=금액+세액(레거시 totalAmt2 미사용 규칙). category=null이면 전체(매출·무가·반품).
+     */
+    @Transactional(readOnly = true)
+    public SalesStatementResponse statement(LocalDate from, LocalDate to, SalesCategory category) {
+        List<SalesStatementAgg> aggs = saleRepository.statementAgg(from, to, category);
+        List<SalesStatementRow> rows = new ArrayList<>();
+
+        long gQty = 0, gAmt = 0, gTax = 0;                 // 총계
+        String curMajor = null;
+        boolean majorOpen = false;
+        long mQty = 0, mAmt = 0, mTax = 0;                 // 대분류계
+        String curCat = null, curCatName = null;
+        boolean catOpen = false;
+        long cQty = 0, cAmt = 0, cTax = 0;                 // 분류 소계
+
+        for (SalesStatementAgg a : aggs) {
+            String major = majorOf(a.getCatCode());
+            String cat = a.getCatCode();
+
+            if (catOpen && !java.util.Objects.equals(cat, curCat)) {
+                rows.add(SalesStatementRow.catSubtotal(curMajor, curCat, curCatName, cQty, cAmt, cTax));
+                catOpen = false;
+            }
+            if (majorOpen && !java.util.Objects.equals(major, curMajor)) {
+                rows.add(SalesStatementRow.majorTotal(curMajor, mQty, mAmt, mTax));
+                majorOpen = false;
+            }
+            if (!majorOpen) {
+                curMajor = major;
+                mQty = mAmt = mTax = 0;
+                majorOpen = true;
+            }
+            if (!catOpen) {
+                curCat = cat;
+                curCatName = a.getCatName();
+                cQty = cAmt = cTax = 0;
+                catOpen = true;
+            }
+
+            rows.add(SalesStatementRow.detail(major, cat, a.getCatName(),
+                    a.getBookCode(), a.getBookName(), a.getQty(), a.getAmount(), a.getTax()));
+
+            cQty += a.getQty(); cAmt += a.getAmount(); cTax += a.getTax();
+            mQty += a.getQty(); mAmt += a.getAmount(); mTax += a.getTax();
+            gQty += a.getQty(); gAmt += a.getAmount(); gTax += a.getTax();
+        }
+        if (catOpen) {
+            rows.add(SalesStatementRow.catSubtotal(curMajor, curCat, curCatName, cQty, cAmt, cTax));
+        }
+        if (majorOpen) {
+            rows.add(SalesStatementRow.majorTotal(curMajor, mQty, mAmt, mTax));
+        }
+        rows.add(SalesStatementRow.grandTotal(gQty, gAmt, gTax));
+
+        return new SalesStatementResponse(from, to, category == null ? null : category.name(), rows);
+    }
+
+    /** 대분류코드 = catCode 첫 글자. null/빈값은 미분류(null). */
+    private static String majorOf(String catCode) {
+        return (catCode == null || catCode.isEmpty()) ? null : catCode.substring(0, 1);
     }
 }

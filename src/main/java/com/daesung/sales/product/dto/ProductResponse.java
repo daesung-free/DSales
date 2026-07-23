@@ -13,11 +13,14 @@ public record ProductResponse(
         Integer price,
         boolean taxFree,
         String grade,
+        String catCode,
+        String catName,
         boolean useYn
 ) {
     public static ProductResponse from(Product p) {
         return new ProductResponse(
                 p.getId(), p.getCode(), p.getName(), p.getContentType(),
-                p.isSet(), p.getPrice(), p.isTaxFree(), p.getGrade(), p.isUseYn());
+                p.isSet(), p.getPrice(), p.isTaxFree(), p.getGrade(),
+                p.getCatCode(), p.getCatName(), p.isUseYn());
     }
 }
