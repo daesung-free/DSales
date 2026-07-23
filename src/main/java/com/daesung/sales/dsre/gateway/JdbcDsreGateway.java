@@ -69,6 +69,91 @@ public class JdbcDsreGateway implements DsreGateway {
         return (o == null) ? 0L : ((Number) o).longValue();
     }
 
+    // ── 기간 출고 물류비 집계 (물류비계산2.vb OutData) ─────────────────────────────
+    // 자재금액: 기간(REQ_DATE)·구분(APPLY_GN)·취소제외(STATE) 필터로 4분류 합산.
+    // mode/cancel 조각은 LogisMode enum·불리언에서만 생성(사용자 문자열 미주입).
+    private static final String OUT_MATERIAL_SQL = """
+            SELECT
+              COALESCE(SUM(CASE WHEN c.NAME NOT IN ('OMR','단행본','책자','라벨') THEN lc.REQCNT*cost.PAPER ELSE 0 END),0) paper_amt,
+              COALESCE(SUM(CASE WHEN c.NAME='OMR' THEN lc.REQCNT*cost.OMR ELSE 0 END),0) omr_amt,
+              COALESCE(SUM(CASE WHEN c.NAME IN ('단행본','책자') THEN lc.REQCNT*cost.ETC ELSE 0 END),0) etc_amt,
+              COALESCE(SUM(CASE WHEN c.NAME='라벨' THEN lc.REQCNT*cost.LABEL ELSE 0 END),0) label_amt
+            FROM tbl_logis_cnt lc
+              JOIN tbl_resource_info r ON lc.RES_CD=r.RES_CD
+              JOIN tbl_materials_info m ON r.MAT_CD=m.MAT_CD
+              JOIN tbl_comon_info c ON m.MAT_GN=c.CMD_CD
+              JOIN tbl_request_info req ON lc.REQ_CD=req.REQ_CD
+              JOIN tbl_logis_cost cost ON cost.DTL_CD=req.DTL_CD
+            WHERE lc.RES_GN='R' AND req.REQ_DATE BETWEEN ? AND ?
+            """;
+
+    // 인원비: 신청(REQ) 단위로 인원 1회 산정(PACKTYPE별 함수) 후 인별 단가(BASIC+TRADE)로 합산.
+    // 레거시 @vjob rownum 트릭(신청당 인원 1회)을 GROUP BY REQ_CD로 동등 구현.
+    private static final String OUT_LABOR_SQL = """
+            SELECT COALESCE(SUM(inwon),0) inwon_total,
+                   COALESCE(SUM(inwon*(basic+trade)),0) labor,
+                   COUNT(*) req_cnt
+            FROM (
+              SELECT req.REQ_CD,
+                CASE WHEN MAX(cost.PACKTYPE)=3 THEN FUNC_REQINWON_GET_PACKTYPE2(req.REQ_CD)
+                     ELSE FUNC_REQINWON_GET_PACKTYPE1(req.REQ_CD) END inwon,
+                MAX(cost.BASIC) basic, MAX(cost.TRADE) trade
+              FROM tbl_logis_cnt lc
+                JOIN tbl_request_info req ON lc.REQ_CD=req.REQ_CD
+                JOIN tbl_logis_cost cost ON cost.DTL_CD=req.DTL_CD
+              WHERE lc.RES_GN='R' AND req.REQ_DATE BETWEEN ? AND ?
+            """;
+
+    @Override
+    public PeriodLogisCost calcOutboundPeriod(LocalDate from, LocalDate to, LogisMode mode, boolean includeCancel) {
+        String applyGn = mode.applyGnClause();
+        String cancel = includeCancel ? " " : " AND req.STATE != 'C' ";
+        String f = from.format(YYYYMMDD), t = to.format(YYYYMMDD);
+
+        Map<String, Object> mat = dsreJdbcTemplate.queryForMap(OUT_MATERIAL_SQL + applyGn + cancel, f, t);
+        String laborSql = OUT_LABOR_SQL + applyGn + cancel + " GROUP BY req.REQ_CD ) t";
+        Map<String, Object> lab = dsreJdbcTemplate.queryForMap(laborSql, f, t);
+
+        return PeriodLogisCost.outbound(mode, from, to,
+                num(mat.get("paper_amt")), num(mat.get("omr_amt")),
+                num(mat.get("etc_amt")), num(mat.get("label_amt")),
+                (int) num(lab.get("inwon_total")), num(lab.get("labor")),
+                (int) num(lab.get("req_cnt")));
+    }
+
+    // ── 기간 회수 물류비 집계 (물류비계산2.vb InData) ─────────────────────────────
+    // 회수분 원천: 사고=tbl_wol_dtl, 반품=tbl_wol_dtl_b. 회수 단가는 tbl_logis_cost DTL_CD=0.
+    // 기간은 REG_DATE(yyyy-MM-dd)를 yyyyMMdd로 변환해 문자열 비교(레거시 동일).
+    private static final String RETURN_TEMPLATE = """
+            SELECT
+              COALESCE(SUM(CASE WHEN c.NAME NOT IN ('OMR','단행본','책자','라벨') THEN t.CNT*cost.PAPER ELSE 0 END),0) paper_amt,
+              COALESCE(SUM(CASE WHEN c.NAME='OMR' THEN t.CNT*cost.OMR ELSE 0 END),0) omr_amt,
+              COALESCE(SUM(CASE WHEN c.NAME IN ('단행본','책자') THEN t.CNT*cost.ETC ELSE 0 END),0) etc_amt,
+              COALESCE(SUM(CASE WHEN c.NAME='라벨' THEN t.CNT*cost.LABEL ELSE 0 END),0) label_amt
+            FROM ( %s ) t
+              JOIN tbl_materials_info m ON t.MAT_CD=m.MAT_CD
+              JOIN tbl_comon_info c ON m.MAT_GN=c.CMD_CD
+              JOIN (SELECT PAPER,OMR,ETC,LABEL FROM tbl_logis_cost WHERE DTL_CD=0 ORDER BY idx DESC LIMIT 1) cost
+            WHERE t.SDATE BETWEEN ? AND ?
+            """;
+
+    private static final String WOL_ACCIDENT = "SELECT MAT_CD, CNT, REPLACE(REG_DATE,'-','') SDATE FROM tbl_wol_dtl";
+    private static final String WOL_NORMAL = "SELECT MAT_CD, CNT, REPLACE(REG_DATE,'-','') SDATE FROM tbl_wol_dtl_b";
+
+    @Override
+    public PeriodLogisCost calcReturnPeriod(LocalDate from, LocalDate to, LogisMode mode) {
+        String source = switch (mode) {
+            case ACCIDENT -> WOL_ACCIDENT;
+            case NORMAL -> WOL_NORMAL;
+            case ALL -> WOL_ACCIDENT + " UNION ALL " + WOL_NORMAL;
+        };
+        Map<String, Object> r = dsreJdbcTemplate.queryForMap(
+                String.format(RETURN_TEMPLATE, source), from.format(YYYYMMDD), to.format(YYYYMMDD));
+        return PeriodLogisCost.ret(mode, from, to,
+                num(r.get("paper_amt")), num(r.get("omr_amt")),
+                num(r.get("etc_amt")), num(r.get("label_amt")));
+    }
+
     private static final DateTimeFormatter YYYYMMDD = DateTimeFormatter.BASIC_ISO_DATE;
 
     private static final String BOOKLIST_SQL = """
