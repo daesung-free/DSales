@@ -5,6 +5,7 @@ import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.closing.config.SupplierProperties;
 import com.daesung.sales.closing.service.PeriodLockService;
 import com.daesung.sales.common.response.PageResponse;
+import com.daesung.sales.common.sequence.SequenceService;
 import com.daesung.sales.inventory.entity.TxnType;
 import com.daesung.sales.inventory.repository.InventoryTxnRepository;
 import com.daesung.sales.inventory.service.InventoryService;
@@ -62,6 +63,7 @@ public class SaleService {
     private final InventoryTxnRepository inventoryTxnRepository;
     private final PeriodLockService periodLockService;
     private final SupplierProperties supplier;
+    private final SequenceService sequenceService;
 
     /**
      * 수기 매출 등록(일반 매출) + 재고 반영을 한 트랜잭션으로. 품목마다 금액 산출 → 매출번호(I) 채번 →
@@ -91,7 +93,7 @@ public class SaleService {
             long tax = product.isTaxFree() ? 0L : supplyAmount / 10L;
             long totalAmount = supplyAmount + tax;
 
-            String salesNo = "I-" + datePart + "-" + saleRepository.nextInvoiceSeq();
+            String salesNo = "I-" + datePart + "-" + sequenceService.next(SequenceService.SEQ_INVOICE);
 
             Sale sale = Sale.create(salesNo, req.salesDate(), partner, product,
                     SalesType.NORMAL_SALES, item.shipmentType(), salesCategory,

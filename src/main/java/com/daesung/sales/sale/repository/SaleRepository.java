@@ -17,10 +17,6 @@ import org.springframework.data.repository.query.Param;
 
 public interface SaleRepository extends JpaRepository<Sale, Long> {
 
-    /** 매출번호(I) 채번용 시퀀스. 레거시 Max+1(동시성 없음) 대체. */
-    @Query(value = "SELECT nextval('seq_invoice_no')", nativeQuery = true)
-    long nextInvoiceSeq();
-
     /**
      * 매출액명세서 도서 단위 집계(취소 제외, 기간·회계구분 필터). 근거: 레거시 매출액명세서.vb.
      * 금액=Σ공급가, 세액=Σ세액. 합계(금액+세액)와 대분류·소계·총계 rollup은 서비스에서 조립.
@@ -128,7 +124,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
             FROM sales s
             WHERE s.canceled = false
               AND EXTRACT(YEAR FROM s.sales_date) = :year
-              AND (CAST(:productId AS bigint) IS NULL OR s.product_id = :productId)
+              AND (CAST(:productId AS SIGNED) IS NULL OR s.product_id = :productId)
             GROUP BY EXTRACT(MONTH FROM s.sales_date)
             """, nativeQuery = true)
     List<Object[]> monthlyNetSales(@Param("year") int year, @Param("productId") Long productId);
@@ -170,7 +166,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
             FROM sales s JOIN products p ON p.id = s.product_id
             WHERE s.canceled = false
               AND s.sales_date BETWEEN :fromDate AND :toDate
-              AND (CAST(:partnerId AS bigint) IS NULL OR s.partner_id = :partnerId)
+              AND (CAST(:partnerId AS SIGNED) IS NULL OR s.partner_id = :partnerId)
             GROUP BY s.product_id, p.code, p.name
             ORDER BY p.code
             """, nativeQuery = true)
@@ -192,7 +188,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
             FROM sales s
             WHERE s.canceled = false
               AND s.sales_date BETWEEN :fromDate AND :toDate
-              AND (CAST(:partnerId AS bigint) IS NULL OR s.partner_id = :partnerId)
+              AND (CAST(:partnerId AS SIGNED) IS NULL OR s.partner_id = :partnerId)
             GROUP BY s.partner_id
             """, nativeQuery = true)
     List<Object[]> receivableByPartner(@Param("fromDate") LocalDate fromDate,
@@ -215,7 +211,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
             FROM sales s JOIN products p ON p.id = s.product_id
             WHERE s.canceled = false
               AND s.sales_date BETWEEN :fromDate AND :toDate
-              AND (CAST(:contentType AS varchar) IS NULL OR p.content_type = :contentType)
+              AND (CAST(:contentType AS CHAR) IS NULL OR p.content_type = :contentType)
             GROUP BY s.product_id, p.code, p.name, p.content_type
             ORDER BY p.code
             """, nativeQuery = true)
@@ -268,7 +264,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
               JOIN products p ON p.id = s.product_id
             WHERE s.canceled = false
               AND s.sales_date BETWEEN :fromDate AND :toDate
-              AND (CAST(:partnerId AS bigint) IS NULL OR s.partner_id = :partnerId)
+              AND (CAST(:partnerId AS SIGNED) IS NULL OR s.partner_id = :partnerId)
             GROUP BY s.partner_id, pt.name, s.product_id, p.name, CASE WHEN s.tax = 0 THEN 'FREE' ELSE 'TAXABLE' END
             HAVING COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN -s.supply_amount ELSE s.supply_amount END),0) <> 0
             ORDER BY pt.name, s.partner_id, tax_bucket, p.name

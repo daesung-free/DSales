@@ -1,6 +1,7 @@
 package com.daesung.sales.inventory.service;
 
 import com.daesung.sales.common.exception.BusinessException;
+import com.daesung.sales.common.sequence.SequenceService;
 import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.inventory.dto.BomWorkRequest;
 import com.daesung.sales.inventory.dto.BomWorkResponse;
@@ -41,6 +42,7 @@ public class InventoryService {
     private static final DateTimeFormatter YYYYMMDD = DateTimeFormatter.BASIC_ISO_DATE;
 
     private final InventoryRepository inventoryRepository;
+    private final SequenceService sequenceService;
     private final InventoryTxnRepository inventoryTxnRepository;
     private final ProductRepository productRepository;
     private final WarehouseRepository warehouseRepository;
@@ -207,7 +209,7 @@ public class InventoryService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                         "창고가 없습니다. id=" + req.warehouseId()));
         String disposalNo = "P-" + req.processedDate().format(YYYYMMDD) + "-"
-                + inventoryTxnRepository.nextPurgeSeq();
+                + sequenceService.next(SequenceService.SEQ_PURGE);
 
         List<DisposalResponse.Line> lines = new ArrayList<>();
         for (DisposalRequest.Item item : req.items()) {

@@ -10,10 +10,6 @@ import org.springframework.data.repository.query.Param;
 public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long> {
     List<InventoryTxn> findByProductIdAndWarehouseId(Long productId, Long warehouseId);
 
-    /** 폐기번호(P) 채번용 시퀀스. */
-    @Query(value = "SELECT nextval('seq_purge_no')", nativeQuery = true)
-    long nextPurgeSeq();
-
     /**
      * 상품별 매입원가(입고 unit_cost 가중평균 = Σ(qty×unit_cost)/Σqty). 외부콘텐츠 이익 계산용.
      * 반환 Object[]: [productId, avgCost].
@@ -55,8 +51,8 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
               JOIN products p ON p.id = t.product_id
               JOIN warehouses w ON w.id = t.warehouse_id
               LEFT JOIN inventory inv ON inv.product_id = t.product_id AND inv.warehouse_id = t.warehouse_id
-            WHERE (CAST(:productId AS bigint) IS NULL OR t.product_id = :productId)
-              AND (CAST(:warehouseId AS bigint) IS NULL OR t.warehouse_id = :warehouseId)
+            WHERE (CAST(:productId AS SIGNED) IS NULL OR t.product_id = :productId)
+              AND (CAST(:warehouseId AS SIGNED) IS NULL OR t.warehouse_id = :warehouseId)
             GROUP BY t.product_id, p.code, p.name, t.warehouse_id, w.name
             ORDER BY p.code, w.name
             """, nativeQuery = true)
@@ -79,8 +75,8 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
               COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.txn_type='INBOUND' AND t.qty<0 THEN -t.qty*COALESCE(t.unit_cost,0) ELSE 0 END),0) AS cancel_amt,
               COALESCE(SUM(CASE WHEN t.trade_date <= :toDate THEN t.qty ELSE 0 END),0) AS stock_qty
             FROM inventory_txn t JOIN products p ON p.id = t.product_id
-            WHERE (CAST(:catCode AS varchar) IS NULL OR p.cat_code = :catCode)
-              AND (CAST(:productId AS bigint) IS NULL OR t.product_id = :productId)
+            WHERE (CAST(:catCode AS CHAR) IS NULL OR p.cat_code = :catCode)
+              AND (CAST(:productId AS SIGNED) IS NULL OR t.product_id = :productId)
             GROUP BY t.product_id, p.code, p.name, p.cat_code, p.cat_name, p.price
             ORDER BY p.code
             """, nativeQuery = true)

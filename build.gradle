@@ -34,9 +34,9 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
-	// --- Persistence (JPA + QueryDSL + PostgreSQL) ---
+	// --- Persistence (JPA + QueryDSL + MySQL 8) ---
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
-	runtimeOnly 'org.postgresql:postgresql'
+	runtimeOnly 'com.mysql:mysql-connector-j'
 	implementation "com.querydsl:querydsl-jpa:${querydslVersion}:jakarta"
 	annotationProcessor "com.querydsl:querydsl-apt:${querydslVersion}:jakarta"
 	annotationProcessor 'jakarta.annotation:jakarta.annotation-api'
@@ -44,7 +44,7 @@ dependencies {
 
 	// --- Schema migration (신규 스키마 대량 → 초반부터 이력관리) ---
 	implementation 'org.flywaydb:flyway-core'
-	implementation 'org.flywaydb:flyway-database-postgresql'
+	implementation 'org.flywaydb:flyway-mysql'
 
 	// --- Security / RBAC ---
 	implementation 'org.springframework.boot:spring-boot-starter-security'
@@ -65,8 +65,7 @@ dependencies {
 	compileOnly 'org.projectlombok:lombok'
 	annotationProcessor 'org.projectlombok:lombok'
 
-	// --- DSRE2(MySQL) 접속 드라이버. 분리(기존 유지) 확정 → 별도 DataSource로 read+제한적 write-back ---
-	runtimeOnly 'com.mysql:mysql-connector-j'            // DSRE2 (MySQL)
+	// --- DSRE2(MariaDB) 접속: 위 mysql-connector-j 공용 사용(주 DB도 MySQL8) ---
 	// runtimeOnly 'com.microsoft.sqlserver:mssql-jdbc'  // DSLab / DSTxtBook (SQL Server) — 필요 시
 
 	// --- Test (트랜잭션 원자성·동시성은 실제 DB로 검증) ---
@@ -75,7 +74,7 @@ dependencies {
 	testImplementation 'org.springframework.security:spring-security-test'
 	testImplementation 'org.springframework.boot:spring-boot-testcontainers'
 	testImplementation 'org.testcontainers:junit-jupiter'
-	testImplementation 'org.testcontainers:postgresql'
+	testImplementation 'org.testcontainers:mysql'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
 }
 

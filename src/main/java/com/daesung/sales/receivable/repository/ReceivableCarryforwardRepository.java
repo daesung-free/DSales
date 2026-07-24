@@ -19,7 +19,7 @@ public interface ReceivableCarryforwardRepository extends JpaRepository<Receivab
             SELECT r.partner_id, COALESCE(SUM(r.carry_amount),0)
             FROM receivable_carryforward r
             WHERE r.fiscal_year = :year
-              AND (CAST(:partnerId AS bigint) IS NULL OR r.partner_id = :partnerId)
+              AND (CAST(:partnerId AS SIGNED) IS NULL OR r.partner_id = :partnerId)
             GROUP BY r.partner_id
             """, nativeQuery = true)
     List<Object[]> sumByYear(@Param("year") int year, @Param("partnerId") Long partnerId);

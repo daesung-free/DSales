@@ -11,10 +11,6 @@ import org.springframework.data.repository.query.Param;
 
 public interface CollectionRepository extends JpaRepository<Collection, Long> {
 
-    /** 수금번호(C) 채번용 시퀀스. 레거시 (수금일+거래처) Max+1 대체. */
-    @Query(value = "SELECT nextval('seq_collection_no')", nativeQuery = true)
-    long nextCollectionSeq();
-
     /** 수금 목록(기간·거래처 필터). */
     @Query("select c from Collection c "
             + "where (:from is null or c.collDate >= :from) "
@@ -30,7 +26,7 @@ public interface CollectionRepository extends JpaRepository<Collection, Long> {
             SELECT c.partner_id, COALESCE(SUM(c.coll_amt),0)
             FROM collection c
             WHERE c.coll_date BETWEEN :fromDate AND :toDate
-              AND (CAST(:partnerId AS bigint) IS NULL OR c.partner_id = :partnerId)
+              AND (CAST(:partnerId AS SIGNED) IS NULL OR c.partner_id = :partnerId)
             GROUP BY c.partner_id
             """, nativeQuery = true)
     List<Object[]> sumByPartner(@Param("fromDate") LocalDate fromDate,

@@ -1,6 +1,7 @@
 package com.daesung.sales.receivable.service;
 
 import com.daesung.sales.closing.service.PeriodLockService;
+import com.daesung.sales.common.sequence.SequenceService;
 import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.common.response.PageResponse;
@@ -47,6 +48,7 @@ public class ReceivableService {
     private static final DateTimeFormatter YYYYMMDD = DateTimeFormatter.BASIC_ISO_DATE;
 
     private final CollectionRepository collectionRepository;
+    private final SequenceService sequenceService;
     private final ReceivableCarryforwardRepository carryforwardRepository;
     private final SaleRepository saleRepository;
     private final PartnerRepository partnerRepository;
@@ -59,7 +61,7 @@ public class ReceivableService {
         Partner partner = partnerRepository.findById(req.partnerId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                         "거래처가 없습니다. id=" + req.partnerId()));
-        String collNo = "C-" + req.collDate().format(YYYYMMDD) + "-" + collectionRepository.nextCollectionSeq();
+        String collNo = "C-" + req.collDate().format(YYYYMMDD) + "-" + sequenceService.next(SequenceService.SEQ_COLLECTION);
         Collection c = collectionRepository.save(Collection.create(
                 collNo, req.collDate(), partner, req.collType(), req.collAmt(),
                 req.promissoryNo(), req.promissoryDue(), req.bankName(), req.branchName(), req.memo()));

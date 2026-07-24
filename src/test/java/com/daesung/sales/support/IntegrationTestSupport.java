@@ -14,33 +14,33 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
 import org.testcontainers.containers.GenericContainer;
-import org.testcontainers.containers.PostgreSQLContainer;
+import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * 통합테스트 공용 베이스. 실 Postgres + Redis(Testcontainers) 위에서 앱 전체(HTTP→서비스→쿼리→DB)를 관통.
+ * 통합테스트 공용 베이스. 실 MySQL 8 + Redis(Testcontainers) 위에서 앱 전체(HTTP→서비스→쿼리→DB)를 관통.
  * Flyway가 스키마 생성, 인증은 부트스트랩→로그인으로 실제 토큰 사용. DSRE는 off(복제본 불필요).
  * 컨테이너는 static 블록에서 직접 start(싱글톤 패턴) — @DynamicPropertySource 해석 전 기동 보장, JVM 내 재사용.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 public abstract class IntegrationTestSupport {
 
-    static final PostgreSQLContainer<?> POSTGRES = new PostgreSQLContainer<>("postgres:16-alpine")
+    static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0")
             .withDatabaseName("sales").withUsername("sales").withPassword("sales");
 
     static final GenericContainer<?> REDIS = new GenericContainer<>(DockerImageName.parse("redis:7-alpine"))
             .withExposedPorts(6379);
 
     static {
-        POSTGRES.start();
+        MYSQL.start();
         REDIS.start();
     }
 
     @DynamicPropertySource
     static void props(DynamicPropertyRegistry r) {
-        r.add("spring.datasource.url", POSTGRES::getJdbcUrl);
-        r.add("spring.datasource.username", POSTGRES::getUsername);
-        r.add("spring.datasource.password", POSTGRES::getPassword);
+        r.add("spring.datasource.url", MYSQL::getJdbcUrl);
+        r.add("spring.datasource.username", MYSQL::getUsername);
+        r.add("spring.datasource.password", MYSQL::getPassword);
         r.add("spring.data.redis.host", REDIS::getHost);
         r.add("spring.data.redis.port", () -> REDIS.getMappedPort(6379));
         r.add("daesung.dsre.enabled", () -> "false");

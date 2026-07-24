@@ -1,6 +1,7 @@
 package com.daesung.sales.sale.service;
 
 import com.daesung.sales.dsre.gateway.BooklistImportRow;
+import com.daesung.sales.common.sequence.SequenceService;
 import com.daesung.sales.dsre.gateway.DsreGateway;
 import com.daesung.sales.partner.entity.Partner;
 import com.daesung.sales.partner.repository.PartnerRepository;
@@ -37,6 +38,7 @@ public class BulkSalesImportService {
     private static final DateTimeFormatter YYYYMMDD = DateTimeFormatter.BASIC_ISO_DATE;
 
     private final DsreGateway dsreGateway;
+    private final SequenceService sequenceService;
     private final SaleRepository saleRepository;
     private final PartnerRepository partnerRepository;
     private final ProductRepository productRepository;
@@ -85,7 +87,7 @@ public class BulkSalesImportService {
                     continue;
                 }
                 long tax = product.isTaxFree() ? 0L : supply / 10L;
-                String salesNo = "I-" + to.format(YYYYMMDD) + "-" + saleRepository.nextInvoiceSeq();
+                String salesNo = "I-" + to.format(YYYYMMDD) + "-" + sequenceService.next(SequenceService.SEQ_INVOICE);
                 saleRepository.save(Sale.createBulk(salesNo, to, partner, product,
                         k.shipmentType(), k.category(), row.price(), k.rate(), k.qty(),
                         supply, tax, supply + tax, row.memo(), sourceKey));

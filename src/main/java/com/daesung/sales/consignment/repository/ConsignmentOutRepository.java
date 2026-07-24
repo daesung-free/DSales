@@ -16,7 +16,4 @@ public interface ConsignmentOutRepository extends JpaRepository<ConsignmentOut, 
     @Query("select c from ConsignmentOut c join fetch c.product"
             + " where c.partner.id = :partnerId and c.remainingQty > 0 order by c.id")
     List<ConsignmentOut> findPending(Long partnerId);
-
-    @Query(value = "select nextval('seq_consignment_no')", nativeQuery = true)
-    long nextConsignSeq();
 }

@@ -1,6 +1,7 @@
 package com.daesung.sales.inventory.service;
 
 import com.daesung.sales.common.exception.BusinessException;
+import com.daesung.sales.common.sequence.SequenceService;
 import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.inventory.dto.StocktakeRequest;
 import com.daesung.sales.inventory.dto.StocktakeResponse;
@@ -28,6 +29,7 @@ public class StocktakeService {
     private static final DateTimeFormatter YYYYMMDD = DateTimeFormatter.BASIC_ISO_DATE;
 
     private final StocktakeRepository stocktakeRepository;
+    private final SequenceService sequenceService;
     private final WarehouseRepository warehouseRepository;
     private final ProductRepository productRepository;
     private final InventoryService inventoryService;
@@ -39,7 +41,7 @@ public class StocktakeService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                         "창고가 없습니다. id=" + req.warehouseId()));
         String stocktakeNo = "ST-" + req.stocktakeDate().format(YYYYMMDD) + "-"
-                + stocktakeRepository.nextStocktakeSeq();
+                + sequenceService.next(SequenceService.SEQ_STOCKTAKE);
         Stocktake stocktake = Stocktake.create(stocktakeNo, warehouse, req.stocktakeDate(), req.memo());
 
         List<StocktakeResponse.Line> lines = new ArrayList<>();

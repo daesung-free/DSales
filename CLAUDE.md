@@ -13,9 +13,9 @@
 - 발주: 대성학력개발연구소(사업부 전략팀), 회신 1차 박희원 과장
 
 ## 2. 현재 코드베이스 상태 (실측)
-- **스택 확정(문서 기준)**: Spring Boot **3.4.5** · Java **21** · Gradle **8.14** · JPA + **QueryDSL 5.1.0(jakarta)** · **PostgreSQL**. 패키지 `com.daesung.sales`, 진입점 `SalesApplication.java`. 컴파일 검증 완료.
+- **스택 확정**: Spring Boot **3.4.5** · Java **21** · Gradle **8.14** · JPA + **QueryDSL 5.1.0(jakarta)** · **MySQL 8**(발주처 지시로 PostgreSQL→MySQL8 전환 완료, 클라우드/새서버 [[db-mysql8-cloud-confirmed]]). 패키지 `com.daesung.sales`, 진입점 `SalesApplication.java`. 컴파일 검증 완료.
   - Gradle 래퍼는 8.14(Boot 3.4.x 공식 지원 라인). Java 21은 `foojay-resolver`(settings.gradle)로 자동 프로비저닝.
-  - build.gradle 의존성: web·validation·actuator / data-jpa·postgresql·querydsl / flyway(스키마 마이그레이션) / security / poi-ooxml(엑셀) / springdoc(OpenAPI) / lombok / test(testcontainers-postgresql, security-test).
+  - build.gradle 의존성: web·validation·actuator / data-jpa·mysql-connector·querydsl / flyway(스키마 마이그레이션) / security / poi-ooxml(엑셀) / springdoc(OpenAPI) / lombok / test(testcontainers-mysql, security-test).
   - 📌 결정 로그: **Flyway는 시트에 명시되지 않은 Claude 추가 권장 → 사용자 승인(유지).** 신규 스키마 대량이라 DDL 버전관리 목적. 변경 파일은 `src/main/resources/db/migration/V*.sql`.
   - 📌 결정 로그: **enum은 API 스펙(`대성매출프로그램_API_스펙.md`) 기준으로 통일.** ShipmentType(NORMAL_SHIP/CONSIGN_SHIP/GIFT/TEACHER_USE/RETURN/CANCEL) · SalesCategory(SALE/FREE/RETURN) · WarehouseType(MAIN/CONSIGN). DB는 로컬 throwaway라 V1 직접 수정 + 볼륨 리셋으로 반영(V2 미사용).
   - **조건부(주석 처리)**: mssql-jdbc(DSLab/DSTxtBook), mysql-connector-j(DSRE2) — **Phase0 DSRE2 결정 후** 활성화.
@@ -58,7 +58,7 @@
 - 출고유형(6)→회계구분(3) **룩업**(레거시는 tradeType 자유문자열+하드코딩 CASE). **취소는 공급률 30% 기준**으로 매출/무가 분기.
 - 채권/여신: 미수금 러닝밸런스, 담보(여신한도 컬럼 신규), 수금/어음.
 - 매출목표(대시보드용), RBAC(부서별), 감사컬럼(created_by/updated_by/modified_at 전 테이블 표준), **월마감 `period_locks`**(§7 갭 참고).
-- 채번: 레거시 `Max+1`(동시성 없음) 폐기 → **PostgreSQL 시퀀스**(`nextval` — 동시성 안전, 별도 분산락 불필요). 전표 접두어 I(매출)/P(폐기)/OUT(위탁원본)/수금·실사 등. (정상출고는 별도 S전표 없이 매출번호 I로 흡수 — `seq_shipment_no`는 V14에서 제거.)
+- 채번: 레거시 `Max+1`(동시성 없음) 폐기 → **`seq_registry` 테이블 + 행잠금**(MySQL8 시퀀스 부재 대체, `SequenceService.next()` @Transactional UPDATE행잠금+SELECT로 원자적). 전표 접두어 I(매출)/P(폐기)/OUT(위탁)/수금·실사. (정상출고는 별도 S전표 없이 I로 흡수.)
 
 ## 6. Phase 로드맵 (개발문서 기준)
 - **Phase 0 · 사전조치**: 🔴 order IDOR 핫픽스 / 시크릿·계정 로테이션 / ~~DSRE2 통합·분리 결정~~ **✅ 분리(기존 유지)로 확정** → 남은 건 운영 DSRE2 접속정보·마스킹 덤프 확보 / 과거 위탁미결 복원불가 서면합의 / 재견적 협의.
@@ -128,7 +128,7 @@ python3 <script> --sheet <ID> --tab <탭명>   # scratchpad의 read_*.py 참고.
 
 ## 10. 지금까지의 진행 (세션 컨텍스트) — 실측 최신(스키마 V1~V13, git 52커밋)
 
-**인프라**: Postgres(sales) + Redis(refresh·캐시) + DSRE2 MySQL 복제본(docker `sales-dsre-mysql:3307`, 볼륨 `sales-dsredata`에 영속). 로컬 테스트는 **DB만 docker, 앱은 `./gradlew bootRun` (테스트 포트 8081)**. DSRE 기능은 `--daesung.dsre.enabled=true`로 켬(기본 off).
+**인프라**: **MySQL 8(sales)** + Redis(refresh·캐시) + DSRE2 MySQL/MariaDB 복제본(docker `sales-dsre-mysql:3307`, 볼륨 `sales-dsredata`에 영속). 로컬 테스트는 **DB만 docker, 앱은 `./gradlew bootRun` (테스트 포트 8081)**. DSRE 기능은 `--daesung.dsre.enabled=true`로 켬(기본 off).
 
 **✅ 구현+E2E검증 완료 (도메인별)**
 - 공통: ApiResponse/예외/페이징/한글Swagger/채번시퀀스/Flyway
@@ -149,7 +149,7 @@ python3 <script> --sheet <ID> --tab <탭명>   # scratchpad의 read_*.py 참고.
   - 도서입출고현황(`/sales/book-inout`): **매입(inventory_txn 원가)+매출(sales 공급가) 이중장부 종합** + 정본 재고(SUM txn)·매출총이익. 취소=INBOUND 음수(현재 미모델링→0)
   - 거래처별 매출대비표(`/sales/yoy-comparison`): 당해 vs **전년 동기간**(salesDate 기준) 증감·비율, groupBy PARTNER/CATEGORY/BOOK
   - 물류비 회수·기간집계(`/logistics-costs`): 출고(기간·구분)+회수(반품/사고), DSRE
-- **✅테스트(회귀 방어)**: 매출 리포트 6종 **통합테스트**(Testcontainers Postgres+Redis, `IntegrationTestSupport` 베이스). `./gradlew test` → 7통과. ⚠️ Docker 29 대응 위해 TC **1.21.3** override(build.gradle).
+- **✅테스트(회귀 방어)**: 매출 리포트 6종 **통합테스트**(Testcontainers MySQL8+Redis, `IntegrationTestSupport` 베이스). `./gradlew test` → 7통과. ⚠️ Docker 29 대응 위해 TC **1.21.3** override(build.gradle).
 
 **⬜ 미구현(결정 없이 가능)**: 정산내역서(위탁정산 내역, ⏸위탁 회계기준 회신 걸림) / 리포트 데이터 API 잔여(응시·회차현황=DSRE 의존) / 매출액명세서 등 리포트의 **프론트 RDLC 렌더링(나눔고딕, 백엔드 밖)** / 마이그레이션 스크립트(Phase6)
 
