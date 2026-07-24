@@ -66,6 +66,10 @@ jobs:
             docker stop dsales || true
             docker rm dsales || true
             docker run -d --name dsales --restart unless-stopped -p 8080:8080 \
+              --log-driver=awslogs \
+              --log-opt awslogs-region=ap-northeast-2 \
+              --log-opt awslogs-group=/dsales/app \
+              --log-opt awslogs-create-group=true \
               -e SPRING_DATASOURCE_URL="$DB_URL" \
               -e SPRING_DATASOURCE_USERNAME="$DB_USER" \
               -e SPRING_DATASOURCE_PASSWORD="$DB_PASSWORD" \
