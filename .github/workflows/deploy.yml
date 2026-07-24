@@ -53,22 +53,32 @@ jobs:
         id: token
         run: echo "pw=$(aws ecr get-login-password --region $AWS_REGION)" >> "$GITHUB_OUTPUT"
 
-      - name: EC2 배포 (SSH)
+      - name: EC2 배포 (SSH) — 설정도 Secrets에서 자동 주입(수동 app.env 불필요)
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
-          envs: REGISTRY,ECR_PW
+          envs: REGISTRY,ECR_PW,DB_URL,DB_USER,DB_PASSWORD,REDIS_HOST,JWT_SECRET
           script: |
             echo "$ECR_PW" | docker login --username AWS --password-stdin "$REGISTRY"
             docker pull "$REGISTRY/dsales:latest"
             docker stop dsales || true
             docker rm dsales || true
-            docker run -d --name dsales --restart unless-stopped \
-              -p 8080:8080 --env-file /home/ec2-user/app.env \
+            docker run -d --name dsales --restart unless-stopped -p 8080:8080 \
+              -e SPRING_DATASOURCE_URL="$DB_URL" \
+              -e SPRING_DATASOURCE_USERNAME="$DB_USER" \
+              -e SPRING_DATASOURCE_PASSWORD="$DB_PASSWORD" \
+              -e SPRING_DATA_REDIS_HOST="$REDIS_HOST" \
+              -e SPRING_DATA_REDIS_PORT=6379 \
+              -e DAESUNG_SECURITY_JWTSECRET="$JWT_SECRET" \
               "$REGISTRY/dsales:latest"
             docker image prune -f
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
           ECR_PW: ${{ steps.token.outputs.pw }}
+          DB_URL: ${{ secrets.DB_URL }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          REDIS_HOST: ${{ secrets.REDIS_HOST }}
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
