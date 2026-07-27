@@ -185,6 +185,11 @@ public class Sale extends BaseEntity {
         return s;
     }
 
+    /** 반품 라인에 원본 출고번호 링크(역추적용). */
+    public void linkSourceOut(String sourceOutNo) {
+        this.sourceOutNo = sourceOutNo;
+    }
+
     /** 논리 취소. */
     public void cancel() {
         this.canceled = true;

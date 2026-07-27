@@ -17,6 +17,7 @@ import com.daesung.sales.sale.dto.BookInoutResponse;
 import com.daesung.sales.sale.dto.BookSalesAgg;
 import com.daesung.sales.sale.dto.CategorySalesAgg;
 import com.daesung.sales.sale.dto.MonthlyStatementResponse;
+import com.daesung.sales.sale.dto.ReturnInboundRequest;
 import com.daesung.sales.sale.dto.CategorySalesResponse;
 import com.daesung.sales.sale.dto.SaleResponse;
 import com.daesung.sales.sale.dto.SalesEntryRequest;
@@ -114,6 +115,58 @@ public class SaleService {
 
             lines.add(new SalesEntryResponse.Line(salesNo, product.getId(), product.getCode(),
                     item.shipmentType(), salesCategory, item.qty(), supplyAmount, tax, totalAmount, stockBalance));
+        }
+        return new SalesEntryResponse(partner.getId(), partner.getName(), lines);
+    }
+
+    /**
+     * 반품입고(29p 물류 진입점): 한 트랜잭션으로 매출 반품(RETURN) 라인 생성 + 물류창고 재고 복구.
+     * 출고유형은 항상 RETURN(담당자가 선택 안 함). 재고관리 상품만 재고 +복구(모의고사 등은 이벤트 없음).
+     * 근거: 요구사항 29p — 매출프로그램 단독 사용 시 반품 등록 원천, 8p 자동이고와 동일한 트랜잭션 원자성.
+     */
+    @Transactional
+    public SalesEntryResponse returnInbound(ReturnInboundRequest req) {
+        periodLockService.assertNotLocked(req.returnDate());
+        Partner partner = partnerRepository.findById(req.partnerId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                        "거래처가 없습니다. id=" + req.partnerId()));
+        Warehouse warehouse = warehouseRepository.findById(req.warehouseId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                        "물류창고가 없습니다. id=" + req.warehouseId()));
+
+        String datePart = req.returnDate().format(YYYYMMDD);
+        List<SalesEntryResponse.Line> lines = new ArrayList<>();
+
+        for (ReturnInboundRequest.Item item : req.items()) {
+            Product product = productRepository.findById(item.productId())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                            "상품이 없습니다. id=" + item.productId()));
+
+            long supplyAmount = (long) ((double) item.unitPrice() * item.supplyRate() / 100.0 * item.qty());
+            long tax = product.isTaxFree() ? 0L : supplyAmount / 10L;
+            long totalAmount = supplyAmount + tax;
+
+            String salesNo = "I-" + datePart + "-" + sequenceService.next(SequenceService.SEQ_INVOICE);
+
+            // 반품 = shipmentType/회계구분 RETURN 고정. 금액·수량은 양수 저장, 리포트가 반품으로 차감.
+            Sale sale = Sale.create(salesNo, req.returnDate(), partner, product,
+                    SalesType.NORMAL_SALES, ShipmentType.RETURN, SalesCategory.RETURN,
+                    item.unitPrice(), item.supplyRate(), item.qty(),
+                    supplyAmount, tax, totalAmount, null, item.memo());
+            if (item.sourceOutNo() != null && !item.sourceOutNo().isBlank()) {
+                sale.linkSourceOut(item.sourceOutNo());
+            }
+            saleRepository.save(sale);
+
+            // 물류창고 재고 +복구(한 트랜잭션). 재고 미관리 상품(모의고사 등)은 이벤트 없음.
+            int stockBalance = 0;
+            if (product.isStockManaged()) {
+                stockBalance = inventoryService.applyShipment(product, warehouse, item.qty(), TxnType.RETURN,
+                        ShipmentType.RETURN, req.returnDate(), salesNo, item.memo());
+            }
+
+            lines.add(new SalesEntryResponse.Line(salesNo, product.getId(), product.getCode(),
+                    ShipmentType.RETURN, SalesCategory.RETURN, item.qty(), supplyAmount, tax, totalAmount, stockBalance));
         }
         return new SalesEntryResponse(partner.getId(), partner.getName(), lines);
     }

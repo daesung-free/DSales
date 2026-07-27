@@ -197,6 +197,33 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("반품입고(29p) — 매출반품 라인 + 재고 복구 한 트랜잭션")
+    void 반품입고() {
+        Long wh = createId("/masters/warehouses", Map.of("code", "WH-RI", "name", "반품창고", "type", "MAIN"));
+        Long p = product("RI-BK", "R01", "반품테스트");
+        inbound(wh, p);   // 재고 1000
+
+        // 반품입고 10부(정가10000, 공급률100) — 5월로 격리
+        JsonNode d = data(post("/sales/return-inbound", Map.of(
+                "returnDate", "2026-05-10", "partnerId", partnerId, "warehouseId", wh,
+                "items", List.of(Map.of("productId", p, "unitPrice", 10000, "supplyRate", 100, "qty", 10,
+                        "sourceOutNo", "OUT-20260501-1")))));
+        JsonNode line = d.path("items").get(0);
+        assertThat(line.path("salesCategory").asText()).isEqualTo("RETURN");
+        assertThat(line.path("stockBalance").asLong()).isEqualTo(1010);   // 1000 +10 자동 복구
+
+        // 수불부: 반품 버킷 +10, 현재재고 1010
+        JsonNode led = data(get("/stock/ledger?warehouseId=" + wh));
+        JsonNode row = rowWhere(led, "productCode", "RI-BK");
+        assertThat(row.path("salesReturn").asLong()).isEqualTo(10);
+        assertThat(row.path("closing").asLong()).isEqualTo(1010);
+
+        // 매출장부: RETURN 라인이 생겨 5월 순매출 음수 반영(취소 아님)
+        JsonNode sales = data(get("/sales?startDate=2026-05-01&endDate=2026-05-31&salesCategory=RETURN"));
+        assertThat(sales.path("content")).isNotEmpty();
+    }
+
+    @Test
     @DisplayName("월별매출액명세서(37p) — 성적처리/비처리 인원·금액 분리 + 과세·부가세")
     void 월별매출액명세서() {
         Long wh = createId("/masters/warehouses", Map.of("code", "WH-37", "name", "37창고", "type", "MAIN"));
