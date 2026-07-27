@@ -1,5 +1,6 @@
 package com.daesung.sales.inventory.dto;
 
+import com.daesung.sales.inventory.entity.InboundType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
@@ -19,6 +20,10 @@ public record InboundRequest(
 
         @Schema(description = "도착 창고 id", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotNull Long destinationWarehouseId,
+
+        @Schema(description = "입고구분: NORMAL(정상입고)/PURCHASE(매입입고, 외부콘텐츠 매입 — 16p 순매출조회 매입액에 반영). 미지정 시 NORMAL",
+                example = "NORMAL")
+        InboundType inboundType,
 
         @Schema(description = "입고 품목 목록", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotEmpty @Valid List<InboundItem> items

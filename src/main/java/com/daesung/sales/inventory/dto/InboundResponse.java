@@ -1,5 +1,6 @@
 package com.daesung.sales.inventory.dto;
 
+import com.daesung.sales.inventory.entity.InboundType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
 
@@ -11,6 +12,9 @@ public record InboundResponse(
 
         @Schema(description = "도착 창고명", example = "본사 메인 물류창고")
         String warehouseName,
+
+        @Schema(description = "입고구분 NORMAL/PURCHASE", example = "NORMAL")
+        InboundType inboundType,
 
         @Schema(description = "입고 결과 품목")
         List<Line> items

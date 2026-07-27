@@ -9,6 +9,7 @@ import com.daesung.sales.inventory.dto.DisposalRequest;
 import com.daesung.sales.inventory.dto.DisposalResponse;
 import com.daesung.sales.inventory.dto.InboundRequest;
 import com.daesung.sales.inventory.dto.InboundResponse;
+import com.daesung.sales.inventory.entity.InboundType;
 import com.daesung.sales.inventory.dto.StockLedgerRow;
 import com.daesung.sales.inventory.dto.TransferRequest;
 import com.daesung.sales.inventory.dto.TransferResponse;
@@ -66,13 +67,14 @@ public class InventoryService {
                             "상품이 없습니다. id=" + item.productId()));
 
             inventoryTxnRepository.save(InventoryTxn.inbound(product, warehouse, item.qty(),
-                    item.unitCost(), req.processedDate(), supplier, item.memo()));
+                    item.unitCost(), req.inboundType(), req.processedDate(), supplier, item.memo()));
             int currentQty = applyDelta(product, warehouse, item.qty());
 
             lines.add(new InboundResponse.Line(
                     product.getId(), product.getCode(), item.qty(), currentQty));
         }
-        return new InboundResponse(warehouse.getId(), warehouse.getName(), lines);
+        InboundType type = (req.inboundType() != null) ? req.inboundType() : InboundType.NORMAL;
+        return new InboundResponse(warehouse.getId(), warehouse.getName(), type, lines);
     }
 
     /** 단순 이고(창고 이동). 출발창고 −qty(음수재고 방지), 도착창고 +qty. 매출 미발생. */

@@ -6,7 +6,7 @@ import java.util.List;
 
 /**
  * 콘텐츠구분 순매출. 자체교재(SELF)=매출−반품, 외부콘텐츠(EXTERNAL)=매출−매입=이익.
- * 매입원가는 입고 unit_cost 가중평균. 근거: 레거시 순매출조회 + 콘텐츠구분 축.
+ * 매입원가는 매입입고(PURCHASE) unit_cost 가중평균. 근거: 순매출조회 + 콘텐츠구분 축 + 8p 매입입고 연동(2026-07-28).
  */
 public record NetSalesResponse(
         @Schema(description = "집계 시작일") LocalDate fromDate,

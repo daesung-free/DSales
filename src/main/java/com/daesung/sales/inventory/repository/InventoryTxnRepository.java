@@ -11,13 +11,14 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
     List<InventoryTxn> findByProductIdAndWarehouseId(Long productId, Long warehouseId);
 
     /**
-     * 상품별 매입원가(입고 unit_cost 가중평균 = Σ(qty×unit_cost)/Σqty). 외부콘텐츠 이익 계산용.
+     * 상품별 매입원가(매입입고 unit_cost 가중평균 = Σ(qty×unit_cost)/Σqty). 외부콘텐츠 이익 계산용.
+     * 근거: 요구사항 8p 정정(2026-07-28) — PURCHASE(매입입고)로 등록된 입고만 매입 데이터로 집계.
      * 반환 Object[]: [productId, avgCost].
      */
     @Query(value = """
             SELECT product_id, COALESCE(SUM(qty * unit_cost) / NULLIF(SUM(qty), 0), 0) AS avg_cost
             FROM inventory_txn
-            WHERE txn_type = 'INBOUND' AND unit_cost IS NOT NULL
+            WHERE txn_type = 'INBOUND' AND inbound_type = 'PURCHASE' AND unit_cost IS NOT NULL
             GROUP BY product_id
             """, nativeQuery = true)
     List<Object[]> avgInboundCostByProduct();

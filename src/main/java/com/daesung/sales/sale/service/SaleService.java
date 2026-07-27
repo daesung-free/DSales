@@ -187,7 +187,7 @@ public class SaleService {
     }
 
     /**
-     * 콘텐츠구분 순매출. SELF=매출−반품, EXTERNAL=매출−매입=이익(매입원가=입고 unit_cost 가중평균).
+     * 콘텐츠구분 순매출. SELF=매출−반품, EXTERNAL=매출−매입=이익(매입원가=매입입고 unit_cost 가중평균).
      * 기간 미지정 시 올해 1/1~오늘. contentType: null/전체, SELF, EXTERNAL.
      */
     @Transactional(readOnly = true)

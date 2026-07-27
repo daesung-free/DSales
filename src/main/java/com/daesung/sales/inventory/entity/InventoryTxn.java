@@ -54,6 +54,11 @@ public class InventoryTxn extends BaseEntity {
     @Column(name = "unit_cost")
     private Long unitCost;
 
+    /** 입고구분(INBOUND 이벤트만). PURCHASE=매입입고→16p 순매출조회 매입액으로 집계. 그 외 이벤트는 null. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "inbound_type", length = 20)
+    private InboundType inboundType;
+
     @Column(name = "ref_no", length = 30)
     private String refNo;
 
@@ -77,15 +82,16 @@ public class InventoryTxn extends BaseEntity {
     @Column(length = 1000)
     private String memo;
 
-    /** 일반 입고 이벤트. qty는 양수. */
+    /** 일반 입고 이벤트. qty는 양수. inboundType: NORMAL(정상)/PURCHASE(매입입고). */
     public static InventoryTxn inbound(Product product, Warehouse warehouse, int qty, Long unitCost,
-                                       LocalDate tradeDate, Partner partner, String memo) {
+                                       InboundType inboundType, LocalDate tradeDate, Partner partner, String memo) {
         InventoryTxn t = new InventoryTxn();
         t.product = product;
         t.warehouse = warehouse;
         t.txnType = TxnType.INBOUND;
         t.qty = qty;
         t.unitCost = unitCost;
+        t.inboundType = (inboundType != null) ? inboundType : InboundType.NORMAL;
         t.tradeDate = tradeDate;
         t.partner = partner;
         t.memo = memo;

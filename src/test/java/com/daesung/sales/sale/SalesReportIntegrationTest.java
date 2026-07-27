@@ -69,6 +69,21 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
                 "items", List.of(Map.of("productId", productId, "unitCost", 3000, "qty", 1000))));
     }
 
+    /** 입고구분 지정 입고(매입입고 필터 검증용). */
+    private void inbound(Long whId, Long productId, String inboundType, int unitCost, int qty) {
+        post("/stock/inbound", Map.of(
+                "processedDate", "2026-06-01", "supplierClientId", partnerId, "destinationWarehouseId", whId,
+                "inboundType", inboundType,
+                "items", List.of(Map.of("productId", productId, "unitCost", unitCost, "qty", qty))));
+    }
+
+    private Long externalProduct(String code) {
+        return createId("/masters/products", Map.of(
+                "code", code, "name", code + " 외부콘텐츠", "contentType", "EXTERNAL", "set", false,
+                "price", 10000, "taxFree", false, "grade", "고3",
+                "catCode", "E01", "catName", "이감국어", "useYn", true));
+    }
+
     private void sale(String date, Long whId, Long productId, String shipmentType, int rate, int qty) {
         JsonNode r = post("/sales/entries", Map.of(
                 "salesDate", date, "partnerId", partnerId, "warehouseId", whId,
@@ -170,5 +185,28 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
         assertThat(a021.path("prevQty").asLong()).isEqualTo(0);
         // 전년0 → 비율 null(Jackson NON_NULL이 필드 생략 → 숫자 아님)
         assertThat(a021.path("qtyRatioPct").isNumber()).isFalse();
+    }
+
+    @Test
+    @DisplayName("순매출조회 — 외부콘텐츠 매입액은 매입입고(PURCHASE)만 집계, 정상입고 제외")
+    void 순매출_매입입고필터() {
+        // 창고·외부콘텐츠 상품 별도 시드(다른 테스트와 격리)
+        Long whId = createId("/masters/warehouses", Map.of("code", "WH-EXT", "name", "외부창고", "type", "MAIN"));
+        Long ext = externalProduct("EXT-이감01");
+        // 정상입고 @5000(매입원가에서 제외돼야 함) + 매입입고 @3000(집계 대상)
+        inbound(whId, ext, "NORMAL", 5000, 100);
+        inbound(whId, ext, "PURCHASE", 3000, 100);
+        // 매출: 공급률 100%, 10부 → 매출액 100,000. 7월로 격리(공유 6월 집계 테스트와 분리)
+        sale("2026-07-15", whId, ext, "NORMAL_SHIP", 100, 10);
+
+        JsonNode d = data(get("/sales/net-summary?from=2026-07-01&to=2026-07-31&contentType=EXTERNAL"));
+        JsonNode row = rowWhere(d.path("rows"), "productCode", "EXT-이감01");
+        assertThat(row.path("contentType").asText()).isEqualTo("EXTERNAL");
+        assertThat(row.path("netAmount").asLong()).isEqualTo(100_000);
+        // 매입단가 = 매입입고 3000만(정상입고 5000 제외돼 blended 4000이 아님)
+        assertThat(row.path("purchaseUnitCost").asLong()).isEqualTo(3000);
+        assertThat(row.path("purchaseAmount").asLong()).isEqualTo(30_000);      // 3000×10
+        assertThat(row.path("profit").asLong()).isEqualTo(70_000);              // 100,000−30,000
+        assertThat(row.path("marginPct").asDouble()).isEqualTo(70.0);
     }
 }
