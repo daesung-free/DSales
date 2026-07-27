@@ -1,13 +1,17 @@
 package com.daesung.sales.warehouse.entity;
 
 import com.daesung.sales.common.entity.BaseEntity;
+import com.daesung.sales.partner.entity.Partner;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
 import jakarta.persistence.Enumerated;
+import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
+import jakarta.persistence.JoinColumn;
+import jakarta.persistence.ManyToOne;
 import jakarta.persistence.Table;
 import lombok.AccessLevel;
 import lombok.Getter;
@@ -34,17 +38,31 @@ public class Warehouse extends BaseEntity {
     @Column(nullable = false, length = 10)
     private WarehouseType type;
 
-    public static Warehouse create(String code, String name, WarehouseType type) {
+    /** 실물재고여부(false=가상/위탁 → 수불부 실재고 집계 제외). 기본 true. */
+    @Column(name = "physical_stock", nullable = false)
+    private boolean physicalStock = true;
+
+    /** 소속거래처(위탁창고 1:1). 물류창고는 null. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "owner_client_id")
+    private Partner ownerClient;
+
+    public static Warehouse create(String code, String name, WarehouseType type,
+                                   boolean physicalStock, Partner ownerClient) {
         Warehouse w = new Warehouse();
         w.code = code;
         w.name = name;
         w.type = type;
+        w.physicalStock = physicalStock;
+        w.ownerClient = ownerClient;
         return w;
     }
 
     /** 수정(코드는 불변). */
-    public void update(String name, WarehouseType type) {
+    public void update(String name, WarehouseType type, boolean physicalStock, Partner ownerClient) {
         this.name = name;
         this.type = type;
+        this.physicalStock = physicalStock;
+        this.ownerClient = ownerClient;
     }
 }

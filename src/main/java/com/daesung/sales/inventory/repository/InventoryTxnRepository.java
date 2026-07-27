@@ -54,6 +54,7 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
               LEFT JOIN inventory inv ON inv.product_id = t.product_id AND inv.warehouse_id = t.warehouse_id
             WHERE (CAST(:productId AS SIGNED) IS NULL OR t.product_id = :productId)
               AND (CAST(:warehouseId AS SIGNED) IS NULL OR t.warehouse_id = :warehouseId)
+              AND p.ledger_visible = TRUE
             GROUP BY t.product_id, p.code, p.name, t.warehouse_id, w.name
             ORDER BY p.code, w.name
             """, nativeQuery = true)

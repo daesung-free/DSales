@@ -15,12 +15,16 @@ public record ProductResponse(
         String grade,
         String catCode,
         String catName,
-        boolean useYn
+        boolean useYn,
+        String salesDivision,
+        boolean ledgerVisible,
+        boolean webVisible
 ) {
     public static ProductResponse from(Product p) {
         return new ProductResponse(
                 p.getId(), p.getCode(), p.getName(), p.getContentType(),
                 p.isSet(), p.getPrice(), p.isTaxFree(), p.getGrade(),
-                p.getCatCode(), p.getCatName(), p.isUseYn());
+                p.getCatCode(), p.getCatName(), p.isUseYn(),
+                p.getSalesDivision(), p.isLedgerVisible(), p.isWebVisible());
     }
 }

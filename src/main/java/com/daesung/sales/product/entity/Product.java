@@ -56,9 +56,22 @@ public class Product extends BaseEntity {
     @Column(name = "use_yn", nullable = false)
     private boolean useYn = true;
 
+    /** 매출구분(매출액정리·순매출조회 집계기준). 근거: 32p 도서관리. */
+    @Column(name = "sales_division", length = 30)
+    private String salesDivision;
+
+    /** 수불부노출 여부(제품수불부 집계 포함). 기본 true. */
+    @Column(name = "ledger_visible", nullable = false)
+    private boolean ledgerVisible = true;
+
+    /** Web/신청사이트 게시 여부. 기본 false. */
+    @Column(name = "web_visible", nullable = false)
+    private boolean webVisible = false;
+
     public static Product create(String code, String name, ContentType contentType, boolean set,
                                  Integer price, boolean taxFree, String grade,
-                                 String catCode, String catName, boolean useYn) {
+                                 String catCode, String catName, boolean useYn,
+                                 String salesDivision, boolean ledgerVisible, boolean webVisible) {
         Product p = new Product();
         p.code = code;
         p.name = name;
@@ -70,12 +83,16 @@ public class Product extends BaseEntity {
         p.catCode = catCode;
         p.catName = catName;
         p.useYn = useYn;
+        p.salesDivision = salesDivision;
+        p.ledgerVisible = ledgerVisible;
+        p.webVisible = webVisible;
         return p;
     }
 
     /** 수정(코드는 불변). */
     public void update(String name, ContentType contentType, boolean set, Integer price,
-                       boolean taxFree, String grade, String catCode, String catName, boolean useYn) {
+                       boolean taxFree, String grade, String catCode, String catName, boolean useYn,
+                       String salesDivision, boolean ledgerVisible, boolean webVisible) {
         this.name = name;
         this.contentType = contentType;
         this.set = set;
@@ -85,6 +102,9 @@ public class Product extends BaseEntity {
         this.catCode = catCode;
         this.catName = catName;
         this.useYn = useYn;
+        this.salesDivision = salesDivision;
+        this.ledgerVisible = ledgerVisible;
+        this.webVisible = webVisible;
     }
 
     /** 논리삭제(비활성화). */

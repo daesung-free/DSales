@@ -33,6 +33,15 @@ public record ProductUpdateRequest(
         String catName,
 
         @Schema(description = "사용 여부", example = "true")
-        boolean useYn
+        boolean useYn,
+
+        @Schema(description = "매출구분(매출액정리·순매출조회 집계기준)", example = "정상")
+        String salesDivision,
+
+        @Schema(description = "수불부노출 여부", example = "true")
+        boolean ledgerVisible,
+
+        @Schema(description = "Web게시 여부", example = "false")
+        boolean webVisible
 ) {
 }

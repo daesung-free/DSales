@@ -48,7 +48,8 @@ public class ProductService {
         Product product = Product.create(
                 req.code(), req.name(), req.contentType(), req.set(),
                 req.price(), req.taxFree(), req.grade(),
-                req.catCode(), req.catName(), req.useYnOrDefault());
+                req.catCode(), req.catName(), req.useYnOrDefault(),
+                req.salesDivision(), req.ledgerVisibleOrDefault(), req.webVisibleOrDefault());
         return ProductResponse.from(productRepository.save(product));
     }
 
@@ -57,7 +58,8 @@ public class ProductService {
         Product product = getOrThrow(id);
         product.update(req.name(), req.contentType(), req.set(),
                 req.price(), req.taxFree(), req.grade(),
-                req.catCode(), req.catName(), req.useYn());
+                req.catCode(), req.catName(), req.useYn(),
+                req.salesDivision(), req.ledgerVisible(), req.webVisible());
         return ProductResponse.from(product);
     }
 

@@ -3,6 +3,8 @@ package com.daesung.sales.warehouse.service;
 import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.common.response.PageResponse;
+import com.daesung.sales.partner.entity.Partner;
+import com.daesung.sales.partner.repository.PartnerRepository;
 import com.daesung.sales.warehouse.dto.WarehouseCreateRequest;
 import com.daesung.sales.warehouse.dto.WarehouseResponse;
 import com.daesung.sales.warehouse.dto.WarehouseUpdateRequest;
@@ -20,6 +22,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class WarehouseService {
 
     private final WarehouseRepository warehouseRepository;
+    private final PartnerRepository partnerRepository;
 
     public PageResponse<WarehouseResponse> findAll(String keyword, Pageable pageable) {
         Page<Warehouse> page = (keyword == null || keyword.isBlank())
@@ -38,15 +41,26 @@ public class WarehouseService {
         warehouseRepository.findByCode(req.code()).ifPresent(w -> {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "이미 존재하는 창고코드: " + req.code());
         });
-        Warehouse warehouse = Warehouse.create(req.code(), req.name(), req.type());
+        Warehouse warehouse = Warehouse.create(req.code(), req.name(), req.type(),
+                req.physicalStockOrDefault(), resolveOwner(req.ownerClientId()));
         return WarehouseResponse.from(warehouseRepository.save(warehouse));
     }
 
     @Transactional
     public WarehouseResponse update(Long id, WarehouseUpdateRequest req) {
         Warehouse warehouse = getOrThrow(id);
-        warehouse.update(req.name(), req.type());
+        warehouse.update(req.name(), req.type(), req.physicalStock(), resolveOwner(req.ownerClientId()));
         return WarehouseResponse.from(warehouse);
+    }
+
+    /** 소속거래처 id → Partner(없으면 예외). null이면 소속 없음. */
+    private Partner resolveOwner(Long ownerClientId) {
+        if (ownerClientId == null) {
+            return null;
+        }
+        return partnerRepository.findById(ownerClientId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                        "소속거래처가 없습니다. id=" + ownerClientId));
     }
 
     private Warehouse getOrThrow(Long id) {

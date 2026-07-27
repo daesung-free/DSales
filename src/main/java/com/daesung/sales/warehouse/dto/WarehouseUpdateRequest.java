@@ -12,6 +12,12 @@ public record WarehouseUpdateRequest(
         @NotBlank String name,
 
         @Schema(description = "창고유형(MAIN/CONSIGN)", example = "MAIN", requiredMode = Schema.RequiredMode.REQUIRED)
-        @NotNull WarehouseType type
+        @NotNull WarehouseType type,
+
+        @Schema(description = "실물재고여부", example = "true")
+        boolean physicalStock,
+
+        @Schema(description = "소속거래처 id(위탁창고 1:1, 없으면 미지정)", example = "5")
+        Long ownerClientId
 ) {
 }
