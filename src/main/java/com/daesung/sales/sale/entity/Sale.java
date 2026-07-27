@@ -84,6 +84,11 @@ public class Sale extends BaseEntity {
     @Column(name = "total_amount")
     private Long totalAmount;
 
+    /** 성적처리 구분(37p 월별매출액명세서 인원 집계축). null=비처리로 간주. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "proc_type", length = 20)
+    private ProcType procType;
+
     /** 원본 위탁출고번호(위탁정산 매출일 때). */
     @Column(name = "source_out_no", length = 30)
     private String sourceOutNo;
@@ -107,11 +112,11 @@ public class Sale extends BaseEntity {
     @Column(name = "canceled_at")
     private LocalDateTime canceledAt;
 
-    /** 일반(직접) 매출 라인 생성. 위탁 정산 매출은 별도(from-consign)로 생성. */
+    /** 일반(직접) 매출 라인 생성. 위탁 정산 매출은 별도(from-consign)로 생성. procType은 성적처리 구분(nullable). */
     public static Sale create(String salesNo, LocalDate salesDate, Partner partner, Product product,
                               SalesType salesType, ShipmentType shipmentType, SalesCategory salesCategory,
                               Integer unitPrice, Integer supplyRate, int qty,
-                              Long supplyAmount, Long tax, Long totalAmount, String memo) {
+                              Long supplyAmount, Long tax, Long totalAmount, ProcType procType, String memo) {
         Sale s = new Sale();
         s.salesNo = salesNo;
         s.salesDate = salesDate;
@@ -126,6 +131,7 @@ public class Sale extends BaseEntity {
         s.supplyAmount = supplyAmount;
         s.tax = tax;
         s.totalAmount = totalAmount;
+        s.procType = procType;
         s.memo = memo;
         return s;
     }

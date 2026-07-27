@@ -92,6 +92,15 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
         assertThat(r.path("success").asBoolean()).as("매출등록 성공: %s", r).isTrue();
     }
 
+    /** 성적처리 구분 포함 매출 등록(37p 검증용). */
+    private void saleP(String date, Long whId, Long productId, String shipmentType, int rate, int qty, String procType) {
+        JsonNode r = post("/sales/entries", Map.of(
+                "salesDate", date, "partnerId", partnerId, "warehouseId", whId,
+                "items", List.of(Map.of("productId", productId, "shipmentType", shipmentType,
+                        "unitPrice", 10000, "supplyRate", rate, "qty", qty, "procType", procType))));
+        assertThat(r.path("success").asBoolean()).as("매출등록 성공: %s", r).isTrue();
+    }
+
     private JsonNode rowWhere(JsonNode rows, String field, String value) {
         for (JsonNode r : rows) {
             if (value.equals(r.path(field).asText())) {
@@ -185,6 +194,31 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
         assertThat(a021.path("prevQty").asLong()).isEqualTo(0);
         // 전년0 → 비율 null(Jackson NON_NULL이 필드 생략 → 숫자 아님)
         assertThat(a021.path("qtyRatioPct").isNumber()).isFalse();
+    }
+
+    @Test
+    @DisplayName("월별매출액명세서(37p) — 성적처리/비처리 인원·금액 분리 + 과세·부가세")
+    void 월별매출액명세서() {
+        Long wh = createId("/masters/warehouses", Map.of("code", "WH-37", "name", "37창고", "type", "MAIN"));
+        Long mp = product("MST-M01", "M01", "더프모의");   // 과세(taxFree=false), 대분류 'M'
+        inbound(wh, mp);   // 재고 확보(1000)
+        // 3월로 격리: 성적처리 30명 + 비처리 20명 (같은 상품)
+        saleP("2026-03-10", wh, mp, "NORMAL_SHIP", 100, 30, "GRADED");
+        saleP("2026-03-10", wh, mp, "NORMAL_SHIP", 100, 20, "UNGRADED");
+
+        JsonNode rows = data(get("/sales/monthly-statement?year=2026&month=3")).path("rows");
+        JsonNode detail = rowWhere(rows, "bookCode", "MST-M01");
+        assertThat(detail.path("gradedQty").asLong()).isEqualTo(30);
+        assertThat(detail.path("gradedAmount").asLong()).isEqualTo(300_000);   // 10000×100%×30
+        assertThat(detail.path("ungradedQty").asLong()).isEqualTo(20);
+        assertThat(detail.path("ungradedAmount").asLong()).isEqualTo(200_000);
+        assertThat(detail.path("totalQty").asLong()).isEqualTo(50);
+        assertThat(detail.path("totalAmount").asLong()).isEqualTo(500_000);
+        assertThat(detail.path("taxableAmount").asLong()).isEqualTo(500_000); // 전부 과세
+        assertThat(detail.path("vat").asLong()).isEqualTo(50_000);            // 10%
+        JsonNode grand = rowWhere(rows, "rowType", "GRAND_TOTAL");
+        assertThat(grand.path("gradedQty").asLong()).isEqualTo(30);
+        assertThat(grand.path("totalQty").asLong()).isEqualTo(50);
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.daesung.sales.sale.dto;
 
+import com.daesung.sales.sale.entity.ProcType;
 import com.daesung.sales.salestype.entity.ShipmentType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
@@ -44,6 +45,10 @@ public record SalesEntryRequest(
 
             @Schema(description = "수량", example = "100", requiredMode = Schema.RequiredMode.REQUIRED)
             @Positive int qty,
+
+            @Schema(description = "성적처리 구분(37p 월별매출액명세서 인원 집계축): GRADED(성적처리)/UNGRADED(비처리). 미지정 시 비처리로 집계",
+                    example = "GRADED")
+            ProcType procType,
 
             @Schema(description = "비고", example = "6월 정상 매출")
             String memo

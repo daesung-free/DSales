@@ -294,4 +294,28 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
             ORDER BY mon
             """, nativeQuery = true)
     List<Object[]> taxFilingByMonth(@Param("year") int year);
+
+    /**
+     * 월별매출액명세서(37p): 대분류×분류×상품별 성적처리/비처리 인원·금액 + 과세·부가세. 매출(SALE)만, 취소 제외.
+     * 성적처리 = proc_type='GRADED', 그 외(비처리/미지정)는 UNGRADED 버킷. 인원=qty, 금액=supply_amount.
+     * 대분류 = LEFT(cat_code,1). 반환 Object[]:
+     *   [major, catCode, catName, productId, code, name, gradedQty, gradedAmt, ungradedQty, ungradedAmt, taxableAmt, vat].
+     */
+    @Query(value = """
+            SELECT LEFT(p.cat_code,1) AS major, p.cat_code, p.cat_name, s.product_id, p.code, p.name,
+              COALESCE(SUM(CASE WHEN s.proc_type='GRADED' THEN s.qty ELSE 0 END),0)            AS graded_qty,
+              COALESCE(SUM(CASE WHEN s.proc_type='GRADED' THEN s.supply_amount ELSE 0 END),0)  AS graded_amt,
+              COALESCE(SUM(CASE WHEN s.proc_type='GRADED' THEN 0 ELSE s.qty END),0)            AS ungraded_qty,
+              COALESCE(SUM(CASE WHEN s.proc_type='GRADED' THEN 0 ELSE s.supply_amount END),0)  AS ungraded_amt,
+              COALESCE(SUM(CASE WHEN s.tax <> 0 THEN s.supply_amount ELSE 0 END),0)            AS taxable_amt,
+              COALESCE(SUM(s.tax),0)                                                           AS vat
+            FROM sales s JOIN products p ON p.id = s.product_id
+            WHERE s.canceled = false
+              AND s.sales_category = 'SALE'
+              AND EXTRACT(YEAR FROM s.sales_date) = :year
+              AND EXTRACT(MONTH FROM s.sales_date) = :month
+            GROUP BY LEFT(p.cat_code,1), p.cat_code, p.cat_name, s.product_id, p.code, p.name
+            ORDER BY LEFT(p.cat_code,1), p.cat_code, p.code
+            """, nativeQuery = true)
+    List<Object[]> monthlyStatementAgg(@Param("year") int year, @Param("month") int month);
 }

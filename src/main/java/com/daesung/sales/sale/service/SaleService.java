@@ -16,6 +16,7 @@ import com.daesung.sales.product.repository.ProductRepository;
 import com.daesung.sales.sale.dto.BookInoutResponse;
 import com.daesung.sales.sale.dto.BookSalesAgg;
 import com.daesung.sales.sale.dto.CategorySalesAgg;
+import com.daesung.sales.sale.dto.MonthlyStatementResponse;
 import com.daesung.sales.sale.dto.CategorySalesResponse;
 import com.daesung.sales.sale.dto.SaleResponse;
 import com.daesung.sales.sale.dto.SalesEntryRequest;
@@ -98,7 +99,7 @@ public class SaleService {
             Sale sale = Sale.create(salesNo, req.salesDate(), partner, product,
                     SalesType.NORMAL_SALES, item.shipmentType(), salesCategory,
                     item.unitPrice(), item.supplyRate(), item.qty(),
-                    supplyAmount, tax, totalAmount, item.memo());
+                    supplyAmount, tax, totalAmount, item.procType(), item.memo());
             saleRepository.save(sale);
 
             // 재고 반영(한 트랜잭션): 출고유형 → 부호/이벤트유형. 위탁·취소는 이 API 불가.
@@ -305,6 +306,54 @@ public class SaleService {
     /** 대분류코드 = catCode 첫 글자. null/빈값은 미분류(null). */
     private static String majorOf(String catCode) {
         return (catCode == null || catCode.isEmpty()) ? null : catCode.substring(0, 1);
+    }
+
+    /**
+     * 월별매출액명세서(37p): 대분류×상품 성적처리/비처리 인원·금액 + 대분류계 + 총계 + 과세매출·부가세.
+     * 매출(SALE)만. 인원=수량(모의고사=응시인원), 성적처리=proc_type GRADED(그 외=비처리).
+     */
+    @Transactional(readOnly = true)
+    public MonthlyStatementResponse monthlyStatement(int year, int month) {
+        List<MonthlyStatementResponse.Row> rows = new ArrayList<>();
+        // 누계: [gradedQty, gradedAmt, ungradedQty, ungradedAmt, taxableAmt, vat]
+        long[] major = new long[6];
+        long[] grand = new long[6];
+        String curMajor = null;
+        boolean majorOpen = false;
+
+        for (Object[] r : saleRepository.monthlyStatementAgg(year, month)) {
+            String m = (r[0] == null) ? null : r[0].toString();  // LEFT()가 Character로 올 수 있어 toString
+            long[] v = {num(r[6]), num(r[7]), num(r[8]), num(r[9]), num(r[10]), num(r[11])};
+
+            if (majorOpen && !java.util.Objects.equals(m, curMajor)) {
+                rows.add(majorRow(MonthlyStatementResponse.Row.RowType.MAJOR_SUBTOTAL, curMajor, major));
+                major = new long[6];
+                majorOpen = false;
+            }
+            if (!majorOpen) {
+                curMajor = m;
+                majorOpen = true;
+            }
+            rows.add(new MonthlyStatementResponse.Row(
+                    MonthlyStatementResponse.Row.RowType.DETAIL, m, (String) r[2], (String) r[4], (String) r[5],
+                    v[0], v[1], v[2], v[3], v[0] + v[2], v[1] + v[3], v[4], v[5]));
+            for (int i = 0; i < 6; i++) {
+                major[i] += v[i];
+                grand[i] += v[i];
+            }
+        }
+        if (majorOpen) {
+            rows.add(majorRow(MonthlyStatementResponse.Row.RowType.MAJOR_SUBTOTAL, curMajor, major));
+        }
+        rows.add(majorRow(MonthlyStatementResponse.Row.RowType.GRAND_TOTAL, null, grand));
+        return new MonthlyStatementResponse(year, month, rows);
+    }
+
+    /** 집계배열 v=[gradedQty,gradedAmt,ungradedQty,ungradedAmt,taxableAmt,vat] → 소계/총계 행. */
+    private MonthlyStatementResponse.Row majorRow(MonthlyStatementResponse.Row.RowType type,
+                                                  String majorCode, long[] v) {
+        return new MonthlyStatementResponse.Row(type, majorCode, null, null, null,
+                v[0], v[1], v[2], v[3], v[0] + v[2], v[1] + v[3], v[4], v[5]);
     }
 
     /**

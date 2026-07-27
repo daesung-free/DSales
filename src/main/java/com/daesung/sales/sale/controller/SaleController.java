@@ -5,6 +5,7 @@ import com.daesung.sales.common.response.ApiResponse;
 import com.daesung.sales.common.response.PageResponse;
 import com.daesung.sales.sale.dto.BookInoutResponse;
 import com.daesung.sales.sale.dto.CategorySalesResponse;
+import com.daesung.sales.sale.dto.MonthlyStatementResponse;
 import com.daesung.sales.sale.dto.NetSalesResponse;
 import com.daesung.sales.sale.dto.SaleResponse;
 import com.daesung.sales.sale.dto.SalesEntryRequest;
@@ -113,6 +114,21 @@ public class SaleController {
             @Parameter(description = "회계구분(SALE/FREE/RETURN, 미지정=전체)") @RequestParam(required = false)
             SalesCategory category) {
         return ApiResponse.success(saleService.statement(from, to, category));
+    }
+
+    @Operation(summary = "월별매출액명세서(37p)",
+            description = "구분(대분류=catCode 첫 글자)×상품별 성적처리/비처리 인원·금액 + 계 + 과세매출액 + 부가세. "
+                    + "대분류 소계·총계 포함. 매출(SALE)만 집계(무상·반품 제외), 취소 제외. "
+                    + "인원=수량(모의고사=응시인원), 성적처리=매출등록 proc_type(GRADED, 미지정=비처리). "
+                    + "year·month 미지정 시 이번 달.")
+    @GetMapping("/monthly-statement")
+    public ApiResponse<MonthlyStatementResponse> monthlyStatement(
+            @Parameter(description = "연도(미지정 시 올해)", example = "2026") @RequestParam(required = false) Integer year,
+            @Parameter(description = "월 1~12(미지정 시 이번 달)", example = "6") @RequestParam(required = false) Integer month) {
+        LocalDate now = LocalDate.now();
+        int y = (year != null) ? year : now.getYear();
+        int m = (month != null) ? month : now.getMonthValue();
+        return ApiResponse.success(saleService.monthlyStatement(y, m));
     }
 
     @Operation(summary = "거래명세서",
