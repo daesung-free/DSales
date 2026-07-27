@@ -42,6 +42,9 @@ public record ProductUpdateRequest(
         boolean ledgerVisible,
 
         @Schema(description = "Web게시 여부", example = "false")
-        boolean webVisible
+        boolean webVisible,
+
+        @Schema(description = "재고관리 여부(false=모의고사 등 인원기반, 매출 시 재고 미차감)", example = "true")
+        boolean stockManaged
 ) {
 }

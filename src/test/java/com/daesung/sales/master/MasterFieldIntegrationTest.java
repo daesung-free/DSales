@@ -79,6 +79,37 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
         assertThat(codes(rows)).contains("MF-VIS").doesNotContain("MF-HID");
     }
 
+    @Test
+    @DisplayName("재고관리 여부 — 모의고사(false)는 입고 없이 매출 성공·재고이벤트 없음")
+    void 재고미관리_매출() {
+        Long wh = createId("/masters/warehouses",
+                Map.of("code", "MF-MSWH", "name", "모의고사창고", "type", "MAIN"));
+        // 재고관리 안 함(모의고사) — 입고 전혀 없음
+        Long exam = createId("/masters/products", Map.of(
+                "code", "MF-EXAM", "name", "더프모의고사", "contentType", "SELF", "stockManaged", false));
+
+        // 입고 0인데도 정상출고 매출 성공(NEGATIVE_STOCK 안 남)
+        JsonNode r = post("/sales/entries", Map.of(
+                "salesDate", "2026-04-15", "partnerId", ownerFallback(), "warehouseId", wh,
+                "items", List.of(Map.of("productId", exam, "shipmentType", "NORMAL_SHIP",
+                        "unitPrice", 10000, "supplyRate", 100, "qty", 30))));
+        assertThat(r.path("success").asBoolean()).as("재고 미관리 상품 매출 성공: %s", r).isTrue();
+
+        // 재고이벤트 없음 → 제품수불부에 해당 상품 행 없음
+        JsonNode rows = data(get("/stock/ledger?warehouseId=" + wh));
+        assertThat(codes(rows)).doesNotContain("MF-EXAM");
+
+        // 대조: 재고관리 상품(기본 true)은 입고 없이 팔면 NEGATIVE_STOCK
+        Long book = createId("/masters/products",
+                Map.of("code", "MF-BOOK", "name", "일반교재", "contentType", "SELF"));
+        JsonNode fail = post("/sales/entries", Map.of(
+                "salesDate", "2026-04-15", "partnerId", ownerFallback(), "warehouseId", wh,
+                "items", List.of(Map.of("productId", book, "shipmentType", "NORMAL_SHIP",
+                        "unitPrice", 10000, "supplyRate", 100, "qty", 30))));
+        assertThat(fail.path("success").asBoolean()).isFalse();
+        assertThat(fail.path("error").path("code").asText()).isEqualTo("NEGATIVE_STOCK");
+    }
+
     private void inbound(Long whId, Long productId) {
         post("/stock/inbound", Map.of(
                 "processedDate", "2026-06-01", "supplierClientId", ownerFallback(), "destinationWarehouseId", whId,

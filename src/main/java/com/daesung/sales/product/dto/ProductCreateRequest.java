@@ -45,7 +45,11 @@ public record ProductCreateRequest(
         Boolean ledgerVisible,
 
         @Schema(description = "Web게시 여부(미지정 시 false)", example = "false")
-        Boolean webVisible
+        Boolean webVisible,
+
+        @Schema(description = "재고관리 여부(미지정 시 true). false=모의고사 등 인원기반, 매출 시 재고 미차감",
+                example = "true")
+        Boolean stockManaged
 ) {
     public boolean useYnOrDefault() {
         return useYn == null || useYn;
@@ -57,5 +61,9 @@ public record ProductCreateRequest(
 
     public boolean webVisibleOrDefault() {
         return webVisible != null && webVisible;
+    }
+
+    public boolean stockManagedOrDefault() {
+        return stockManaged == null || stockManaged;
     }
 }

@@ -68,10 +68,18 @@ public class Product extends BaseEntity {
     @Column(name = "web_visible", nullable = false)
     private boolean webVisible = false;
 
+    /**
+     * 재고관리 여부. 기본 true. false면 매출 시 재고 차감·재고이벤트 없음(수불부·재고 대상 아님).
+     * 근거: 레거시 모의고사는 invenData(재고장부) 미기록·제품수불부 없음 = 인원 기반 종량제 매출.
+     */
+    @Column(name = "stock_managed", nullable = false)
+    private boolean stockManaged = true;
+
     public static Product create(String code, String name, ContentType contentType, boolean set,
                                  Integer price, boolean taxFree, String grade,
                                  String catCode, String catName, boolean useYn,
-                                 String salesDivision, boolean ledgerVisible, boolean webVisible) {
+                                 String salesDivision, boolean ledgerVisible, boolean webVisible,
+                                 boolean stockManaged) {
         Product p = new Product();
         p.code = code;
         p.name = name;
@@ -86,13 +94,15 @@ public class Product extends BaseEntity {
         p.salesDivision = salesDivision;
         p.ledgerVisible = ledgerVisible;
         p.webVisible = webVisible;
+        p.stockManaged = stockManaged;
         return p;
     }
 
     /** 수정(코드는 불변). */
     public void update(String name, ContentType contentType, boolean set, Integer price,
                        boolean taxFree, String grade, String catCode, String catName, boolean useYn,
-                       String salesDivision, boolean ledgerVisible, boolean webVisible) {
+                       String salesDivision, boolean ledgerVisible, boolean webVisible,
+                       boolean stockManaged) {
         this.name = name;
         this.contentType = contentType;
         this.set = set;
@@ -105,6 +115,7 @@ public class Product extends BaseEntity {
         this.salesDivision = salesDivision;
         this.ledgerVisible = ledgerVisible;
         this.webVisible = webVisible;
+        this.stockManaged = stockManaged;
     }
 
     /** 논리삭제(비활성화). */

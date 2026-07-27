@@ -103,10 +103,14 @@ public class SaleService {
             saleRepository.save(sale);
 
             // 재고 반영(한 트랜잭션): 출고유형 → 부호/이벤트유형. 위탁·취소는 이 API 불가.
+            // 재고 미관리 상품(모의고사 등 인원기반)은 차감·이벤트 없음. shipmentType 유효성은 항상 검사.
             int delta = stockDelta(item.shipmentType(), item.qty());
-            TxnType txnType = (delta >= 0) ? TxnType.RETURN : TxnType.OUTBOUND;
-            int stockBalance = inventoryService.applyShipment(product, warehouse, delta, txnType,
-                    item.shipmentType(), req.salesDate(), salesNo, item.memo());
+            int stockBalance = 0;
+            if (product.isStockManaged()) {
+                TxnType txnType = (delta >= 0) ? TxnType.RETURN : TxnType.OUTBOUND;
+                stockBalance = inventoryService.applyShipment(product, warehouse, delta, txnType,
+                        item.shipmentType(), req.salesDate(), salesNo, item.memo());
+            }
 
             lines.add(new SalesEntryResponse.Line(salesNo, product.getId(), product.getCode(),
                     item.shipmentType(), salesCategory, item.qty(), supplyAmount, tax, totalAmount, stockBalance));
