@@ -2,6 +2,7 @@ package com.daesung.sales.closing.service;
 
 import com.daesung.sales.closing.config.SupplierProperties;
 import com.daesung.sales.closing.dto.RevenueReportResponse;
+import com.daesung.sales.closing.dto.TaxFilingResponse;
 import com.daesung.sales.closing.dto.TaxInvoiceResponse;
 import com.daesung.sales.partner.entity.Partner;
 import com.daesung.sales.partner.repository.PartnerRepository;
@@ -59,6 +60,52 @@ public class TaxService {
         RevenueReportResponse.PartnerRevenue total = new RevenueReportResponse.PartnerRevenue(
                 null, "합계", tCnt, tSupply, tTax, List.of());
         return new RevenueReportResponse(from, to, filter, rows, total);
+    }
+
+    /**
+     * 계산서·세금계산서 월별신고(38p): 월×발행유형(계산서=면세/세금계산서=과세)으로 매출·반품·순매출·세액 집계.
+     * 발행유형은 sale.tax(0/≠0)로 파생(신규 필드 없음). 미발행분은 정의 미확정→0 placeholder.
+     */
+    @Transactional(readOnly = true)
+    public TaxFilingResponse taxFiling(int year) {
+        // month → [invoiceSale, invoiceReturn, taxInvoiceSale, taxInvoiceReturn, tax]
+        Map<Integer, long[]> byMonth = new LinkedHashMap<>();
+        for (int m = 1; m <= 12; m++) {
+            byMonth.put(m, new long[5]);
+        }
+        for (Object[] r : saleRepository.taxFilingByMonth(year)) {
+            int month = (int) num(r[0]);
+            boolean invoice = "INVOICE".equals(r[1]);   // 계산서(면세)
+            long saleSupply = num(r[2]), returnSupply = num(r[3]), netTax = num(r[4]);
+            long[] acc = byMonth.get(month);
+            if (invoice) {
+                acc[0] += saleSupply;
+                acc[1] += returnSupply;
+            } else {
+                acc[2] += saleSupply;
+                acc[3] += returnSupply;
+            }
+            acc[4] += netTax;
+        }
+
+        List<TaxFilingResponse.MonthRow> rows = new ArrayList<>();
+        long[] tot = new long[5];
+        for (int m = 1; m <= 12; m++) {
+            long[] a = byMonth.get(m);
+            rows.add(monthRow(m, a));
+            for (int i = 0; i < 5; i++) {
+                tot[i] += a[i];
+            }
+        }
+        return new TaxFilingResponse(year, rows, monthRow(0, tot));
+    }
+
+    /** acc=[invoiceSale, invoiceReturn, taxInvoiceSale, taxInvoiceReturn, tax] → 응답행(순매출·계 파생). */
+    private TaxFilingResponse.MonthRow monthRow(int month, long[] a) {
+        long invNet = a[0] - a[1];
+        long taxNet = a[2] - a[3];
+        return new TaxFilingResponse.MonthRow(
+                month, a[0], 0L, a[2], 0L, a[1], a[3], invNet, taxNet, invNet + taxNet, a[4]);
     }
 
     /**

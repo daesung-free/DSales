@@ -188,6 +188,34 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("수익신고 — 거래처×월 순매출/세액(MySQL DATE_FORMAT 회귀 방어)")
+    void 수익신고() {
+        JsonNode d = data(get("/closing/revenue-report?fromDate=2026-06-01&toDate=2026-06-30"));
+        JsonNode total = d.path("total");
+        assertThat(total.path("totalNetSupply").asLong()).isEqualTo(185_000);  // 195k−10k
+        assertThat(total.path("totalNetTax").asLong()).isEqualTo(18_500);
+        JsonNode months = d.path("rows").get(0).path("months");
+        assertThat(months.get(0).path("yearMonth").asText()).isEqualTo("202606");
+    }
+
+    @Test
+    @DisplayName("계산서·세금계산서 월별신고(38p) — 6월 과세=세금계산서 버킷, 순매출/세액")
+    void 계산서월별신고() {
+        JsonNode d = data(get("/closing/tax-filing?year=2026"));
+        JsonNode jun = rowWhere(d.path("rows"), "month", "6");  // 공유 6월 시드(전부 과세)
+        // 6월 매출 195,000(50k+100k+25k+20k), 반품 10,000(a011 rate50×2), 무상(교사용)은 제외
+        assertThat(jun.path("taxInvoiceSale").asLong()).isEqualTo(195_000);
+        assertThat(jun.path("taxInvoiceReturn").asLong()).isEqualTo(10_000);
+        assertThat(jun.path("taxInvoiceNet").asLong()).isEqualTo(185_000);   // 195k−10k
+        assertThat(jun.path("invoiceSale").asLong()).isEqualTo(0);           // 면세 상품 없음
+        assertThat(jun.path("netTotal").asLong()).isEqualTo(185_000);
+        assertThat(jun.path("tax").asLong()).isEqualTo(18_500);              // 19,500(매출) − 1,000(반품)
+        assertThat(jun.path("taxInvoiceUnissued").asLong()).isEqualTo(0);    // 미발행분 placeholder
+        // 12개월 행 항상 존재
+        assertThat(d.path("rows")).hasSize(12);
+    }
+
+    @Test
     @DisplayName("순매출조회 — 외부콘텐츠 매입액은 매입입고(PURCHASE)만 집계, 정상입고 제외")
     void 순매출_매입입고필터() {
         // 창고·외부콘텐츠 상품 별도 시드(다른 테스트와 격리)

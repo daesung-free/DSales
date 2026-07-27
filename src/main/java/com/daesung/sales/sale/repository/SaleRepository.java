@@ -232,7 +232,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
      * 반환 Object[]: [partnerId, partnerName, yyyymm, count, netSupply, netTax].
      */
     @Query(value = """
-            SELECT s.partner_id, pt.name, TO_CHAR(s.sales_date,'YYYYMM') AS ym,
+            SELECT s.partner_id, pt.name, DATE_FORMAT(s.sales_date,'%Y%m') AS ym,
               COUNT(*) AS cnt,
               COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN -s.supply_amount ELSE s.supply_amount END),0) AS net_supply,
               COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN -s.tax ELSE s.tax END),0) AS net_tax
@@ -242,7 +242,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
               AND ( :taxFilter = 'ALL'
                     OR (:taxFilter = 'FREE' AND s.tax = 0)
                     OR (:taxFilter = 'TAXABLE' AND s.tax <> 0) )
-            GROUP BY s.partner_id, pt.name, TO_CHAR(s.sales_date,'YYYYMM')
+            GROUP BY s.partner_id, pt.name, DATE_FORMAT(s.sales_date,'%Y%m')
             ORDER BY pt.name, ym
             """, nativeQuery = true)
     List<Object[]> revenueReport(@Param("fromDate") LocalDate fromDate,
@@ -272,4 +272,26 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     List<Object[]> taxInvoiceLines(@Param("fromDate") LocalDate fromDate,
                                    @Param("toDate") LocalDate toDate,
                                    @Param("partnerId") Long partnerId);
+
+    /**
+     * 계산서·세금계산서 월별신고(38p): 월×발행유형으로 매출/반품/세액 집계. 취소 제외.
+     * 발행유형: tax=0 → 'INVOICE'(계산서/면세), tax≠0 → 'TAX_INVOICE'(세금계산서/과세).
+     *   (기존 계산서신고 taxInvoiceLines와 동일 버킷 규칙.)
+     * 무상(FREE)은 매출/반품에서 제외(SALE·RETURN만 집계).
+     * 반환 Object[]: [month(1~12), issueType, saleSupply, returnSupply, netTax].
+     */
+    @Query(value = """
+            SELECT EXTRACT(MONTH FROM s.sales_date) AS mon,
+              CASE WHEN s.tax = 0 THEN 'INVOICE' ELSE 'TAX_INVOICE' END AS issue_type,
+              COALESCE(SUM(CASE WHEN s.sales_category='SALE'   THEN s.supply_amount ELSE 0 END),0) AS sale_supply,
+              COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN s.supply_amount ELSE 0 END),0) AS return_supply,
+              COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN -s.tax ELSE s.tax END),0)      AS net_tax
+            FROM sales s
+            WHERE s.canceled = false
+              AND EXTRACT(YEAR FROM s.sales_date) = :year
+            GROUP BY EXTRACT(MONTH FROM s.sales_date),
+                     CASE WHEN s.tax = 0 THEN 'INVOICE' ELSE 'TAX_INVOICE' END
+            ORDER BY mon
+            """, nativeQuery = true)
+    List<Object[]> taxFilingByMonth(@Param("year") int year);
 }

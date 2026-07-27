@@ -1,6 +1,7 @@
 package com.daesung.sales.closing.controller;
 
 import com.daesung.sales.closing.dto.RevenueReportResponse;
+import com.daesung.sales.closing.dto.TaxFilingResponse;
 import com.daesung.sales.closing.dto.TaxInvoiceResponse;
 import com.daesung.sales.closing.service.TaxService;
 import com.daesung.sales.common.response.ApiResponse;
@@ -38,6 +39,17 @@ public class TaxController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @Parameter(description = "과세구분(FREE=면세/TAXABLE=과세/미지정=전체)") @RequestParam(required = false) String taxType) {
         return ApiResponse.success(taxService.revenueReport(fromDate, toDate, taxType));
+    }
+
+    @Operation(summary = "계산서·세금계산서 월별신고 조회(38p)",
+            description = "월(1~12)×발행유형(계산서=면세/세금계산서=과세) 기준 매출·반품·순매출·세액 집계 + 연간 합계. "
+                    + "발행유형은 매출 세액(0/≠0)으로 파생. 취소 제외. "
+                    + "⚠️'미발행분'은 정의 미확정으로 현재 0. year 미지정 시 올해.")
+    @GetMapping("/tax-filing")
+    public ApiResponse<TaxFilingResponse> taxFiling(
+            @Parameter(description = "신고연도(미지정 시 올해)", example = "2026") @RequestParam(required = false) Integer year) {
+        int y = (year != null) ? year : LocalDate.now().getYear();
+        return ApiResponse.success(taxService.taxFiling(y));
     }
 
     @Operation(summary = "계산서신고 데이터 조회",
