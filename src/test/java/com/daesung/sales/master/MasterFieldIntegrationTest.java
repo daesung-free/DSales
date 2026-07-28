@@ -143,6 +143,47 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
         assertThat(gone.path("success").asBoolean()).isFalse();
     }
 
+    @Test
+    @DisplayName("담보 만기 알림 — 임박/만료 포함, 먼 만기는 제외")
+    void 담보만기알림() {
+        // 기준일 2026-06-01 고정. 임박(20일후)·만료(5일전)·먼미래(200일후)
+        Long imminent = collateralPartner("COL-IMM", "임박거래처", "2026-06-21");
+        Long expired = collateralPartner("COL-EXP", "만료거래처", "2026-05-27");
+        collateralPartner("COL-FAR", "여유거래처", "2026-12-01");
+
+        JsonNode rows = data(get("/masters/clients/collateral-expiry?asOf=2026-06-01&withinDays=30")).path("rows");
+        JsonNode imm = rowByCode(rows, "COL-IMM");
+        assertThat(imm.path("status").asText()).isEqualTo("IMMINENT");
+        assertThat(imm.path("daysUntilExpiry").asLong()).isEqualTo(20);
+        JsonNode exp = rowByCode(rows, "COL-EXP");
+        assertThat(exp.path("status").asText()).isEqualTo("EXPIRED");
+        assertThat(exp.path("daysUntilExpiry").asLong()).isEqualTo(-5);
+        // 200일 후 만기는 30일 창에서 제외
+        assertThat(codesOf(rows)).doesNotContain("COL-FAR");
+    }
+
+    private Long collateralPartner(String code, String name, String expiry) {
+        Long id = createId("/masters/clients", Map.of("code", code, "name", name, "type", "NORMAL"));
+        put("/masters/clients/" + id, Map.of(
+                "name", name, "type", "NORMAL", "assureAmount", 50_000_000, "assureExpiry", expiry));
+        return id;
+    }
+
+    private JsonNode rowByCode(JsonNode rows, String code) {
+        for (JsonNode r : rows) {
+            if (code.equals(r.path("code").asText())) {
+                return r;
+            }
+        }
+        throw new AssertionError("code=" + code + " 행 없음: " + rows);
+    }
+
+    private java.util.List<String> codesOf(JsonNode rows) {
+        java.util.List<String> out = new java.util.ArrayList<>();
+        rows.forEach(r -> out.add(r.path("code").asText()));
+        return out;
+    }
+
     private void inbound(Long whId, Long productId) {
         post("/stock/inbound", Map.of(
                 "processedDate", "2026-06-01", "supplierClientId", ownerFallback(), "destinationWarehouseId", whId,
