@@ -197,6 +197,35 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("계산서 10일 분기 — 10일 이전=수정발행/이후=익월 마이너스")
+    void 계산서_10일분기() {
+        Long wh = createId("/masters/warehouses", Map.of("code", "WH-ADJ", "name", "조정창고", "type", "MAIN"));
+        Long p = product("ADJ-BK", "Z01", "조정테스트");
+        // 2월로 격리: 5일(≤10=수정발행) 반품 10부, 20일(>10=익월마이너스) 반품 5부
+        returnInbound("2026-02-05", wh, p, 10);
+        returnInbound("2026-02-20", wh, p, 5);
+
+        JsonNode d = data(get("/closing/invoice-adjustments?year=2026&month=2"));
+        assertThat(d.path("rows")).hasSize(2);
+        JsonNode amend = rowWhere(d.path("rows"), "mode", "AMEND");
+        assertThat(amend.path("reportingMonth").asText()).isEqualTo("202602");   // 당월
+        JsonNode next = rowWhere(d.path("rows"), "mode", "NEXT_MONTH_MINUS");
+        assertThat(next.path("reportingMonth").asText()).isEqualTo("202603");    // 익월
+        JsonNode sum = d.path("summary");
+        assertThat(sum.path("amendSupply").asLong()).isEqualTo(100_000);         // 10×10000
+        assertThat(sum.path("amendTax").asLong()).isEqualTo(10_000);
+        assertThat(sum.path("nextMonthSupply").asLong()).isEqualTo(50_000);      // 5×10000
+        assertThat(sum.path("nextMonthTax").asLong()).isEqualTo(5_000);
+    }
+
+    private void returnInbound(String date, Long whId, Long productId, int qty) {
+        JsonNode r = post("/sales/return-inbound", Map.of(
+                "returnDate", date, "partnerId", partnerId, "warehouseId", whId,
+                "items", List.of(Map.of("productId", productId, "unitPrice", 10000, "supplyRate", 100, "qty", qty))));
+        assertThat(r.path("success").asBoolean()).as("반품입고 성공: %s", r).isTrue();
+    }
+
+    @Test
     @DisplayName("반품입고(29p) — 매출반품 라인 + 재고 복구 한 트랜잭션")
     void 반품입고() {
         Long wh = createId("/masters/warehouses", Map.of("code", "WH-RI", "name", "반품창고", "type", "MAIN"));

@@ -1,6 +1,7 @@
 package com.daesung.sales.closing.service;
 
 import com.daesung.sales.closing.config.SupplierProperties;
+import com.daesung.sales.closing.dto.InvoiceAdjustmentResponse;
 import com.daesung.sales.closing.dto.RevenueReportResponse;
 import com.daesung.sales.closing.dto.TaxFilingResponse;
 import com.daesung.sales.closing.dto.TaxInvoiceResponse;
@@ -60,6 +61,42 @@ public class TaxService {
         RevenueReportResponse.PartnerRevenue total = new RevenueReportResponse.PartnerRevenue(
                 null, "합계", tCnt, tSupply, tTax, List.of());
         return new RevenueReportResponse(from, to, filter, rows, total);
+    }
+
+    /**
+     * 계산서 반품/취소 10일 분기(재무팀 확정 2026-07-25): 반품 처리일이 매월 10일 이전이면
+     * 당월 수정발행(AMEND), 10일 이후면 익월 정산 마이너스(NEXT_MONTH_MINUS)로 분류 + 반영 신고월 산출.
+     */
+    @Transactional(readOnly = true)
+    public InvoiceAdjustmentResponse invoiceAdjustments(int year, int month) {
+        List<InvoiceAdjustmentResponse.Row> rows = new ArrayList<>();
+        long amendSupply = 0, amendTax = 0, nextSupply = 0, nextTax = 0;
+
+        for (Object[] r : saleRepository.returnsInMonth(year, month)) {
+            LocalDate returnDate = ((java.sql.Date) r[3]).toLocalDate();
+            long supply = num(r[4]), tax = num(r[5]);
+
+            boolean amend = returnDate.getDayOfMonth() <= 10;   // 발행기준일=10일
+            InvoiceAdjustmentResponse.Mode mode = amend
+                    ? InvoiceAdjustmentResponse.Mode.AMEND
+                    : InvoiceAdjustmentResponse.Mode.NEXT_MONTH_MINUS;
+            // 반영 신고월: 10일 이전=당월, 이후=익월
+            LocalDate reporting = amend ? returnDate.withDayOfMonth(1)
+                    : returnDate.withDayOfMonth(1).plusMonths(1);
+            String reportingMonth = String.format("%d%02d", reporting.getYear(), reporting.getMonthValue());
+
+            rows.add(new InvoiceAdjustmentResponse.Row(
+                    (String) r[0], (String) r[1], (String) r[2], returnDate, supply, tax, mode, reportingMonth));
+            if (amend) {
+                amendSupply += supply;
+                amendTax += tax;
+            } else {
+                nextSupply += supply;
+                nextTax += tax;
+            }
+        }
+        var summary = new InvoiceAdjustmentResponse.Summary(amendSupply, amendTax, nextSupply, nextTax);
+        return new InvoiceAdjustmentResponse(year, month, rows, summary);
     }
 
     /**

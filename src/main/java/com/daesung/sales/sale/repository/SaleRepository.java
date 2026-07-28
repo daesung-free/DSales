@@ -296,6 +296,24 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     List<Object[]> taxFilingByMonth(@Param("year") int year);
 
     /**
+     * 계산서 10일 분기용: 특정 연·월의 반품(RETURN) 라인(취소 제외). 처리일 오름차순.
+     * 반환 Object[]: [salesNo, partnerName, productName, salesDate, supplyAmount, tax].
+     */
+    @Query(value = """
+            SELECT s.sales_no, pt.name, p.name, s.sales_date,
+              COALESCE(s.supply_amount,0), COALESCE(s.tax,0)
+            FROM sales s
+              JOIN partners pt ON pt.id = s.partner_id
+              JOIN products p  ON p.id = s.product_id
+            WHERE s.canceled = false
+              AND s.sales_category = 'RETURN'
+              AND EXTRACT(YEAR FROM s.sales_date) = :year
+              AND EXTRACT(MONTH FROM s.sales_date) = :month
+            ORDER BY s.sales_date, s.sales_no
+            """, nativeQuery = true)
+    List<Object[]> returnsInMonth(@Param("year") int year, @Param("month") int month);
+
+    /**
      * 월별매출액명세서(37p): 대분류×분류×상품별 성적처리/비처리 인원·금액 + 과세·부가세. 매출(SALE)만, 취소 제외.
      * 성적처리 = proc_type='GRADED', 그 외(비처리/미지정)는 UNGRADED 버킷. 인원=qty, 금액=supply_amount.
      * 대분류 = LEFT(cat_code,1). 반환 Object[]:

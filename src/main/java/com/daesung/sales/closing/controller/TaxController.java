@@ -1,5 +1,6 @@
 package com.daesung.sales.closing.controller;
 
+import com.daesung.sales.closing.dto.InvoiceAdjustmentResponse;
 import com.daesung.sales.closing.dto.RevenueReportResponse;
 import com.daesung.sales.closing.dto.TaxFilingResponse;
 import com.daesung.sales.closing.dto.TaxInvoiceResponse;
@@ -39,6 +40,20 @@ public class TaxController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @Parameter(description = "과세구분(FREE=면세/TAXABLE=과세/미지정=전체)") @RequestParam(required = false) String taxType) {
         return ApiResponse.success(taxService.revenueReport(fromDate, toDate, taxType));
+    }
+
+    @Operation(summary = "계산서 반품/취소 10일 분기 조정 명세",
+            description = "특정 월 반품 건을 처리일 기준으로 분류: 매월 10일(발행기준일) 이전=당월 수정발행(AMEND), "
+                    + "이후=익월 정산 마이너스(NEXT_MONTH_MINUS). 방식별 합계 포함. 재무팀 확정(2026-07-25). "
+                    + "⚠️반영 신고월 세부(원계산서 귀속월)는 발주처 확인 대상. year·month 미지정 시 이번 달.")
+    @GetMapping("/invoice-adjustments")
+    public ApiResponse<InvoiceAdjustmentResponse> invoiceAdjustments(
+            @Parameter(description = "반품 발생 연도(미지정 시 올해)", example = "2026") @RequestParam(required = false) Integer year,
+            @Parameter(description = "반품 발생 월 1~12(미지정 시 이번 달)", example = "6") @RequestParam(required = false) Integer month) {
+        LocalDate now = LocalDate.now();
+        int y = (year != null) ? year : now.getYear();
+        int m = (month != null) ? month : now.getMonthValue();
+        return ApiResponse.success(taxService.invoiceAdjustments(y, m));
     }
 
     @Operation(summary = "계산서·세금계산서 월별신고 조회(38p)",
