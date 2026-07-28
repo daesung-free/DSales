@@ -5,6 +5,9 @@ import com.daesung.sales.closing.dto.RevenueReportResponse;
 import com.daesung.sales.closing.dto.TaxFilingResponse;
 import com.daesung.sales.closing.dto.TaxInvoiceResponse;
 import com.daesung.sales.closing.service.TaxService;
+import com.daesung.sales.common.excel.ExcelExportUtil;
+import com.daesung.sales.common.excel.ExcelExportUtil.Col;
+import java.util.List;
 import com.daesung.sales.common.response.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -28,6 +31,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class TaxController {
 
     private final TaxService taxService;
+    private final ExcelExportUtil excel;
 
     @Operation(summary = "수익신고 조회",
             description = "거래처×월 순매출(공급가)/세액 집계 + 거래처 소계 + 전체 합계. 취소 제외, 반품 차감. "
@@ -40,6 +44,19 @@ public class TaxController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @Parameter(description = "과세구분(FREE=면세/TAXABLE=과세/미지정=전체)") @RequestParam(required = false) String taxType) {
         return ApiResponse.success(taxService.revenueReport(fromDate, toDate, taxType));
+    }
+
+    @Operation(summary = "수익신고 엑셀 다운로드", description = "드라이브 '수익신고' 형식(거래처별 총건수·순매출·세액).")
+    @GetMapping("/revenue-report/export")
+    public ResponseEntity<byte[]> revenueReportExport(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @RequestParam(required = false) String taxType) {
+        List<Col> cols = List.of(
+                new Col("거래처명", "partnerName"), new Col("총건수", "totalCount"),
+                new Col("총순매출금액", "totalNetSupply"), new Col("총세액", "totalNetTax"));
+        byte[] xlsx = excel.toXlsx("수익신고", cols, taxService.revenueReport(fromDate, toDate, taxType).rows());
+        return excel.asDownload(xlsx, "수익신고.xlsx");
     }
 
     @Operation(summary = "계산서 반품/취소 10일 분기 조정 명세",
@@ -65,6 +82,22 @@ public class TaxController {
             @Parameter(description = "신고연도(미지정 시 올해)", example = "2026") @RequestParam(required = false) Integer year) {
         int y = (year != null) ? year : LocalDate.now().getYear();
         return ApiResponse.success(taxService.taxFiling(y));
+    }
+
+    @Operation(summary = "계산서·세금계산서 월별신고(38p) 엑셀 다운로드",
+            description = "드라이브 '2026 월별 신고내역_순매출조회' 형식(월×계산서/세금계산서 매출·반품·순매출·세액).")
+    @GetMapping("/tax-filing/export")
+    public ResponseEntity<byte[]> taxFilingExport(@RequestParam(required = false) Integer year) {
+        int y = (year != null) ? year : LocalDate.now().getYear();
+        List<Col> cols = List.of(
+                new Col("월", "month"),
+                new Col("계산서매출", "invoiceSale"), new Col("계산서미발행", "invoiceUnissued"),
+                new Col("세금계산서매출", "taxInvoiceSale"), new Col("세금계산서미발행", "taxInvoiceUnissued"),
+                new Col("계산서반품", "invoiceReturn"), new Col("세금계산서반품", "taxInvoiceReturn"),
+                new Col("순매출(계산서)", "invoiceNet"), new Col("순매출(세금계산서)", "taxInvoiceNet"),
+                new Col("계", "netTotal"), new Col("세액", "tax"));
+        byte[] xlsx = excel.toXlsx("월별신고내역", cols, taxService.taxFiling(y).rows());
+        return excel.asDownload(xlsx, "계산서월별신고_" + y + ".xlsx");
     }
 
     @Operation(summary = "계산서신고 데이터 조회",

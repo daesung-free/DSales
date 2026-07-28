@@ -23,9 +23,13 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.time.LocalDate;
+import com.daesung.sales.common.excel.ExcelExportUtil;
+import com.daesung.sales.common.excel.ExcelExportUtil.Col;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -42,6 +46,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class SaleController {
 
     private final SaleService saleService;
+    private final ExcelExportUtil excel;
 
     @Operation(summary = "통합 매출 조회",
             description = "기간·회계구분·출고유형·거래처로 조회. 기본은 취소건 제외(includeCanceled=true면 포함)")
@@ -111,6 +116,24 @@ public class SaleController {
         return ApiResponse.success(saleService.netSales(fromDate, toDate, contentType));
     }
 
+    @Operation(summary = "콘텐츠구분 순매출 엑셀 다운로드",
+            description = "드라이브 순매출조회 형식(상품별 매출·반품·순매출 + 외부콘텐츠 매입·이익·이익률).")
+    @GetMapping("/net-summary/export")
+    public ResponseEntity<byte[]> netSummaryExport(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @RequestParam(required = false) String contentType) {
+        List<Col> cols = List.of(
+                new Col("상품코드", "productCode"), new Col("상품명", "productName"), new Col("콘텐츠구분", "contentType"),
+                new Col("매출수량", "saleQty"), new Col("매출액", "saleAmount"), new Col("무상액", "freeAmount"),
+                new Col("반품수량", "returnQty"), new Col("반품액", "returnAmount"),
+                new Col("순매출수량", "netQty"), new Col("순매출액", "netAmount"),
+                new Col("매입단가", "purchaseUnitCost"), new Col("매입액", "purchaseAmount"),
+                new Col("이익", "profit"), new Col("이익률(%)", "marginPct"));
+        byte[] xlsx = excel.toXlsx("순매출조회", cols, saleService.netSales(fromDate, toDate, contentType).rows());
+        return excel.asDownload(xlsx, "순매출조회.xlsx");
+    }
+
     @Operation(summary = "매출액명세서",
             description = "분류코드(catCode) 계층으로 rollup한 매출 명세. 대분류(catCode 첫 글자)→분류→도서 "
                     + "3계층 소계·총계. 금액=공급가, 세액, 합계=금액+세액. 취소건 제외. "
@@ -126,6 +149,20 @@ public class SaleController {
         return ApiResponse.success(saleService.statement(from, to, category));
     }
 
+    @Operation(summary = "매출액명세서 엑셀 다운로드", description = "드라이브 '매출액정리' 형식(분류/도서별 수량·금액·세액·합계).")
+    @GetMapping("/statement/export")
+    public ResponseEntity<byte[]> statementExport(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(required = false) SalesCategory category) {
+        List<Col> cols = List.of(
+                new Col("구분", "rowType"), new Col("분류코드", "catCode"), new Col("분류명", "catName"),
+                new Col("도서코드", "bookCode"), new Col("도서명", "bookName"), new Col("수량", "qty"),
+                new Col("금액", "amount"), new Col("세액", "tax"), new Col("합계", "total"));
+        byte[] xlsx = excel.toXlsx("매출액명세서", cols, saleService.statement(from, to, category).rows());
+        return excel.asDownload(xlsx, "매출액명세서_" + from + "_" + to + ".xlsx");
+    }
+
     @Operation(summary = "월별매출액명세서(37p)",
             description = "구분(대분류=catCode 첫 글자)×상품별 성적처리/비처리 인원·금액 + 계 + 과세매출액 + 부가세. "
                     + "대분류 소계·총계 포함. 매출(SALE)만 집계(무상·반품 제외), 취소 제외. "
@@ -139,6 +176,25 @@ public class SaleController {
         int y = (year != null) ? year : now.getYear();
         int m = (month != null) ? month : now.getMonthValue();
         return ApiResponse.success(saleService.monthlyStatement(y, m));
+    }
+
+    @Operation(summary = "월별매출액명세서(37p) 엑셀 다운로드",
+            description = "드라이브 '연구소 월별매출액명세서' 형식(구분×성적처리/비처리 인원·금액+과세·부가세).")
+    @GetMapping("/monthly-statement/export")
+    public ResponseEntity<byte[]> monthlyStatementExport(
+            @RequestParam(required = false) Integer year, @RequestParam(required = false) Integer month) {
+        LocalDate now = LocalDate.now();
+        int y = (year != null) ? year : now.getYear();
+        int m = (month != null) ? month : now.getMonthValue();
+        List<Col> cols = List.of(
+                new Col("구분", "rowType"), new Col("대분류", "majorCode"), new Col("분류명", "catName"),
+                new Col("도서코드", "bookCode"), new Col("도서명", "bookName"),
+                new Col("성적처리인원", "gradedQty"), new Col("성적처리금액", "gradedAmount"),
+                new Col("비처리인원", "ungradedQty"), new Col("비처리금액", "ungradedAmount"),
+                new Col("계인원", "totalQty"), new Col("계금액", "totalAmount"),
+                new Col("과세매출액", "taxableAmount"), new Col("부가세", "vat"));
+        byte[] xlsx = excel.toXlsx("월별매출액명세서", cols, saleService.monthlyStatement(y, m).rows());
+        return excel.asDownload(xlsx, "월별매출액명세서_" + y + "-" + String.format("%02d", m) + ".xlsx");
     }
 
     @Operation(summary = "거래명세서",

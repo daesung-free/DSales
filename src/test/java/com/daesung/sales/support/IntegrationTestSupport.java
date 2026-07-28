@@ -123,6 +123,13 @@ public abstract class IntegrationTestSupport {
         return rest.exchange("/api/v1" + path, method, new HttpEntity<>(json, h), String.class);
     }
 
+    /** 인증 GET → 바이너리(파일 다운로드) 응답. */
+    protected ResponseEntity<byte[]> getBytes(String path) {
+        HttpHeaders h = new HttpHeaders();
+        h.setBearerAuth(token());
+        return rest.exchange("/api/v1" + path, HttpMethod.GET, new HttpEntity<>(h), byte[].class);
+    }
+
     private JsonNode exchange(HttpMethod method, String path, Object body, boolean auth) {
         HttpHeaders h = new HttpHeaders();
         h.setContentType(MediaType.APPLICATION_JSON);

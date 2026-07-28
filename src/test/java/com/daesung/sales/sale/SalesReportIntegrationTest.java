@@ -197,6 +197,28 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("엑셀 다운로드 — 매출액명세서 xlsx(한글 헤더·데이터 행)")
+    void 엑셀다운로드() throws Exception {
+        var resp = getBytes("/sales/statement/export?from=2026-06-01&to=2026-06-30&category=SALE");
+        assertThat(resp.getStatusCode().is2xxSuccessful()).isTrue();
+        assertThat(resp.getHeaders().getContentType().toString()).contains("spreadsheetml");
+        byte[] xlsx = resp.getBody();
+        assertThat(xlsx).isNotEmpty();
+        assertThat(new String(xlsx, 0, 2)).isEqualTo("PK");   // xlsx=zip 시그니처
+
+        // POI로 파싱 — 한글 헤더 확인
+        try (var wb = new org.apache.poi.xssf.usermodel.XSSFWorkbook(
+                new java.io.ByteArrayInputStream(xlsx))) {
+            var sheet = wb.getSheetAt(0);
+            assertThat(sheet.getSheetName()).isEqualTo("매출액명세서");
+            var header = sheet.getRow(0);
+            assertThat(header.getCell(0).getStringCellValue()).isEqualTo("구분");
+            assertThat(header.getCell(1).getStringCellValue()).isEqualTo("분류코드");
+            assertThat(sheet.getLastRowNum()).isGreaterThan(0);   // 데이터 행 존재
+        }
+    }
+
+    @Test
     @DisplayName("계산서 10일 분기 — 10일 이전=수정발행/이후=익월 마이너스")
     void 계산서_10일분기() {
         Long wh = createId("/masters/warehouses", Map.of("code", "WH-ADJ", "name", "조정창고", "type", "MAIN"));
