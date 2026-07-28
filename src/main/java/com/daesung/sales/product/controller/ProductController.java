@@ -5,6 +5,8 @@ import com.daesung.sales.common.response.ApiResponse;
 import com.daesung.sales.common.response.PageResponse;
 import com.daesung.sales.product.dto.BomRegisterRequest;
 import com.daesung.sales.product.dto.BomResponse;
+import com.daesung.sales.product.dto.PartnerPriceRequest;
+import com.daesung.sales.product.dto.PartnerPriceResponse;
 import com.daesung.sales.product.dto.ProductCreateRequest;
 import com.daesung.sales.product.dto.ProductResponse;
 import com.daesung.sales.product.dto.ProductUpdateRequest;
@@ -79,5 +81,36 @@ public class ProductController {
     public ApiResponse<BomResponse> registerBom(@PathVariable Long id,
                                                 @Valid @RequestBody BomRegisterRequest req) {
         return ApiResponse.success(productService.registerBom(id, req));
+    }
+
+    // ── 거래처별 단가·노출 매핑(도서관리 3번째 탭) ─────────────────────────
+
+    @Operation(summary = "거래처별 단가·노출 매핑 목록",
+            description = "도서의 거래처별 공급률·노출여부 매핑 목록. 단가는 정가×공급률로 파생.")
+    @GetMapping("/{id}/partner-prices")
+    public ApiResponse<java.util.List<PartnerPriceResponse>> getPartnerPrices(@PathVariable Long id) {
+        return ApiResponse.success(productService.getPartnerPrices(id));
+    }
+
+    @Operation(summary = "거래처별 단가 매핑 단건 조회(자동조회)",
+            description = "도서×거래처 매핑 조회. 매출등록 시 공급률·단가 자동조회용. 없으면 404.")
+    @GetMapping("/{id}/partner-prices/{partnerId}")
+    public ApiResponse<PartnerPriceResponse> getPartnerPrice(@PathVariable Long id, @PathVariable Long partnerId) {
+        return ApiResponse.success(productService.getPartnerPrice(id, partnerId));
+    }
+
+    @Operation(summary = "거래처별 단가·노출 매핑 등록/수정",
+            description = "도서×거래처 공급률·노출여부 upsert(있으면 수정, 없으면 생성).")
+    @PutMapping("/{id}/partner-prices/{partnerId}")
+    public ApiResponse<PartnerPriceResponse> upsertPartnerPrice(
+            @PathVariable Long id, @PathVariable Long partnerId, @Valid @RequestBody PartnerPriceRequest req) {
+        return ApiResponse.success(productService.upsertPartnerPrice(id, partnerId, req));
+    }
+
+    @Operation(summary = "거래처별 단가 매핑 삭제")
+    @DeleteMapping("/{id}/partner-prices/{partnerId}")
+    public ApiResponse<Void> deletePartnerPrice(@PathVariable Long id, @PathVariable Long partnerId) {
+        productService.deletePartnerPrice(id, partnerId);
+        return ApiResponse.success(null);
     }
 }

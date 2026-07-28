@@ -79,6 +79,16 @@ public abstract class IntegrationTestSupport {
         return exchange(HttpMethod.POST, path, body, true);
     }
 
+    /** 인증 PUT → ApiResponse JsonNode 반환. */
+    protected JsonNode put(String path, Object body) {
+        return exchange(HttpMethod.PUT, path, body, true);
+    }
+
+    /** 인증 DELETE → ApiResponse JsonNode 반환. */
+    protected JsonNode del(String path) {
+        return exchange(HttpMethod.DELETE, path, null, true);
+    }
+
     /** data 노드만 반환(성공 응답 가정). */
     protected JsonNode data(JsonNode apiResponse) {
         return apiResponse.path("data");

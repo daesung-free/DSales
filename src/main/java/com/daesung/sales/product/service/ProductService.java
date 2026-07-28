@@ -3,14 +3,20 @@ package com.daesung.sales.product.service;
 import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.common.response.PageResponse;
+import com.daesung.sales.partner.entity.Partner;
+import com.daesung.sales.partner.repository.PartnerRepository;
 import com.daesung.sales.product.dto.BomRegisterRequest;
 import com.daesung.sales.product.dto.BomResponse;
+import com.daesung.sales.product.dto.PartnerPriceRequest;
+import com.daesung.sales.product.dto.PartnerPriceResponse;
 import com.daesung.sales.product.dto.ProductCreateRequest;
 import com.daesung.sales.product.dto.ProductResponse;
 import com.daesung.sales.product.dto.ProductUpdateRequest;
 import com.daesung.sales.product.entity.BomItem;
 import com.daesung.sales.product.entity.Product;
+import com.daesung.sales.product.entity.ProductPartnerPrice;
 import com.daesung.sales.product.repository.BomItemRepository;
+import com.daesung.sales.product.repository.ProductPartnerPriceRepository;
 import com.daesung.sales.product.repository.ProductRepository;
 import java.util.ArrayList;
 import java.util.List;
@@ -27,6 +33,8 @@ public class ProductService {
 
     private final ProductRepository productRepository;
     private final BomItemRepository bomItemRepository;
+    private final ProductPartnerPriceRepository partnerPriceRepository;
+    private final PartnerRepository partnerRepository;
 
     public PageResponse<ProductResponse> findAll(String keyword, Pageable pageable) {
         Page<Product> page = (keyword == null || keyword.isBlank())
@@ -91,6 +99,46 @@ public class ProductService {
     public BomResponse getBom(Long parentId) {
         Product parent = getOrThrow(parentId);
         return BomResponse.from(parent, bomItemRepository.findByParentId(parentId));
+    }
+
+    // ── 거래처별 단가·노출 매핑(도서관리 3번째 탭) ─────────────────────────
+
+    /** 특정 도서의 거래처별 단가·노출 매핑 목록. */
+    public List<PartnerPriceResponse> getPartnerPrices(Long productId) {
+        getOrThrow(productId);
+        return partnerPriceRepository.findByProductId(productId).stream()
+                .map(PartnerPriceResponse::from).toList();
+    }
+
+    /** 도서×거래처 매핑 단건 조회(매출등록 공급률 자동조회용). 없으면 404. */
+    public PartnerPriceResponse getPartnerPrice(Long productId, Long partnerId) {
+        return PartnerPriceResponse.from(partnerPriceRepository
+                .findByProductIdAndPartnerId(productId, partnerId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                        "거래처별 단가 매핑이 없습니다. product=" + productId + ", partner=" + partnerId)));
+    }
+
+    /** 도서×거래처 매핑 등록/수정(upsert). 도서·거래처 존재 검증. */
+    @Transactional
+    public PartnerPriceResponse upsertPartnerPrice(Long productId, Long partnerId, PartnerPriceRequest req) {
+        Product product = getOrThrow(productId);
+        Partner partner = partnerRepository.findById(partnerId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "거래처가 없습니다. id=" + partnerId));
+        ProductPartnerPrice mapping = partnerPriceRepository
+                .findByProductIdAndPartnerId(productId, partnerId)
+                .orElseGet(() -> ProductPartnerPrice.create(product, partner, null, true));
+        mapping.update(req.supplyRate(), req.visibleOrDefault());
+        return PartnerPriceResponse.from(partnerPriceRepository.save(mapping));
+    }
+
+    /** 도서×거래처 매핑 삭제. */
+    @Transactional
+    public void deletePartnerPrice(Long productId, Long partnerId) {
+        ProductPartnerPrice mapping = partnerPriceRepository
+                .findByProductIdAndPartnerId(productId, partnerId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                        "거래처별 단가 매핑이 없습니다. product=" + productId + ", partner=" + partnerId));
+        partnerPriceRepository.delete(mapping);
     }
 
     private Product getOrThrow(Long id) {

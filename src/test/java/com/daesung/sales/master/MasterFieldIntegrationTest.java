@@ -110,6 +110,39 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
         assertThat(fail.path("error").path("code").asText()).isEqualTo("NEGATIVE_STOCK");
     }
 
+    @Test
+    @DisplayName("거래처별 단가·노출 매핑 — upsert/자동조회/삭제 + 단가 파생")
+    void 거래처별단가매핑() {
+        Long book = createId("/masters/products",
+                Map.of("code", "PP-BK", "name", "단가매핑도서", "contentType", "SELF", "price", 10000));
+        Long partner = createId("/masters/clients",
+                Map.of("code", "PP-CUST", "name", "매핑거래처", "type", "NORMAL"));
+
+        // 등록: 공급률 70 → 단가 = 10000×70/100 = 7000
+        JsonNode d = data(put("/masters/products/" + book + "/partner-prices/" + partner,
+                Map.of("supplyRate", 70, "visible", true)));
+        assertThat(d.path("supplyRate").asInt()).isEqualTo(70);
+        assertThat(d.path("unitPrice").asLong()).isEqualTo(7000);
+        assertThat(d.path("partnerName").asText()).isEqualTo("매핑거래처");
+
+        // 자동조회 단건
+        JsonNode one = data(get("/masters/products/" + book + "/partner-prices/" + partner));
+        assertThat(one.path("unitPrice").asLong()).isEqualTo(7000);
+
+        // upsert(수정): 60 → 단가 6000, 중복 생성 아님(목록 1건)
+        data(put("/masters/products/" + book + "/partner-prices/" + partner,
+                Map.of("supplyRate", 60, "visible", false)));
+        JsonNode list = data(get("/masters/products/" + book + "/partner-prices"));
+        assertThat(list).hasSize(1);
+        assertThat(list.get(0).path("unitPrice").asLong()).isEqualTo(6000);
+        assertThat(list.get(0).path("visible").asBoolean()).isFalse();
+
+        // 삭제 후 자동조회 404
+        del("/masters/products/" + book + "/partner-prices/" + partner);
+        JsonNode gone = get("/masters/products/" + book + "/partner-prices/" + partner);
+        assertThat(gone.path("success").asBoolean()).isFalse();
+    }
+
     private void inbound(Long whId, Long productId) {
         post("/stock/inbound", Map.of(
                 "processedDate", "2026-06-01", "supplierClientId", ownerFallback(), "destinationWarehouseId", whId,
