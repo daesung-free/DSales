@@ -103,6 +103,26 @@ public abstract class IntegrationTestSupport {
         return r.path("data").path("id").asLong();
     }
 
+    /** 헤더 접근이 필요한 원시 호출(Set-Cookie/Cookie 검증용). bearer·cookie는 선택. */
+    protected ResponseEntity<String> exchangeRaw(HttpMethod method, String path, Object body,
+                                                 String bearer, String cookie) {
+        HttpHeaders h = new HttpHeaders();
+        h.setContentType(MediaType.APPLICATION_JSON);
+        if (bearer != null) {
+            h.setBearerAuth(bearer);
+        }
+        if (cookie != null) {
+            h.add(HttpHeaders.COOKIE, cookie);
+        }
+        String json;
+        try {
+            json = (body == null) ? null : om.writeValueAsString(body);
+        } catch (Exception e) {
+            throw new RuntimeException(e);
+        }
+        return rest.exchange("/api/v1" + path, method, new HttpEntity<>(json, h), String.class);
+    }
+
     private JsonNode exchange(HttpMethod method, String path, Object body, boolean auth) {
         HttpHeaders h = new HttpHeaders();
         h.setContentType(MediaType.APPLICATION_JSON);

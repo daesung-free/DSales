@@ -10,7 +10,8 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 public record JwtProperties(
         String jwtSecret,
         long accessTokenMinutes,
-        long refreshTokenDays
+        long refreshTokenDays,
+        Boolean cookieSecure
 ) {
     public long accessTokenMinutesOrDefault() {
         return accessTokenMinutes > 0 ? accessTokenMinutes : 30;
@@ -18,5 +19,10 @@ public record JwtProperties(
 
     public long refreshTokenDaysOrDefault() {
         return refreshTokenDays > 0 ? refreshTokenDays : 14;
+    }
+
+    /** refresh 쿠키 Secure 플래그. 기본 true(https). http 개발/현재 라이브는 yml에서 false로 override. */
+    public boolean cookieSecureOrDefault() {
+        return cookieSecure == null || cookieSecure;
     }
 }

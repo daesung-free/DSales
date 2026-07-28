@@ -67,18 +67,28 @@ public class AuthService {
         return issueTokens(user);
     }
 
-    /** refresh 토큰으로 재발급(회전). 기존 refresh는 무효화하고 새 access+refresh 발급. */
+    /**
+     * refresh 토큰으로 재발급(회전 + 재사용 탐지). 유효하면 기존 폐기 후 새 access+refresh 발급.
+     * 이미 회전 폐기된 토큰이 다시 들어오면(탈취 의심) 해당 사용자 전체 세션을 무효화한다.
+     */
     @Transactional
     public TokenResponse refresh(String refreshToken) {
         String hash = sha256(refreshToken);
         Long userId = refreshTokenStore.findUserId(hash);  // 만료(TTL)·무효면 null
         if (userId == null) {
+            // 재사용 탐지: 이미 회전으로 폐기된 토큰이면 탈취로 간주 → 전체 세션 무효화
+            Long reusedUserId = refreshTokenStore.findUsedUserId(hash);
+            if (reusedUserId != null) {
+                refreshTokenStore.revokeAllByUser(reusedUserId);
+                throw new BusinessException(ErrorCode.UNAUTHORIZED,
+                        "재사용된 refresh 토큰이 감지되어 보안을 위해 전체 로그아웃 처리되었습니다. 다시 로그인하세요.");
+            }
             throw new BusinessException(ErrorCode.UNAUTHORIZED, "만료되었거나 유효하지 않은 refresh 토큰입니다.");
         }
         AppUser user = userRepository.findById(userId)
                 .filter(AppUser::isActive)
                 .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED, "계정을 찾을 수 없습니다."));
-        refreshTokenStore.revoke(hash); // 회전: 기존 토큰 폐기
+        refreshTokenStore.rotateOut(hash, userId); // 회전: 기존 폐기 + 사용됨 마커(재사용 탐지)
         return issueTokens(user);
     }
 

@@ -141,7 +141,8 @@ python3 <script> --sheet <ID> --tab <탭명>   # scratchpad의 read_*.py 참고.
 - **위탁 미결정산(로직B)**: 출고자동이고·미결조회·부분정산(불변식·초과정산방지)
 - **담보만기 알림(`GET /masters/clients/collateral-expiry`)**: 기준일 대비 담보 만기 임박(withinDays 기본30)·만료 거래처 조회(남은일수·EXPIRED/IMMINENT). 재무팀 확정(부활).
 - 마감관리: 수금·미수금현황(담보비율)·외상매출장·이월스냅샷(idempotent) / **수익신고**(⚠️MySQL `TO_CHAR`→`DATE_FORMAT` 버그 수정+회귀테스트)·**계산서신고(홈택스 xlsx export)** / **계산서·세금계산서 월별신고(38p, `/closing/tax-filing` — 월×발행유형[계산서=면세tax0/세금계산서=과세tax≠0], 매출·반품·순매출·세액. 발행유형=tax 파생, 신규필드 없음. 미발행분=0 placeholder[정의 미확정])** / **계산서 10일 분기(`/closing/invoice-adjustments` — 반품 처리일 ≤10일=당월 수정발행(AMEND)/>10일=익월 마이너스(NEXT_MONTH_MINUS)+반영월·방식별합계. 재무팀 확정 2026-07-25. ⚠️반영 신고월 세부는 발주처 확인)** / **월마감(period_locks 횡단잠금)**
-- **인증/RBAC**: JWT+**Redis refresh(회전)**·BCrypt·역할5종(ADMIN/FINANCE/LOGISTICS/SALES/VIEWER)·**권한 매트릭스**(경로·메서드)·감사 자동채움. 부트스트랩 admin/Admin1234! (로컬)
+- **인증/RBAC**: JWT(access, stateless) + **Redis refresh(회전+재사용탐지)**·BCrypt·역할5종(ADMIN/FINANCE/LOGISTICS/SALES/VIEWER)·**권한 매트릭스**(경로·메서드)·감사 자동채움. 부트스트랩 admin/Admin1234! (로컬)
+  - **★refresh는 httpOnly 쿠키(`refresh_token`, SameSite=Strict, path=/api/v1/auth)로 발급** — 응답 바디엔 refreshToken 없음(XSS 방어). 재발급은 쿠키(없으면 바디 fallback)로. `cookie-secure`는 http라 현재 false(‼️https/ALB 도입 시 true). **재사용 탐지**: 회전 폐기된 refresh 재제시 시 `revokeAllByUser`로 전체 세션 무효화(탈취 대응). ⚠️프론트: 자동 재발급은 401 인터셉터에서 `/auth/refresh` 호출(쿠키 자동전송), 바디에서 refresh 읽지 말 것.
 - Redis 캐시: 출고유형룩업·월마감상태(@Cacheable/@CacheEvict)
 - **DSRE 연동(분리 확정)**: DsreGateway(호출만) + **인원산출·물류비 출고금액·매출일괄등록(state='T' write-back + 소스키 멱등)**
 - **대시보드**: 매출목표 마스터(V12) + 목표대비 실적·달성률·전년비
