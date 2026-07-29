@@ -42,6 +42,7 @@ public class BulkSalesImportService {
     private final SaleRepository saleRepository;
     private final PartnerRepository partnerRepository;
     private final ProductRepository productRepository;
+    private final com.daesung.sales.closing.service.PeriodLockService periodLockService;
 
     /** 구분: M(매출)·J(증정)·B(무상) → 출고유형/회계구분/공급률/수량. */
     private record Kind(String reqGn, ShipmentType shipmentType, SalesCategory category, int rate, int qty) {}
@@ -50,6 +51,11 @@ public class BulkSalesImportService {
     public BulkImportResponse importSales(LocalDate fromDate, LocalDate toDate, boolean dryRun) {
         LocalDate from = (fromDate != null) ? fromDate : LocalDate.now().withDayOfYear(1);
         LocalDate to = (toDate != null) ? toDate : LocalDate.now();
+
+        // 월마감 잠금 횡단검사(감사 결함 수정): 실제 적재(dryRun=false)만 — 마감월 매출 유입 차단.
+        if (!dryRun) {
+            periodLockService.assertNotLocked(to);
+        }
 
         List<BulkImportResponse.Line> lines = new ArrayList<>();
         int imported = 0, skipped = 0, unmapped = 0;

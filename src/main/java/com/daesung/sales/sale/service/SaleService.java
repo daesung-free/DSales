@@ -212,6 +212,13 @@ public class SaleService {
         }
         periodLockService.assertNotLocked(sale.getSalesDate());
         sale.cancel();
+
+        // 위탁정산 매출 취소면 미결원장 복원(settled↔remaining 역산). 감사 결함 수정:
+        // 이 처리가 없으면 settled_qty가 좌초되어 재정산 불가·재무/물류 desync.
+        if (sale.getSalesType() == SalesType.CONSIGN_SALES && sale.getSettlement() != null) {
+            sale.getSettlement().getConsignmentOut().unsettle(sale.getSettlement().getSettleQty());
+        }
+
         // 취소 플래그를 먼저 확정(flush)하고 응답을 만든 뒤 역분개.
         // 역분개의 원자적 UPDATE(clearAutomatically)가 세션을 비우므로 순서가 중요.
         saleRepository.flush();

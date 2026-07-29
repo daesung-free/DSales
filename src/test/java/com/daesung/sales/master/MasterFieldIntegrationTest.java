@@ -167,9 +167,9 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
                 List.of(Map.of("consignmentOutId", coId, "settleQty", 30, "unitPrice", 10000, "supplyRate", 70))));
         assertThat(settle.path("success").asBoolean()).as("정산: %s", settle).isTrue();
 
-        // 정산내역서
+        // 정산내역서 — 이 테스트의 거래처 행을 특정(다른 위탁테스트와 공유DB 격리)
         JsonNode d = data(get("/consignment/settlement-statement?fromDate=2020-01-01&toDate=2030-12-31"));
-        JsonNode row = d.path("rows").get(0);
+        JsonNode row = rowByField(d.path("rows"), "partnerName", "위탁거래처");
         assertThat(row.path("settleQty").asLong()).isEqualTo(30);
         assertThat(row.path("supplyAmount").asLong()).isEqualTo(210_000);   // 10000×70%×30
         assertThat(row.path("tax").asLong()).isEqualTo(21_000);
@@ -179,6 +179,53 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
         JsonNode sum = d.path("summary");
         assertThat(sum.path("totalSettleQty").asLong()).isEqualTo(30);
         assertThat(sum.path("totalSupply").asLong()).isEqualTo(210_000);
+    }
+
+    @Test
+    @DisplayName("위탁정산 매출 취소 → 미결원장 복원(감사 결함 수정)")
+    void 위탁정산취소_미결복원() {
+        Long main = createId("/masters/warehouses", Map.of("code", "CX-MAIN", "name", "물류", "type", "MAIN"));
+        Long consign = createId("/masters/warehouses", Map.of("code", "CX-CONS", "name", "위탁", "type", "CONSIGN"));
+        Long p = createId("/masters/products", Map.of("code", "CX-BK", "name", "취소도서", "contentType", "SELF", "price", 10000));
+        Long partner = createId("/masters/clients", Map.of("code", "CX-CUST", "name", "취소거래처", "type", "NORMAL"));
+        inbound(main, p);
+
+        Long coId = data(post("/consignment/out", Map.of(
+                "processedDate", "2026-06-01", "partnerId", partner, "fromWarehouseId", main,
+                "toWarehouseId", consign, "items", List.of(Map.of("productId", p, "qty", 100)))))
+                .path("items").get(0).path("consignmentOutId").asLong();
+
+        // 정산 40 (11월로 격리)
+        post("/consignment/settle", Map.of("salesDate", "2026-11-15", "settlements",
+                List.of(Map.of("consignmentOutId", coId, "settleQty", 40, "unitPrice", 10000, "supplyRate", 70))));
+
+        // 정산 후: settled 40, remaining 60
+        JsonNode before = coRow(partner, coId);
+        assertThat(before.path("settledQty").asInt()).isEqualTo(40);
+        assertThat(before.path("remainingQty").asInt()).isEqualTo(60);
+
+        // 그 위탁매출 취소
+        long saleId = data(get("/sales?startDate=2026-11-01&endDate=2026-11-30&partnerId=" + partner))
+                .path("content").get(0).path("id").asLong();
+        JsonNode cancel = post("/sales/" + saleId + "/cancel", Map.of());
+        assertThat(cancel.path("success").asBoolean()).as("취소: %s", cancel).isTrue();
+
+        // 취소 후: 미결 복원 settled 0, remaining 100, OPEN (좌초 안 됨)
+        JsonNode after = coRow(partner, coId);
+        assertThat(after.path("settledQty").asInt()).isEqualTo(0);
+        assertThat(after.path("remainingQty").asInt()).isEqualTo(100);
+        assertThat(after.path("status").asText()).isEqualTo("OPEN");
+    }
+
+    /** 거래처 미결목록에서 특정 co 행. */
+    private JsonNode coRow(Long partnerId, long coId) {
+        JsonNode rows = data(get("/consignment/pending?partnerId=" + partnerId)).path("items");
+        for (JsonNode r : rows) {
+            if (r.path("consignmentOutId").asLong() == coId) {
+                return r;
+            }
+        }
+        throw new AssertionError("co " + coId + " 없음: " + rows);
     }
 
     @Test
@@ -256,6 +303,15 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
         put("/masters/clients/" + id, Map.of(
                 "name", name, "type", "NORMAL", "assureAmount", 50_000_000, "assureExpiry", expiry));
         return id;
+    }
+
+    private JsonNode rowByField(JsonNode rows, String field, String value) {
+        for (JsonNode r : rows) {
+            if (value.equals(r.path(field).asText())) {
+                return r;
+            }
+        }
+        throw new AssertionError(field + "=" + value + " 행 없음: " + rows);
     }
 
     private JsonNode rowByCode(JsonNode rows, String code) {

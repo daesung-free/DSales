@@ -77,6 +77,13 @@ public class ConsignmentOut extends BaseEntity {
         return c;
     }
 
+    /** 정산 역산(위탁정산 매출 취소 시). settled −, remaining + — 미결 잔여 복원. 불변식 유지. */
+    public void unsettle(int qty) {
+        this.settledQty -= qty;
+        this.remainingQty += qty;
+        this.status = (this.settledQty > 0) ? ConsignmentStatus.PARTIAL : ConsignmentStatus.OPEN;
+    }
+
     /**
      * 미정산분 반품(위탁 반품). 미결 잔여(미판매분)를 위탁창고→물류창고로 되돌림.
      * total_qty·remaining_qty 동시 차감(불변식 total=settled+remaining 유지). 매출 무관.
