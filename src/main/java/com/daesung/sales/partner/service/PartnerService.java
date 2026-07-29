@@ -62,13 +62,14 @@ public class PartnerService {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "이미 존재하는 거래처코드: " + req.code());
         });
         Partner partner = Partner.create(req.code(), req.name(), req.type());
+        partner.applyNames(req.cityName(), req.name1());
         return PartnerResponse.from(partnerRepository.save(partner));
     }
 
     @Transactional
     public PartnerResponse update(Long id, PartnerUpdateRequest req) {
         Partner partner = getOrThrow(id);
-        partner.update(req.name(), req.type());
+        partner.update(req.name(), req.cityName(), req.name1(), req.type());
         partner.updateCredit(req.assureAmount(), req.assureExpiry(), req.assureNote());
         partner.updateTaxInfo(req.bizNo(), req.bossName(), req.addr1(), req.addr2(),
                 req.bizStatus(), req.bizItem(), req.email1(), req.email2());

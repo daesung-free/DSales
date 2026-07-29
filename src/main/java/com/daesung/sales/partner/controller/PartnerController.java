@@ -51,7 +51,8 @@ public class PartnerController {
     @Operation(summary = "거래처 목록 엑셀 다운로드", description = "검색조건 전체를 xlsx로.")
     @GetMapping("/export")
     public ResponseEntity<byte[]> listExport(@RequestParam(required = false) String keyword) {
-        List<Col> cols = List.of(new Col("거래처코드", "code"), new Col("거래처명", "name"), new Col("구분", "type"));
+        List<Col> cols = List.of(new Col("거래처코드", "code"), new Col("도시명", "cityName"),
+                new Col("거래처명1", "name1"), new Col("거래처명2", "name"), new Col("구분", "type"));
         byte[] xlsx = excel.toXlsx("거래처목록", cols,
                 partnerService.findAll(keyword, PageRequest.of(0, 100000)).getContent());
         return excel.asDownload(xlsx, "거래처목록.xlsx");

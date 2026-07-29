@@ -8,8 +8,14 @@ import java.time.LocalDate;
 /** 거래처 수정 요청 DTO. 코드(code)는 불변이라 제외. 담보(여신)는 채권 담보비율 계산에 사용. */
 public record PartnerUpdateRequest(
 
-        @Schema(description = "거래처명", example = "리브커넥스(주)", requiredMode = Schema.RequiredMode.REQUIRED)
+        @Schema(description = "거래처명2(합쳐진 풀네임)", example = "진주 이룸도서", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotBlank String name,
+
+        @Schema(description = "도시명(예: 진주). DSRE CITY_NM", example = "진주")
+        String cityName,
+
+        @Schema(description = "거래처명1=상호만(예: 이룸도서). DSRE CUST_NM", example = "이룸도서")
+        String name1,
 
         @Schema(description = "정산유형(NORMAL/CONSIGN)", example = "CONSIGN")
         PartnerType type,

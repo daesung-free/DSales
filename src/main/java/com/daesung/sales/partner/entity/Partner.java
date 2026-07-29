@@ -28,8 +28,17 @@ public class Partner extends BaseEntity {
     @Column(nullable = false, unique = true, length = 20)
     private String code;
 
+    /** 거래처명2 = 합쳐진 풀네임(예: '진주 이룸도서'). 기존 name 유지. DSRE CUST_FNM. */
     @Column(nullable = false, length = 100)
     private String name;
+
+    /** 도시명(예: '진주'). DSRE CITY_NM. */
+    @Column(name = "city_name", length = 50)
+    private String cityName;
+
+    /** 거래처명1 = 상호만(예: '이룸도서'). DSRE CUST_NM. */
+    @Column(name = "name1", length = 100)
+    private String name1;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 10)
@@ -80,10 +89,18 @@ public class Partner extends BaseEntity {
         return p;
     }
 
-    /** 수정(코드는 불변). */
-    public void update(String name, PartnerType type) {
+    /** 수정(코드는 불변). name=거래처명2(풀네임), cityName=도시명, name1=상호만. */
+    public void update(String name, String cityName, String name1, PartnerType type) {
         this.name = name;
+        this.cityName = cityName;
+        this.name1 = name1;
         this.type = (type == null) ? PartnerType.NORMAL : type;
+    }
+
+    /** 거래처명 분리 필드(도시명·거래처명1) 설정 — 등록 시 사용. */
+    public void applyNames(String cityName, String name1) {
+        this.cityName = cityName;
+        this.name1 = name1;
     }
 
     /** 담보(여신) 정보 설정. */

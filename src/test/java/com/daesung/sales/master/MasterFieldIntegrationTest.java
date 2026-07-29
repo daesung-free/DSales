@@ -320,6 +320,26 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("거래처명 분리 — 도시명/거래처명1(상호)/거래처명2(풀네임) 등록·조회·수정")
+    void 거래처명분리() {
+        // 등록: 도시명 진주 / 거래처명1 이룸도서 / 거래처명2(풀네임) 진주 이룸도서
+        long id = createId("/masters/clients", Map.of(
+                "code", "NM-CUST", "name", "진주 이룸도서",
+                "cityName", "진주", "name1", "이룸도서", "type", "NORMAL"));
+
+        JsonNode one = data(get("/masters/clients/" + id));
+        assertThat(one.path("name").asText()).isEqualTo("진주 이룸도서");   // 거래처명2(풀네임)
+        assertThat(one.path("cityName").asText()).isEqualTo("진주");        // 도시명
+        assertThat(one.path("name1").asText()).isEqualTo("이룸도서");        // 거래처명1(상호)
+
+        // 수정: 상호 변경
+        JsonNode upd = data(put("/masters/clients/" + id, Map.of(
+                "name", "진주 이룸북스", "cityName", "진주", "name1", "이룸북스", "type", "NORMAL")));
+        assertThat(upd.path("name1").asText()).isEqualTo("이룸북스");
+        assertThat(upd.path("cityName").asText()).isEqualTo("진주");
+    }
+
+    @Test
     @DisplayName("마스터 엑셀 다운로드 — 거래처목록 xlsx(한글 헤더)")
     void 마스터엑셀() throws Exception {
         createId("/masters/clients", Map.of("code", "XL-CUST", "name", "엑셀거래처", "type", "NORMAL"));
