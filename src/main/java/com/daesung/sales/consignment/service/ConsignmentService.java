@@ -5,6 +5,7 @@ import com.daesung.sales.common.sequence.SequenceService;
 import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.consignment.dto.ConsignPendingResponse;
+import com.daesung.sales.consignment.dto.SettlementStatementResponse;
 import com.daesung.sales.consignment.dto.ConsignSettleRequest;
 import com.daesung.sales.consignment.dto.ConsignSettleResponse;
 import com.daesung.sales.consignment.dto.ConsignmentOutRequest;
@@ -153,5 +154,37 @@ public class ConsignmentService {
                     co.getRemainingQty(), co.getStatus(), supplyAmount, tax, totalAmount));
         }
         return new ConsignSettleResponse(lines);
+    }
+
+    /**
+     * 정산내역서: 기간 내 위탁 부분정산 이력 + 연결 매출금액 + 미결원장 현황 + 합계.
+     * 위탁 회계기준 '정산 시점 매출'(재무팀 확정) 기준. 기간 미지정 시 올해 1/1~오늘.
+     */
+    @Transactional(readOnly = true)
+    public SettlementStatementResponse settlementStatement(LocalDate fromDate, LocalDate toDate) {
+        LocalDate from = (fromDate != null) ? fromDate : LocalDate.now().withDayOfYear(1);
+        LocalDate to = (toDate != null) ? toDate : LocalDate.now();
+
+        List<SettlementStatementResponse.Row> rows = new ArrayList<>();
+        long cnt = 0, tQty = 0, tSupply = 0, tTax = 0, tTotal = 0;
+        for (Object[] r : settlementRepository.settlementStatement(from, to)) {
+            LocalDate settledDate = ((java.sql.Date) r[0]).toLocalDate();
+            long settleQty = num(r[5]), supply = num(r[7]), tax = num(r[8]), total = num(r[9]);
+            rows.add(new SettlementStatementResponse.Row(
+                    settledDate, (String) r[1], (String) r[2], (String) r[3], (String) r[4],
+                    settleQty, (String) r[6], supply, tax, total,
+                    num(r[10]), num(r[11]), num(r[12]), (String) r[13]));
+            cnt++;
+            tQty += settleQty;
+            tSupply += supply;
+            tTax += tax;
+            tTotal += total;
+        }
+        var summary = new SettlementStatementResponse.Summary(cnt, tQty, tSupply, tTax, tTotal);
+        return new SettlementStatementResponse(from, to, rows, summary);
+    }
+
+    private static long num(Object o) {
+        return (o == null) ? 0L : ((Number) o).longValue();
     }
 }

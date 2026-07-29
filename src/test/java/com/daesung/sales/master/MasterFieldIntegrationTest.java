@@ -144,6 +144,44 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("정산내역서 — 위탁출고→부분정산→내역서(매출금액·미결현황)")
+    void 정산내역서() {
+        Long main = createId("/masters/warehouses", Map.of("code", "CS-MAIN", "name", "물류창고", "type", "MAIN"));
+        Long consign = createId("/masters/warehouses", Map.of("code", "CS-CONS", "name", "위탁창고", "type", "CONSIGN"));
+        Long p = createId("/masters/products",
+                Map.of("code", "CS-BK", "name", "위탁도서", "contentType", "SELF", "price", 10000));
+        Long partner = createId("/masters/clients", Map.of("code", "CS-CUST", "name", "위탁거래처", "type", "NORMAL"));
+        inbound(main, p);   // 물류창고 재고 100
+
+        // 위탁출고 100 (물류→위탁)
+        JsonNode outResp = post("/consignment/out", Map.of(
+                "processedDate", "2026-06-01", "partnerId", partner,
+                "fromWarehouseId", main, "toWarehouseId", consign,
+                "items", List.of(Map.of("productId", p, "qty", 100))));
+        assertThat(outResp.path("success").asBoolean()).as("위탁출고: %s", outResp).isTrue();
+        long coId = data(outResp).path("items").get(0).path("consignmentOutId").asLong();
+
+        // 부분정산 30 (정가 10000, 공급률 70) → 매출 210,000
+        JsonNode settle = post("/consignment/settle", Map.of(
+                "salesDate", "2026-10-15", "settlements",
+                List.of(Map.of("consignmentOutId", coId, "settleQty", 30, "unitPrice", 10000, "supplyRate", 70))));
+        assertThat(settle.path("success").asBoolean()).as("정산: %s", settle).isTrue();
+
+        // 정산내역서
+        JsonNode d = data(get("/consignment/settlement-statement?fromDate=2020-01-01&toDate=2030-12-31"));
+        JsonNode row = d.path("rows").get(0);
+        assertThat(row.path("settleQty").asLong()).isEqualTo(30);
+        assertThat(row.path("supplyAmount").asLong()).isEqualTo(210_000);   // 10000×70%×30
+        assertThat(row.path("tax").asLong()).isEqualTo(21_000);
+        assertThat(row.path("totalQty").asLong()).isEqualTo(100);
+        assertThat(row.path("remainingQty").asLong()).isEqualTo(70);
+        assertThat(row.path("status").asText()).isEqualTo("PARTIAL");
+        JsonNode sum = d.path("summary");
+        assertThat(sum.path("totalSettleQty").asLong()).isEqualTo(30);
+        assertThat(sum.path("totalSupply").asLong()).isEqualTo(210_000);
+    }
+
+    @Test
     @DisplayName("마스터 엑셀 다운로드 — 거래처목록 xlsx(한글 헤더)")
     void 마스터엑셀() throws Exception {
         createId("/masters/clients", Map.of("code", "XL-CUST", "name", "엑셀거래처", "type", "NORMAL"));

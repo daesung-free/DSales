@@ -1,18 +1,25 @@
 package com.daesung.sales.consignment.controller;
 
+import com.daesung.sales.common.excel.ExcelExportUtil;
+import com.daesung.sales.common.excel.ExcelExportUtil.Col;
 import com.daesung.sales.common.response.ApiResponse;
 import com.daesung.sales.consignment.dto.ConsignPendingResponse;
 import com.daesung.sales.consignment.dto.ConsignSettleRequest;
 import com.daesung.sales.consignment.dto.ConsignSettleResponse;
 import com.daesung.sales.consignment.dto.ConsignmentOutRequest;
 import com.daesung.sales.consignment.dto.ConsignmentOutResponse;
+import com.daesung.sales.consignment.dto.SettlementStatementResponse;
 import com.daesung.sales.consignment.service.ConsignmentService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
+import java.time.LocalDate;
+import java.util.List;
 import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -29,6 +36,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ConsignmentController {
 
     private final ConsignmentService consignmentService;
+    private final ExcelExportUtil excel;
 
     @Operation(summary = "위탁출고 등록",
             description = "물류창고 → 위탁창고 이고(재고 이동) + 미결원장(consignment_out, OPEN) 생성. "
@@ -54,5 +62,34 @@ public class ConsignmentController {
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<ConsignSettleResponse> settle(@Valid @RequestBody ConsignSettleRequest req) {
         return ApiResponse.success(consignmentService.settle(req));
+    }
+
+    @Operation(summary = "정산내역서 조회",
+            description = "기간 내 위탁 부분정산 이력 + 연결 매출금액(공급가·세액·총금액) + 미결원장 현황(총출고/기정산/미결잔여) "
+                    + "+ 합계. 위탁 회계기준 '정산 시점 매출'. 기간 미지정 시 올해 1/1~오늘.")
+    @GetMapping("/settlement-statement")
+    public ApiResponse<SettlementStatementResponse> settlementStatement(
+            @Parameter(description = "시작일(yyyy-MM-dd)") @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @Parameter(description = "종료일(yyyy-MM-dd)") @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate) {
+        return ApiResponse.success(consignmentService.settlementStatement(fromDate, toDate));
+    }
+
+    @Operation(summary = "정산내역서 엑셀 다운로드", description = "위탁정산 이력 + 매출금액 + 미결현황 xlsx.")
+    @GetMapping("/settlement-statement/export")
+    public ResponseEntity<byte[]> settlementStatementExport(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate) {
+        List<Col> cols = List.of(
+                new Col("정산일", "settledDate"), new Col("거래처명", "partnerName"),
+                new Col("도서코드", "productCode"), new Col("도서명", "productName"),
+                new Col("원본출고번호", "sourceOutNo"), new Col("정산수량", "settleQty"), new Col("매출번호", "salesRefNo"),
+                new Col("공급가액", "supplyAmount"), new Col("세액", "tax"), new Col("총금액", "totalAmount"),
+                new Col("총출고", "totalQty"), new Col("기정산", "settledQtyCum"),
+                new Col("미결잔여", "remainingQty"), new Col("상태", "status"));
+        byte[] xlsx = excel.toXlsx("정산내역서", cols,
+                consignmentService.settlementStatement(fromDate, toDate).rows());
+        return excel.asDownload(xlsx, "정산내역서.xlsx");
     }
 }
