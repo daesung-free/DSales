@@ -10,17 +10,32 @@ import java.time.Instant;
 import java.util.Date;
 import javax.crypto.SecretKey;
 import io.jsonwebtoken.security.Keys;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /** access 토큰(JWT) 발급·검증. 서명키는 설정 주입(secret ≥32bytes). */
 @Component
 public class JwtProvider {
 
+    private static final Logger log = LoggerFactory.getLogger(JwtProvider.class);
+    /** application.yml의 로컬 개발용 더미 시크릿(운영 배포 시 절대 사용 금지). */
+    private static final String DUMMY_SECRET = "local-dev-only-change-me-please-32bytes-minimum-secret-key";
+
     private final SecretKey key;
     private final long accessMinutes;
 
     public JwtProvider(JwtProperties props) {
-        this.key = Keys.hmacShaKeyFor(props.jwtSecret().getBytes(StandardCharsets.UTF_8));
+        String secret = props.jwtSecret();
+        // fail-fast: 미설정/약한 키 차단(조용한 폴백 제거). <32byte는 Keys.hmacShaKeyFor가 예외.
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalStateException("JWT 시크릿(daesung.security.jwt-secret) 미설정 — 기동 불가.");
+        }
+        if (DUMMY_SECRET.equals(secret)) {
+            log.error("★★★ 기본 더미 JWT 시크릿 사용 중 — 토큰 위조(관리자 사칭) 위험. "
+                    + "운영 배포 시 반드시 DAESUNG_SECURITY_JWTSECRET 환경변수로 실제 시크릿 주입할 것. ★★★");
+        }
+        this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.accessMinutes = props.accessTokenMinutesOrDefault();
     }
 

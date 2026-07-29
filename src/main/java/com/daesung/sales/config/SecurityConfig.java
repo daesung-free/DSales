@@ -63,6 +63,13 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/logistics-costs/**").hasAnyRole("LOGISTICS", "ADMIN")
                         // 마감/채권/세무: 재무 — 쓰기·조회 모두(민감 재무데이터라 VIEWER 제외). ★기본안, 발주처 조정 가능
                         .requestMatchers("/api/v1/closing/**").hasAnyRole("FINANCE", "ADMIN")
+                        // 로그아웃(POST)은 인증만
+                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/logout").authenticated()
+                        // ★안전망(deny-by-default): 위에서 역할이 명시되지 않은 쓰기(POST/PUT/DELETE)는 거부.
+                        //   향후 신규 쓰기 엔드포인트가 규칙 없이 추가돼도 VIEWER가 접근하지 못하게 방지.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/**").denyAll()
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/**").denyAll()
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/**").denyAll()
                         // 그 외(마스터·매출·재고 조회 등 GET) = 인증된 사용자면 허용(VIEWER 포함)
                         .anyRequest().authenticated())
                 // 미인증=401(로그인 필요), 인증됐으나 권한부족=403.
