@@ -81,6 +81,13 @@ public class AuthController {
         return ApiResponse.success(issueWithCookie(authService.refresh(token), response));
     }
 
+    @Operation(summary = "내 정보 조회",
+            description = "현재 로그인 사용자의 아이디·이름·역할. 프론트 메뉴 노출 제어(RBAC)용.")
+    @org.springframework.web.bind.annotation.GetMapping("/me")
+    public ApiResponse<UserResponse> me(Principal principal) {
+        return ApiResponse.success(authService.me(principal.getName()));
+    }
+
     @Operation(summary = "로그아웃",
             description = "현재 사용자의 모든 refresh 토큰 무효화 + refresh 쿠키 삭제(access는 만료까지 유효).")
     @PostMapping("/logout")

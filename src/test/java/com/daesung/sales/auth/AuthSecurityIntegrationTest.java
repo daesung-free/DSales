@@ -26,6 +26,53 @@ class AuthSecurityIntegrationTest extends IntegrationTestSupport {
         exchangeRaw(HttpMethod.POST, "/auth/users", Map.of(
                 "username", "reuse-user", "password", "Reuse1234!", "name", "재사용테스트", "role", "VIEWER"),
                 token(), null);
+        // RBAC 검증용 역할별 계정
+        createUser("rbac-finance", "FINANCE");
+        createUser("rbac-sales", "SALES");
+        createUser("rbac-viewer", "VIEWER");
+    }
+
+    private void createUser(String username, String role) {
+        exchangeRaw(HttpMethod.POST, "/auth/users", Map.of(
+                "username", username, "password", "Pw123456!", "name", username, "role", role), token(), null);
+    }
+
+    /** 해당 계정 로그인 → access 토큰. */
+    private String loginToken(String username) throws Exception {
+        var resp = exchangeRaw(HttpMethod.POST, "/auth/login",
+                Map.of("username", username, "password", "Pw123456!"), null, null);
+        return om.readTree(resp.getBody()).path("data").path("accessToken").asText();
+    }
+
+    private int status(HttpMethod method, String path, Object body, String bearer) {
+        return exchangeRaw(method, path, body, bearer, null).getStatusCode().value();
+    }
+
+    @Test
+    @DisplayName("RBAC — 마감/세무는 FINANCE, 매출등록은 SALES, 조회는 공통")
+    void rbac매트릭스() throws Exception {
+        String finance = loginToken("rbac-finance");
+        String sales = loginToken("rbac-sales");
+        String viewer = loginToken("rbac-viewer");
+
+        // 마감/세무 조회: FINANCE 200, VIEWER 403(민감 재무데이터)
+        assertThat(status(HttpMethod.GET, "/closing/revenue-report", null, finance)).isEqualTo(200);
+        assertThat(status(HttpMethod.GET, "/closing/revenue-report", null, viewer)).isEqualTo(403);
+
+        // 매출등록(POST): SALES 계열만. VIEWER 403(권한부족, 바디 무관)
+        assertThat(status(HttpMethod.POST, "/sales/entries", Map.of(), viewer)).isEqualTo(403);
+
+        // 마스터 쓰기(POST): ADMIN만. SALES 403
+        assertThat(status(HttpMethod.POST, "/masters/clients",
+                Map.of("code", "X", "name", "X", "type", "NORMAL"), sales)).isEqualTo(403);
+
+        // 일반 조회는 VIEWER도 200
+        assertThat(status(HttpMethod.GET, "/sales/statement?from=2026-06-01&to=2026-06-30", null, viewer))
+                .isEqualTo(200);
+
+        // /auth/me 역할 반영
+        var me = om.readTree(exchangeRaw(HttpMethod.GET, "/auth/me", null, finance, null).getBody());
+        assertThat(me.path("data").path("role").asText()).isEqualTo("FINANCE");
     }
 
     @Test

@@ -92,6 +92,14 @@ public class AuthService {
         return issueTokens(user);
     }
 
+    /** 현재 로그인 사용자 정보(프론트 메뉴 노출 제어용). */
+    @Transactional(readOnly = true)
+    public UserResponse me(String username) {
+        return userRepository.findByUsername(username)
+                .map(AuthService::toUserResponse)
+                .orElseThrow(() -> new BusinessException(ErrorCode.UNAUTHORIZED, "계정을 찾을 수 없습니다."));
+    }
+
     /** 로그아웃. 해당 사용자의 모든 refresh 토큰 무효화. */
     @Transactional
     public void logout(String username) {
