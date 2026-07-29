@@ -257,4 +257,60 @@ public class SaleController {
             @Parameter(description = "분류코드 필터(미지정=전체)") @RequestParam(required = false) String catCode) {
         return ApiResponse.success(saleService.yoyComparison(from, to, groupBy, partnerId, catCode));
     }
+
+    @Operation(summary = "과목별매출현황 엑셀 다운로드", description = "거래처×분류×도서 매출/반품/순매출/교사용 수량+반품률.")
+    @GetMapping("/category-summary/export")
+    public ResponseEntity<byte[]> categorySummaryExport(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(required = false) Long partnerId, @RequestParam(required = false) String catCode) {
+        List<Col> cols = List.of(
+                new Col("거래처코드", "partnerCode"), new Col("거래처명", "partnerName"),
+                new Col("분류코드", "catCode"), new Col("분류명", "catName"),
+                new Col("도서코드", "bookCode"), new Col("도서명", "bookName"),
+                new Col("매출수량", "saleQty"), new Col("반품수량", "returnQty"), new Col("순매출수량", "netQty"),
+                new Col("교사용수량", "teacherQty"), new Col("반품률(%)", "returnRate"));
+        byte[] xlsx = excel.toXlsx("과목별매출현황", cols, saleService.categorySales(from, to, partnerId, catCode).rows());
+        return excel.asDownload(xlsx, "과목별매출현황_" + from + "_" + to + ".xlsx");
+    }
+
+    @Operation(summary = "도서입출고현황 엑셀 다운로드", description = "도서별 매입+매출 이중장부 + 정본재고 + 매출총이익.")
+    @GetMapping("/book-inout/export")
+    public ResponseEntity<byte[]> bookInoutExport(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(required = false) String catCode, @RequestParam(required = false) Long productId) {
+        List<Col> cols = List.of(
+                new Col("도서코드", "bookCode"), new Col("도서명", "bookName"),
+                new Col("분류코드", "catCode"), new Col("분류명", "catName"), new Col("정가", "listPrice"),
+                new Col("입고수량", "inboundQty"), new Col("입고금액", "inboundAmount"),
+                new Col("취소수량", "cancelQty"), new Col("취소금액", "cancelAmount"), new Col("취소율(%)", "cancelRate"),
+                new Col("실매입수량", "netPurchaseQty"), new Col("실매입금액", "netPurchaseAmount"),
+                new Col("출고수량", "outboundQty"), new Col("출고금액", "outboundAmount"),
+                new Col("반품수량", "returnQty"), new Col("반품금액", "returnAmount"), new Col("반품률(%)", "returnRate"),
+                new Col("실판매수량", "netSalesQty"), new Col("실판매금액", "netSalesAmount"),
+                new Col("재고", "stockQty"), new Col("매출총이익", "grossMargin"));
+        byte[] xlsx = excel.toXlsx("도서입출고현황", cols, saleService.bookInout(from, to, catCode, productId).rows());
+        return excel.asDownload(xlsx, "도서입출고현황_" + from + "_" + to + ".xlsx");
+    }
+
+    @Operation(summary = "거래처별 매출대비표 엑셀 다운로드", description = "당해 vs 전년 동기간 수량·금액 증감·비율.")
+    @GetMapping("/yoy-comparison/export")
+    public ResponseEntity<byte[]> yoyComparisonExport(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(defaultValue = "PARTNER") YoyComparisonResponse.GroupBy groupBy,
+            @RequestParam(required = false) Long partnerId, @RequestParam(required = false) String catCode) {
+        List<Col> cols = List.of(
+                new Col("거래처코드", "partnerCode"), new Col("거래처명", "partnerName"),
+                new Col("분류코드", "catCode"), new Col("분류명", "catName"),
+                new Col("도서코드", "bookCode"), new Col("도서명", "bookName"),
+                new Col("당해수량", "curQty"), new Col("당해금액", "curAmount"),
+                new Col("전년수량", "prevQty"), new Col("전년금액", "prevAmount"),
+                new Col("증감수량", "diffQty"), new Col("증감금액", "diffAmount"),
+                new Col("수량비율(%)", "qtyRatioPct"), new Col("금액비율(%)", "amountRatioPct"));
+        byte[] xlsx = excel.toXlsx("매출대비표", cols,
+                saleService.yoyComparison(from, to, groupBy, partnerId, catCode).rows());
+        return excel.asDownload(xlsx, "매출대비표_" + from + "_" + to + ".xlsx");
+    }
 }

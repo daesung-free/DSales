@@ -73,6 +73,22 @@ public class TaxController {
         return ApiResponse.success(taxService.invoiceAdjustments(y, m));
     }
 
+    @Operation(summary = "계산서 10일 분기 조정 엑셀 다운로드",
+            description = "반품 건별 수정발행/익월마이너스 분류 + 반영월. 방식별 합계는 조회 API 참조.")
+    @GetMapping("/invoice-adjustments/export")
+    public ResponseEntity<byte[]> invoiceAdjustmentsExport(
+            @RequestParam(required = false) Integer year, @RequestParam(required = false) Integer month) {
+        LocalDate now = LocalDate.now();
+        int y = (year != null) ? year : now.getYear();
+        int m = (month != null) ? month : now.getMonthValue();
+        List<Col> cols = List.of(
+                new Col("매출번호", "salesNo"), new Col("거래처명", "partnerName"), new Col("도서명", "productName"),
+                new Col("반품일", "returnDate"), new Col("공급가액", "supplyAmount"), new Col("세액", "tax"),
+                new Col("조정방식", "mode"), new Col("반영신고월", "reportingMonth"));
+        byte[] xlsx = excel.toXlsx("계산서조정", cols, taxService.invoiceAdjustments(y, m).rows());
+        return excel.asDownload(xlsx, "계산서10일분기_" + y + "-" + String.format("%02d", m) + ".xlsx");
+    }
+
     @Operation(summary = "계산서·세금계산서 월별신고 조회(38p)",
             description = "월(1~12)×발행유형(계산서=면세/세금계산서=과세) 기준 매출·반품·순매출·세액 집계 + 연간 합계. "
                     + "발행유형은 매출 세액(0/≠0)으로 파생. 취소 제외. "

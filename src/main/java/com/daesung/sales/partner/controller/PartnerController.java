@@ -2,9 +2,14 @@ package com.daesung.sales.partner.controller;
 
 import com.daesung.sales.common.dto.PageRequestDto;
 import com.daesung.sales.common.response.ApiResponse;
+import com.daesung.sales.common.excel.ExcelExportUtil;
+import com.daesung.sales.common.excel.ExcelExportUtil.Col;
 import com.daesung.sales.common.response.PageResponse;
 import com.daesung.sales.partner.dto.CollateralExpiryResponse;
 import com.daesung.sales.partner.dto.PartnerCreateRequest;
+import java.util.List;
+import org.springframework.data.domain.PageRequest;
+import org.springframework.http.ResponseEntity;
 import com.daesung.sales.partner.dto.PartnerResponse;
 import com.daesung.sales.partner.dto.PartnerUpdateRequest;
 import com.daesung.sales.partner.service.PartnerService;
@@ -33,6 +38,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class PartnerController {
 
     private final PartnerService partnerService;
+    private final ExcelExportUtil excel;
 
     @Operation(summary = "거래처 목록 조회", description = "keyword(코드/명 부분일치)로 검색, 페이징·정렬 지원")
     @GetMapping
@@ -40,6 +46,30 @@ public class PartnerController {
             @Parameter(description = "검색어(거래처코드 또는 거래처명 부분일치)") @RequestParam(required = false) String keyword,
             @ParameterObject PageRequestDto pageReq) {
         return ApiResponse.success(partnerService.findAll(keyword, pageReq.toPageable()));
+    }
+
+    @Operation(summary = "거래처 목록 엑셀 다운로드", description = "검색조건 전체를 xlsx로.")
+    @GetMapping("/export")
+    public ResponseEntity<byte[]> listExport(@RequestParam(required = false) String keyword) {
+        List<Col> cols = List.of(new Col("거래처코드", "code"), new Col("거래처명", "name"), new Col("구분", "type"));
+        byte[] xlsx = excel.toXlsx("거래처목록", cols,
+                partnerService.findAll(keyword, PageRequest.of(0, 100000)).getContent());
+        return excel.asDownload(xlsx, "거래처목록.xlsx");
+    }
+
+    @Operation(summary = "담보만기 알림 엑셀 다운로드", description = "만기 임박/만료 거래처(남은일수·상태).")
+    @GetMapping("/collateral-expiry/export")
+    public ResponseEntity<byte[]> collateralExpiryExport(
+            @RequestParam(required = false)
+            @org.springframework.format.annotation.DateTimeFormat(
+                    iso = org.springframework.format.annotation.DateTimeFormat.ISO.DATE) java.time.LocalDate asOf,
+            @RequestParam(defaultValue = "30") int withinDays) {
+        List<Col> cols = List.of(
+                new Col("거래처코드", "code"), new Col("거래처명", "name"),
+                new Col("담보만기일", "assureExpiry"), new Col("담보금액", "assureAmount"),
+                new Col("남은일수", "daysUntilExpiry"), new Col("상태", "status"));
+        byte[] xlsx = excel.toXlsx("담보만기", cols, partnerService.collateralExpiry(asOf, withinDays).rows());
+        return excel.asDownload(xlsx, "담보만기알림.xlsx");
     }
 
     @Operation(summary = "담보 만기 알림",

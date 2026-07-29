@@ -144,6 +144,22 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("마스터 엑셀 다운로드 — 거래처목록 xlsx(한글 헤더)")
+    void 마스터엑셀() throws Exception {
+        createId("/masters/clients", Map.of("code", "XL-CUST", "name", "엑셀거래처", "type", "NORMAL"));
+        var resp = getBytes("/masters/clients/export");
+        assertThat(resp.getStatusCode().is2xxSuccessful()).isTrue();
+        byte[] xlsx = resp.getBody();
+        assertThat(new String(xlsx, 0, 2)).isEqualTo("PK");
+        try (var wb = new org.apache.poi.xssf.usermodel.XSSFWorkbook(new java.io.ByteArrayInputStream(xlsx))) {
+            var sheet = wb.getSheetAt(0);
+            assertThat(sheet.getSheetName()).isEqualTo("거래처목록");
+            assertThat(sheet.getRow(0).getCell(0).getStringCellValue()).isEqualTo("거래처코드");
+            assertThat(sheet.getLastRowNum()).isGreaterThan(0);
+        }
+    }
+
+    @Test
     @DisplayName("담보 만기 알림 — 임박/만료 포함, 먼 만기는 제외")
     void 담보만기알림() {
         // 기준일 2026-06-01 고정. 임박(20일후)·만료(5일전)·먼미래(200일후)

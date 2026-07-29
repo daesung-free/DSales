@@ -35,6 +35,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class ProductController {
 
     private final ProductService productService;
+    private final com.daesung.sales.common.excel.ExcelExportUtil excel;
 
     @Operation(summary = "상품 목록 조회", description = "keyword(코드/명 부분일치)로 검색, 페이징·정렬 지원")
     @GetMapping
@@ -42,6 +43,26 @@ public class ProductController {
             @Parameter(description = "검색어(상품코드 또는 상품명 부분일치)") @RequestParam(required = false) String keyword,
             @ParameterObject PageRequestDto pageReq) {
         return ApiResponse.success(productService.findAll(keyword, pageReq.toPageable()));
+    }
+
+    @Operation(summary = "도서 목록 엑셀 다운로드", description = "검색조건 전체를 xlsx로(도서관리 기본정보).")
+    @GetMapping("/export")
+    public org.springframework.http.ResponseEntity<byte[]> listExport(@RequestParam(required = false) String keyword) {
+        var cols = java.util.List.of(
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("도서코드", "code"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("도서명", "name"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("콘텐츠구분", "contentType"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("분류코드", "catCode"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("분류명", "catName"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("정가", "price"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("면세", "taxFree"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("매출구분", "salesDivision"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("수불부노출", "ledgerVisible"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("재고관리", "stockManaged"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("사용여부", "useYn"));
+        byte[] xlsx = excel.toXlsx("도서목록", cols,
+                productService.findAll(keyword, org.springframework.data.domain.PageRequest.of(0, 100000)).getContent());
+        return excel.asDownload(xlsx, "도서목록.xlsx");
     }
 
     @Operation(summary = "상품 상세 조회", description = "id로 단건 조회. 없으면 404")

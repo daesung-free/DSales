@@ -30,6 +30,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class WarehouseController {
 
     private final WarehouseService warehouseService;
+    private final com.daesung.sales.common.excel.ExcelExportUtil excel;
 
     @Operation(summary = "창고 목록 조회", description = "keyword(코드/명 부분일치)로 검색, 페이징·정렬 지원")
     @GetMapping
@@ -37,6 +38,20 @@ public class WarehouseController {
             @Parameter(description = "검색어(창고코드 또는 창고명 부분일치)") @RequestParam(required = false) String keyword,
             @ParameterObject PageRequestDto pageReq) {
         return ApiResponse.success(warehouseService.findAll(keyword, pageReq.toPageable()));
+    }
+
+    @Operation(summary = "창고 목록 엑셀 다운로드", description = "검색조건 전체를 xlsx로.")
+    @GetMapping("/export")
+    public org.springframework.http.ResponseEntity<byte[]> listExport(@RequestParam(required = false) String keyword) {
+        var cols = java.util.List.of(
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("창고코드", "code"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("창고명", "name"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("유형", "type"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("실물재고여부", "physicalStock"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("소속거래처", "ownerClientName"));
+        byte[] xlsx = excel.toXlsx("창고목록", cols,
+                warehouseService.findAll(keyword, org.springframework.data.domain.PageRequest.of(0, 100000)).getContent());
+        return excel.asDownload(xlsx, "창고목록.xlsx");
     }
 
     @Operation(summary = "창고 상세 조회", description = "id로 단건 조회. 없으면 404")
