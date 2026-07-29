@@ -200,6 +200,33 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
         return out;
     }
 
+    @Test
+    @DisplayName("매출등록 — 공급률 미입력 시 거래처별 단가 자동적용, 매핑 없으면 오류")
+    void 단가자동적용() {
+        Long wh = createId("/masters/warehouses", Map.of("code", "AP-WH", "name", "자동단가창고", "type", "MAIN"));
+        Long p = createId("/masters/products",
+                Map.of("code", "AP-BK", "name", "자동단가도서", "contentType", "SELF", "price", 10000));
+        Long partner = createId("/masters/clients", Map.of("code", "AP-CUST", "name", "자동단가거래처", "type", "NORMAL"));
+        put("/masters/products/" + p + "/partner-prices/" + partner, Map.of("supplyRate", 70, "visible", true));
+        inbound(wh, p);
+
+        // 정가·공급률 미입력 → 매핑(70%)·정가(10000) 자동적용: 10000×70%×10 = 70,000
+        JsonNode r = post("/sales/entries", Map.of(
+                "salesDate", "2026-04-20", "partnerId", partner, "warehouseId", wh,
+                "items", List.of(Map.of("productId", p, "shipmentType", "NORMAL_SHIP", "qty", 10))));
+        assertThat(r.path("success").asBoolean()).as("자동단가 매출등록: %s", r).isTrue();
+        assertThat(data(r).path("items").get(0).path("supplyAmount").asLong()).isEqualTo(70_000);
+
+        // 매핑 없는 상품 + 공급률 미입력 → 오류
+        Long p2 = createId("/masters/products",
+                Map.of("code", "AP-NOBK", "name", "매핑없음도서", "contentType", "SELF", "price", 10000));
+        inbound(wh, p2);
+        JsonNode fail = post("/sales/entries", Map.of(
+                "salesDate", "2026-04-20", "partnerId", partner, "warehouseId", wh,
+                "items", List.of(Map.of("productId", p2, "shipmentType", "NORMAL_SHIP", "qty", 5))));
+        assertThat(fail.path("success").asBoolean()).isFalse();
+    }
+
     private void inbound(Long whId, Long productId) {
         post("/stock/inbound", Map.of(
                 "processedDate", "2026-06-01", "supplierClientId", ownerFallback(), "destinationWarehouseId", whId,

@@ -37,11 +37,11 @@ public record SalesEntryRequest(
                     requiredMode = Schema.RequiredMode.REQUIRED)
             @NotNull ShipmentType shipmentType,
 
-            @Schema(description = "정가(원)", example = "20000", requiredMode = Schema.RequiredMode.REQUIRED)
-            @NotNull @Positive Integer unitPrice,
+            @Schema(description = "정가(원). 미입력 시 도서 마스터 정가 자동적용", example = "20000")
+            @Positive Integer unitPrice,
 
-            @Schema(description = "공급률(%)", example = "75", requiredMode = Schema.RequiredMode.REQUIRED)
-            @NotNull @PositiveOrZero Integer supplyRate,
+            @Schema(description = "공급률(%). 미입력 시 거래처별 단가 매핑에서 자동조회(둘 다 없으면 오류)", example = "75")
+            @PositiveOrZero Integer supplyRate,
 
             @Schema(description = "수량", example = "100", requiredMode = Schema.RequiredMode.REQUIRED)
             @Positive int qty,

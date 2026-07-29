@@ -12,6 +12,7 @@ import com.daesung.sales.inventory.service.InventoryService;
 import com.daesung.sales.partner.entity.Partner;
 import com.daesung.sales.partner.repository.PartnerRepository;
 import com.daesung.sales.product.entity.Product;
+import com.daesung.sales.product.repository.ProductPartnerPriceRepository;
 import com.daesung.sales.product.repository.ProductRepository;
 import com.daesung.sales.sale.dto.BookInoutResponse;
 import com.daesung.sales.sale.dto.BookSalesAgg;
@@ -59,6 +60,7 @@ public class SaleService {
     private final SaleRepository saleRepository;
     private final PartnerRepository partnerRepository;
     private final ProductRepository productRepository;
+    private final ProductPartnerPriceRepository partnerPriceRepository;
     private final OutTypeLookupService outTypeLookupService;
     private final WarehouseRepository warehouseRepository;
     private final InventoryService inventoryService;
@@ -91,7 +93,20 @@ public class SaleService {
             SalesCategory salesCategory = SalesCategory.valueOf(
                     outTypeLookupService.salesCategoryNameOf(item.shipmentType()));
 
-            long supplyAmount = (long) ((double) item.unitPrice() * item.supplyRate() / 100.0 * item.qty());
+            // 정가·공급률 자동적용: 미입력 시 정가=도서 마스터 정가, 공급률=거래처별 단가 매핑
+            Integer unitPrice = (item.unitPrice() != null) ? item.unitPrice() : product.getPrice();
+            Integer supplyRate = item.supplyRate();
+            if (supplyRate == null) {
+                supplyRate = partnerPriceRepository
+                        .findByProductIdAndPartnerId(product.getId(), partner.getId())
+                        .map(m -> m.getSupplyRate()).orElse(null);
+            }
+            if (unitPrice == null || supplyRate == null) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT,
+                        "정가·공급률이 없고 거래처별 단가 매핑도 없습니다. 상품=" + product.getCode());
+            }
+
+            long supplyAmount = (long) ((double) unitPrice * supplyRate / 100.0 * item.qty());
             long tax = product.isTaxFree() ? 0L : supplyAmount / 10L;
             long totalAmount = supplyAmount + tax;
 
@@ -99,7 +114,7 @@ public class SaleService {
 
             Sale sale = Sale.create(salesNo, req.salesDate(), partner, product,
                     SalesType.NORMAL_SALES, item.shipmentType(), salesCategory,
-                    item.unitPrice(), item.supplyRate(), item.qty(),
+                    unitPrice, supplyRate, item.qty(),
                     supplyAmount, tax, totalAmount, item.procType(), item.memo());
             saleRepository.save(sale);
 
