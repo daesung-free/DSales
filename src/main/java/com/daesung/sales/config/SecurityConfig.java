@@ -55,6 +55,12 @@ public class SecurityConfig {
                         // 매출/위탁: 영업
                         .requestMatchers(HttpMethod.POST, "/api/v1/sales/**", "/api/v1/consignment/**")
                                 .hasAnyRole("SALES", "ADMIN")
+                        // 매출목표(대시보드) 등록: 영업/재무
+                        .requestMatchers(HttpMethod.POST, "/api/v1/dashboard/**")
+                                .hasAnyRole("SALES", "FINANCE", "ADMIN")
+                        // 물류단가 수정: 물류
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/logistics-costs/**").hasAnyRole("LOGISTICS", "ADMIN")
+                        .requestMatchers(HttpMethod.DELETE, "/api/v1/logistics-costs/**").hasAnyRole("LOGISTICS", "ADMIN")
                         // 마감/채권/세무: 재무 — 쓰기·조회 모두(민감 재무데이터라 VIEWER 제외). ★기본안, 발주처 조정 가능
                         .requestMatchers("/api/v1/closing/**").hasAnyRole("FINANCE", "ADMIN")
                         // 그 외(마스터·매출·재고 조회 등 GET) = 인증된 사용자면 허용(VIEWER 포함)

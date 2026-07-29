@@ -66,6 +66,11 @@ class AuthSecurityIntegrationTest extends IntegrationTestSupport {
         assertThat(status(HttpMethod.POST, "/masters/clients",
                 Map.of("code", "X", "name", "X", "type", "NORMAL"), sales)).isEqualTo(403);
 
+        // 매출목표(대시보드) 등록: 영업/재무만. VIEWER 403
+        assertThat(status(HttpMethod.POST, "/dashboard/targets", Map.of(), viewer)).isEqualTo(403);
+        // 물류단가 수정: 물류만. VIEWER 403
+        assertThat(status(HttpMethod.PUT, "/logistics-costs/rates/1", Map.of(), viewer)).isEqualTo(403);
+
         // 일반 조회는 VIEWER도 200
         assertThat(status(HttpMethod.GET, "/sales/statement?from=2026-06-01&to=2026-06-30", null, viewer))
                 .isEqualTo(200);
