@@ -1,5 +1,7 @@
 package com.daesung.sales.inventory.controller;
 
+import com.daesung.sales.common.excel.ExcelExportUtil;
+import com.daesung.sales.common.excel.ExcelExportUtil.Col;
 import com.daesung.sales.common.response.ApiResponse;
 import com.daesung.sales.inventory.dto.BomWorkRequest;
 import com.daesung.sales.inventory.dto.BomWorkResponse;
@@ -18,6 +20,7 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -34,6 +37,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class InventoryController {
 
     private final InventoryService inventoryService;
+    private final ExcelExportUtil excel;
 
     @Operation(summary = "일반 입고 등록",
             description = "인쇄소 등 → 물류창고 입고. 재고이벤트(INBOUND) 기록 + 재고 잔량 가산을 한 트랜잭션으로 처리")
@@ -72,5 +76,22 @@ public class InventoryController {
             @Parameter(description = "상품 id 필터") @RequestParam(required = false) Long productId,
             @Parameter(description = "창고 id 필터") @RequestParam(required = false) Long warehouseId) {
         return ApiResponse.success(inventoryService.stockLedger(fromDate, toDate, productId, warehouseId));
+    }
+
+    @Operation(summary = "제품수불부 엑셀 다운로드", description = "이월/입고/이고/조립해체/폐기/매출/무상/교사용/반품/조정/현재재고.")
+    @GetMapping("/ledger/export")
+    public ResponseEntity<byte[]> ledgerExport(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @RequestParam(required = false) Long productId, @RequestParam(required = false) Long warehouseId) {
+        List<Col> cols = List.of(
+                new Col("도서코드", "productCode"), new Col("도서명", "productName"), new Col("창고", "warehouseName"),
+                new Col("이월", "opening"), new Col("입고", "inbound"), new Col("이고", "transfer"),
+                new Col("조립해체", "bom"), new Col("폐기", "dispose"), new Col("매출", "sale"),
+                new Col("무상", "free"), new Col("교사용", "teacher"), new Col("반품", "salesReturn"),
+                new Col("조정", "adjust"), new Col("현재재고", "closing"));
+        byte[] xlsx = excel.toXlsx("제품수불부", cols,
+                inventoryService.stockLedger(fromDate, toDate, productId, warehouseId));
+        return excel.asDownload(xlsx, "제품수불부.xlsx");
     }
 }

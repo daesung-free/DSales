@@ -134,6 +134,23 @@ class InventoryEngineIntegrationTest extends IntegrationTestSupport {
         assertThat(ok.path("success").asBoolean()).as("해제 후: %s", ok).isTrue();
     }
 
+    @Test
+    @DisplayName("제품수불부 엑셀 다운로드 — xlsx(한글 헤더·데이터)")
+    void 수불부엑셀() throws Exception {
+        Long p = product("IE-XL");
+        inbound(whA, p, 500);
+        var resp = getBytes("/stock/ledger/export?warehouseId=" + whA);
+        assertThat(resp.getStatusCode().is2xxSuccessful()).isTrue();
+        byte[] xlsx = resp.getBody();
+        assertThat(new String(xlsx, 0, 2)).isEqualTo("PK");
+        try (var wb = new org.apache.poi.xssf.usermodel.XSSFWorkbook(new java.io.ByteArrayInputStream(xlsx))) {
+            var sheet = wb.getSheetAt(0);
+            assertThat(sheet.getSheetName()).isEqualTo("제품수불부");
+            assertThat(sheet.getRow(0).getCell(0).getStringCellValue()).isEqualTo("도서코드");
+            assertThat(sheet.getLastRowNum()).isGreaterThan(0);
+        }
+    }
+
     // ── helpers ──
 
     private Long product(String code) {

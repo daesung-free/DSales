@@ -213,6 +213,25 @@ public class SaleController {
         return ApiResponse.success(saleService.transactionStatement(partnerId, from, to, category));
     }
 
+    @Operation(summary = "거래명세서 엑셀 다운로드", description = "유가+무가 라인 통합(품명·정가·공급률·단가·수량·금액·세액).")
+    @GetMapping("/transaction-statement/export")
+    public ResponseEntity<byte[]> transactionStatementExport(
+            @RequestParam Long partnerId,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(required = false) SalesCategory category) {
+        var d = saleService.transactionStatement(partnerId, from, to, category);
+        var all = new java.util.ArrayList<>(d.pricedLines());
+        all.addAll(d.freeLines());
+        List<Col> cols = List.of(
+                new Col("순번", "seq"), new Col("품명", "bookLabel"), new Col("도서코드", "bookCode"),
+                new Col("수량", "qty"), new Col("정가", "listPrice"), new Col("공급률", "supplyRate"),
+                new Col("단가", "unitSupplyPrice"), new Col("공급가액", "supplyAmount"), new Col("세액", "tax"),
+                new Col("구분", "category"), new Col("비고", "memo"));
+        byte[] xlsx = excel.toXlsx("거래명세서", cols, all);
+        return excel.asDownload(xlsx, "거래명세서_" + from + "_" + to + ".xlsx");
+    }
+
     @Operation(summary = "과목별매출현황",
             description = "거래처×분류(catCode)×도서 단위 수량 현황. 매출·반품·순매출(매출−반품)·교사용 수량 + "
                     + "반품률(%). 취소 제외. 거래처·분류 옵션 필터.")
