@@ -6,6 +6,10 @@ import com.daesung.sales.support.IntegrationTestSupport;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -261,6 +265,58 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
                 "items", List.of(Map.of("consignmentOutId", coId, "returnQty", 200))));
         assertThat(over.path("success").asBoolean()).isFalse();
         assertThat(over.path("error").path("code").asText()).isEqualTo("OVER_SETTLEMENT");
+    }
+
+    @Test
+    @DisplayName("위탁정산 동시성 — 같은 미결에 동시 정산 2건이면 정확히 1건만 성공(초과정산·lost update 방지, 이슈#97)")
+    void 위탁정산_동시성() throws Exception {
+        Long main = createId("/masters/warehouses", Map.of("code", "CC-MAIN", "name", "물류", "type", "MAIN"));
+        Long consign = createId("/masters/warehouses", Map.of("code", "CC-CONS", "name", "위탁", "type", "CONSIGN"));
+        Long p = createId("/masters/products",
+                Map.of("code", "CC-BK", "name", "위탁동시성도서", "contentType", "SELF", "price", 10000));
+        Long partner = createId("/masters/clients", Map.of("code", "CC-CUST", "name", "위탁동시성거래처", "type", "NORMAL"));
+        inbound(main, p);   // 물류 100
+
+        // 위탁출고 100 → 미결 잔여 100
+        JsonNode out = data(post("/consignment/out", Map.of(
+                "processedDate", "2026-06-01", "partnerId", partner,
+                "fromWarehouseId", main, "toWarehouseId", consign,
+                "items", List.of(Map.of("productId", p, "qty", 100)))));
+        long coId = out.path("items").get(0).path("consignmentOutId").asLong();
+
+        // 동시에 각각 100 정산 시도(합계 200 > 잔여 100). 락 없으면 둘 다 통과(lost update).
+        Object body = Map.of("salesDate", "2026-10-15", "settlements",
+                List.of(Map.of("consignmentOutId", coId, "settleQty", 100, "unitPrice", 10000, "supplyRate", 70)));
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        CountDownLatch gate = new CountDownLatch(1);
+        try {
+            Future<JsonNode> f1 = pool.submit(() -> { gate.await(); return post("/consignment/settle", body); });
+            Future<JsonNode> f2 = pool.submit(() -> { gate.await(); return post("/consignment/settle", body); });
+            gate.countDown();   // 동시 출발
+            JsonNode r1 = f1.get();
+            JsonNode r2 = f2.get();
+
+            int success = (r1.path("success").asBoolean() ? 1 : 0) + (r2.path("success").asBoolean() ? 1 : 0);
+            assertThat(success).as("동시 정산 결과 r1=%s r2=%s", r1, r2).isEqualTo(1);
+            // 실패한 쪽은 초과정산 오류
+            JsonNode failed = r1.path("success").asBoolean() ? r2 : r1;
+            assertThat(failed.path("error").path("code").asText()).isEqualTo("OVER_SETTLEMENT");
+        } finally {
+            pool.shutdownNow();
+        }
+
+        // 장부 정합: 정산 수량은 정확히 100(2건=200 아님), 잔여 0, CLOSED
+        JsonNode d = data(get("/consignment/settlement-statement?fromDate=2020-01-01&toDate=2030-12-31"));
+        JsonNode row = rowByField(d.path("rows"), "partnerName", "위탁동시성거래처");
+        assertThat(row.path("settleQty").asLong()).as("lost update 없어야: %s", row).isEqualTo(100);
+        assertThat(row.path("remainingQty").asLong()).isEqualTo(0);
+        assertThat(row.path("totalQty").asLong()).isEqualTo(100);
+        assertThat(row.path("status").asText()).isEqualTo("CLOSED");
+
+        // 정리: 남긴 정산 매출 취소(정산내역서 전역 summary 오염 방지 — settled_at 기준이라 날짜격리 불가)
+        long saleId = data(get("/sales?startDate=2026-10-01&endDate=2026-10-31&partnerId=" + partner))
+                .path("content").get(0).path("id").asLong();
+        post("/sales/" + saleId + "/cancel", Map.of());
     }
 
     @Test

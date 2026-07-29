@@ -127,7 +127,9 @@ public class ConsignmentService {
         List<ConsignSettleResponse.Line> lines = new ArrayList<>();
 
         for (ConsignSettleRequest.Settlement s : req.settlements()) {
-            ConsignmentOut co = consignmentOutRepository.findById(s.consignmentOutId())
+            // 비관적 락으로 로드 — 동시 정산이 같은 미결 행에서 read-modify-write 경합해도
+            // 직렬화되어 lost update·초과정산이 발생하지 않는다(이슈#97).
+            ConsignmentOut co = consignmentOutRepository.findByIdForUpdate(s.consignmentOutId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                             "미결(위탁출고)이 없습니다. id=" + s.consignmentOutId()));
 
@@ -169,7 +171,8 @@ public class ConsignmentService {
     public ConsignReturnResponse returnConsignment(ConsignReturnRequest req) {
         List<ConsignReturnResponse.Line> lines = new ArrayList<>();
         for (ConsignReturnRequest.Item item : req.items()) {
-            ConsignmentOut co = consignmentOutRepository.findById(item.consignmentOutId())
+            // 정산과 동일하게 비관적 락 — 반품·정산이 같은 미결 행에서 동시 축소해도 직렬화(이슈#97).
+            ConsignmentOut co = consignmentOutRepository.findByIdForUpdate(item.consignmentOutId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                             "미결(위탁출고)이 없습니다. id=" + item.consignmentOutId()));
 
