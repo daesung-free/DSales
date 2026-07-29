@@ -5,6 +5,8 @@ import com.daesung.sales.common.sequence.SequenceService;
 import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.consignment.dto.ConsignPendingResponse;
+import com.daesung.sales.consignment.dto.ConsignReturnRequest;
+import com.daesung.sales.consignment.dto.ConsignReturnResponse;
 import com.daesung.sales.consignment.dto.SettlementStatementResponse;
 import com.daesung.sales.consignment.dto.ConsignSettleRequest;
 import com.daesung.sales.consignment.dto.ConsignSettleResponse;
@@ -45,6 +47,7 @@ public class ConsignmentService {
     private static final DateTimeFormatter YYYYMMDD = DateTimeFormatter.BASIC_ISO_DATE;
 
     private final InventoryService inventoryService;
+    private final com.daesung.sales.inventory.repository.InventoryTxnRepository inventoryTxnRepository;
     private final SequenceService sequenceService;
     private final ConsignmentOutRepository consignmentOutRepository;
     private final ConsignmentSettlementRepository settlementRepository;
@@ -154,6 +157,54 @@ public class ConsignmentService {
                     co.getRemainingQty(), co.getStatus(), supplyAmount, tax, totalAmount));
         }
         return new ConsignSettleResponse(lines);
+    }
+
+    /**
+     * 위탁 반품(미정산분). 항목마다 (1) 역-자동이고(위탁창고→물류창고 재고 복귀) + (2) 미결원장 축소.
+     * 위탁창고는 원 자동이고 도착다리(origin_txn의 sourceTxn)로 역추적. 매출 무관. 한 트랜잭션.
+     */
+    @Transactional
+    public ConsignReturnResponse returnConsignment(ConsignReturnRequest req) {
+        List<ConsignReturnResponse.Line> lines = new ArrayList<>();
+        for (ConsignReturnRequest.Item item : req.items()) {
+            ConsignmentOut co = consignmentOutRepository.findById(item.consignmentOutId())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                            "미결(위탁출고)이 없습니다. id=" + item.consignmentOutId()));
+
+            // 원 자동이고: origin_txn=출발다리(물류창고). 도착다리(위탁창고)는 sourceTxn=origin_txn으로 조회.
+            InventoryTxn outLeg = co.getOriginTxn();
+            if (outLeg == null) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT,
+                        "원본 자동이고 정보가 없어 반품할 수 없습니다: " + co.getSourceOutNo());
+            }
+            Warehouse mainWh = outLeg.getWarehouse();  // 물류창고(출발)
+            Warehouse consignWh = inventoryTxnRepository.findBySourceTxnId(outLeg.getId())
+                    .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_INPUT,
+                            "위탁창고 도착다리를 찾을 수 없습니다: " + co.getSourceOutNo()))
+                    .getWarehouse();
+
+            // ★moveStock의 원자적 UPDATE(clearAutomatically)가 컨텍스트를 비우므로,
+            //   필요한 값을 먼저 뽑고 co 변경을 flush한 뒤 이고 실행.
+            Product product = co.getProduct();
+            Long productId = product.getId();
+            String productCode = product.getCode();
+            String sourceOutNo = co.getSourceOutNo();
+            Long coId = co.getId();
+
+            co.returnUnsold(item.returnQty());
+            consignmentOutRepository.saveAndFlush(co);   // 컨텍스트 clear 전에 미결 축소 반영
+            int remainingAfter = co.getRemainingQty();
+            var statusAfter = co.getStatus();
+
+            inventoryService.moveStock(product, consignWh, mainWh, item.returnQty(),
+                    req.processedDate(), "위탁 반품 역-자동이고");   // 여기서 컨텍스트 clear
+
+            lines.add(new ConsignReturnResponse.Line(
+                    coId, sourceOutNo, productCode, item.returnQty(), remainingAfter, statusAfter,
+                    inventoryService.balanceOf(productId, mainWh.getId()),
+                    inventoryService.balanceOf(productId, consignWh.getId())));
+        }
+        return new ConsignReturnResponse(lines);
     }
 
     /**

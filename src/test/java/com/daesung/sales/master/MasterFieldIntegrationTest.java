@@ -182,6 +182,41 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("위탁 반품 — 역-자동이고(위탁→물류 재고복귀) + 미결원장 축소, 초과 방지")
+    void 위탁반품() {
+        Long main = createId("/masters/warehouses", Map.of("code", "CR-MAIN", "name", "물류", "type", "MAIN"));
+        Long consign = createId("/masters/warehouses", Map.of("code", "CR-CONS", "name", "위탁", "type", "CONSIGN"));
+        Long p = createId("/masters/products", Map.of("code", "CR-BK", "name", "위탁반품도서", "contentType", "SELF"));
+        Long partner = createId("/masters/clients", Map.of("code", "CR-CUST", "name", "위탁반품거래처", "type", "NORMAL"));
+        inbound(main, p);   // 물류 100
+
+        // 위탁출고 100 → 물류 0, 위탁 100
+        JsonNode out = data(post("/consignment/out", Map.of(
+                "processedDate", "2026-06-01", "partnerId", partner,
+                "fromWarehouseId", main, "toWarehouseId", consign,
+                "items", List.of(Map.of("productId", p, "qty", 100)))));
+        long coId = out.path("items").get(0).path("consignmentOutId").asLong();
+
+        // 위탁 반품 30 (미판매분) → 위탁 100−30=70, 물류 0+30=30, 미결 잔여 100→70
+        JsonNode ret = data(post("/consignment/return", Map.of(
+                "processedDate", "2026-06-30",
+                "items", List.of(Map.of("consignmentOutId", coId, "returnQty", 30)))));
+        JsonNode line = ret.path("items").get(0);
+        assertThat(line.path("returnQty").asInt()).isEqualTo(30);
+        assertThat(line.path("remainingQty").asInt()).isEqualTo(70);
+        assertThat(line.path("status").asText()).isEqualTo("OPEN");
+        assertThat(line.path("mainBalance").asInt()).isEqualTo(30);      // 물류 복귀
+        assertThat(line.path("consignBalance").asInt()).isEqualTo(70);   // 위탁 차감
+
+        // 초과 반품(잔여 70 초과) → 409/오류
+        JsonNode over = post("/consignment/return", Map.of(
+                "processedDate", "2026-06-30",
+                "items", List.of(Map.of("consignmentOutId", coId, "returnQty", 200))));
+        assertThat(over.path("success").asBoolean()).isFalse();
+        assertThat(over.path("error").path("code").asText()).isEqualTo("OVER_SETTLEMENT");
+    }
+
+    @Test
     @DisplayName("마스터 엑셀 다운로드 — 거래처목록 xlsx(한글 헤더)")
     void 마스터엑셀() throws Exception {
         createId("/masters/clients", Map.of("code", "XL-CUST", "name", "엑셀거래처", "type", "NORMAL"));

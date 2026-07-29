@@ -77,6 +77,26 @@ public class ConsignmentOut extends BaseEntity {
         return c;
     }
 
+    /**
+     * 미정산분 반품(위탁 반품). 미결 잔여(미판매분)를 위탁창고→물류창고로 되돌림.
+     * total_qty·remaining_qty 동시 차감(불변식 total=settled+remaining 유지). 매출 무관.
+     */
+    public void returnUnsold(int qty) {
+        if (qty > this.remainingQty) {
+            throw new BusinessException(ErrorCode.OVER_SETTLEMENT,
+                    "반품 수량이 미결(미판매) 잔여를 초과했습니다: 잔여 " + this.remainingQty + ", 요청 " + qty);
+        }
+        this.totalQty -= qty;
+        this.remainingQty -= qty;
+        if (this.remainingQty == 0) {
+            this.status = ConsignmentStatus.CLOSED;
+        } else if (this.settledQty > 0) {
+            this.status = ConsignmentStatus.PARTIAL;
+        } else {
+            this.status = ConsignmentStatus.OPEN;
+        }
+    }
+
     /** 부분 정산. 불변식 total = settled + remaining 유지, 초과정산 방지. */
     public void settle(int qty) {
         if (qty > this.remainingQty) {

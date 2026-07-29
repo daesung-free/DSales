@@ -4,6 +4,8 @@ import com.daesung.sales.common.excel.ExcelExportUtil;
 import com.daesung.sales.common.excel.ExcelExportUtil.Col;
 import com.daesung.sales.common.response.ApiResponse;
 import com.daesung.sales.consignment.dto.ConsignPendingResponse;
+import com.daesung.sales.consignment.dto.ConsignReturnRequest;
+import com.daesung.sales.consignment.dto.ConsignReturnResponse;
 import com.daesung.sales.consignment.dto.ConsignSettleRequest;
 import com.daesung.sales.consignment.dto.ConsignSettleResponse;
 import com.daesung.sales.consignment.dto.ConsignmentOutRequest;
@@ -62,6 +64,15 @@ public class ConsignmentController {
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<ConsignSettleResponse> settle(@Valid @RequestBody ConsignSettleRequest req) {
         return ApiResponse.success(consignmentService.settle(req));
+    }
+
+    @Operation(summary = "위탁 반품(미정산분)",
+            description = "미결(미판매) 잔여를 위탁창고→물류창고로 역-자동이고(재고 복귀) + 미결원장 축소. "
+                    + "매출 무관. 반품수량이 미결 잔여 초과 시 409. 판매완료분 반품은 반품입고(/sales/return-inbound).")
+    @PostMapping("/return")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResponse<ConsignReturnResponse> returnConsignment(@Valid @RequestBody ConsignReturnRequest req) {
+        return ApiResponse.success(consignmentService.returnConsignment(req));
     }
 
     @Operation(summary = "정산내역서 조회",

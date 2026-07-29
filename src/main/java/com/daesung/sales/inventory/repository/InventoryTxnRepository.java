@@ -28,6 +28,10 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
             + " where t.refNo = :refNo and t.shipmentType is not null")
     List<InventoryTxn> findShipmentsByRefNo(String refNo);
 
+    /** 이고 도착다리 조회(위탁 반품 역-자동이고용). sourceTxn=출발다리인 도착 이벤트 → 위탁창고. */
+    @Query("select t from InventoryTxn t join fetch t.warehouse where t.sourceTxn.id = :sourceTxnId")
+    java.util.Optional<InventoryTxn> findBySourceTxnId(Long sourceTxnId);
+
     /**
      * 제품수불부 집계(상품×창고). 물류 이벤트를 CASE 버킷으로 합산 + 이월/마감.
      * 출고는 shipment_type으로 매출/무상/교사용/반품 분해(스펙 수불부 컬럼 대응).
