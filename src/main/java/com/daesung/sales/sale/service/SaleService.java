@@ -2,6 +2,7 @@ package com.daesung.sales.sale.service;
 
 import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
+import com.daesung.sales.common.money.Amounts;
 import com.daesung.sales.closing.config.SupplierProperties;
 import com.daesung.sales.closing.service.PeriodLockService;
 import com.daesung.sales.common.response.PageResponse;
@@ -106,9 +107,10 @@ public class SaleService {
                         "정가·공급률이 없고 거래처별 단가 매핑도 없습니다. 상품=" + product.getCode());
             }
 
-            long supplyAmount = (long) ((double) unitPrice * supplyRate / 100.0 * item.qty());
-            long tax = product.isTaxFree() ? 0L : supplyAmount / 10L;
-            long totalAmount = supplyAmount + tax;
+            Amounts amt = Amounts.of(unitPrice, supplyRate, item.qty(), product.isTaxFree());
+            long supplyAmount = amt.supplyAmount();
+            long tax = amt.tax();
+            long totalAmount = amt.totalAmount();
 
             String salesNo = "I-" + datePart + "-" + sequenceService.next(SequenceService.SEQ_INVOICE);
 
@@ -157,9 +159,10 @@ public class SaleService {
                     .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                             "상품이 없습니다. id=" + item.productId()));
 
-            long supplyAmount = (long) ((double) item.unitPrice() * item.supplyRate() / 100.0 * item.qty());
-            long tax = product.isTaxFree() ? 0L : supplyAmount / 10L;
-            long totalAmount = supplyAmount + tax;
+            Amounts amt = Amounts.of(item.unitPrice(), item.supplyRate(), item.qty(), product.isTaxFree());
+            long supplyAmount = amt.supplyAmount();
+            long tax = amt.tax();
+            long totalAmount = amt.totalAmount();
 
             String salesNo = "I-" + datePart + "-" + sequenceService.next(SequenceService.SEQ_INVOICE);
 

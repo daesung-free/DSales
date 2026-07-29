@@ -25,9 +25,12 @@ public class PageRequestDto {
             example = "code,asc")
     private String sort;
 
+    /** 페이지 크기 상한(자원 고갈 방지). */
+    private static final int MAX_SIZE = 200;
+
     public Pageable toPageable() {
         int p = (page == null || page < 0) ? 0 : page;
-        int s = (size == null || size < 1) ? 20 : size;
+        int s = (size == null || size < 1) ? 20 : Math.min(size, MAX_SIZE);
         if (sort == null || sort.isBlank()) {
             return PageRequest.of(p, s);
         }

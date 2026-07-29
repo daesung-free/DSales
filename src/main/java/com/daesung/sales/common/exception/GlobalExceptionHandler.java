@@ -49,12 +49,31 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.fail(ErrorResponse.of(ErrorCode.NOT_FOUND, e.getMessage())));
     }
 
+    /**
+     * 잘못된 파라미터 타입(enum·날짜 등)·읽을 수 없는 본문(JSON 오류)·필수 파라미터 누락 → 400.
+     * (없으면 마지막 Exception 핸들러로 흘러 500 + ERROR 로그 오염 → 정상 클라이언트 실수가 장애로 오탐)
+     */
+    @ExceptionHandler({
+            org.springframework.web.method.annotation.MethodArgumentTypeMismatchException.class,
+            org.springframework.http.converter.HttpMessageNotReadableException.class,
+            org.springframework.web.bind.MissingServletRequestParameterException.class
+    })
+    public ResponseEntity<ApiResponse<Void>> handleBadRequest(Exception e) {
+        String detail = (e instanceof org.springframework.web.method.annotation.MethodArgumentTypeMismatchException me)
+                ? "파라미터 '" + me.getName() + "' 값이 올바르지 않습니다."
+                : (e instanceof org.springframework.web.bind.MissingServletRequestParameterException mp)
+                        ? "필수 파라미터 누락: " + mp.getParameterName()
+                        : "요청 본문을 해석할 수 없습니다.";
+        return ResponseEntity.status(ErrorCode.INVALID_INPUT.getStatus())
+                .body(ApiResponse.fail(ErrorResponse.of(ErrorCode.INVALID_INPUT, detail)));
+    }
+
     /** 메서드 보안(@PreAuthorize) 권한 부족 → 403. (경로 규칙 거부는 SecurityConfig에서 처리) */
     @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
     public ResponseEntity<ApiResponse<Void>> handleAccessDenied(
             org.springframework.security.access.AccessDeniedException e) {
-        return ResponseEntity.status(org.springframework.http.HttpStatus.FORBIDDEN)
-                .body(ApiResponse.fail(ErrorResponse.of(ErrorCode.INVALID_INPUT, "접근 권한이 없습니다.")));
+        return ResponseEntity.status(ErrorCode.FORBIDDEN.getStatus())
+                .body(ApiResponse.fail(ErrorResponse.of(ErrorCode.FORBIDDEN)));
     }
 
     /** 처리되지 않은 그 외 예외. */

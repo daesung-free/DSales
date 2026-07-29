@@ -75,7 +75,7 @@ public class BulkSalesImportService {
                     continue; // 수량 0 구분은 스킵
                 }
                 String sourceKey = row.reqCd() + ":" + row.lstCd() + ":" + row.dtlCd() + ":" + k.reqGn();
-                long supply = (long) ((double) row.price() * k.rate() / 100.0 * k.qty());
+                long supply = com.daesung.sales.common.money.Amounts.supplyOf(row.price(), k.rate(), k.qty());
 
                 if (partner == null || product == null) {
                     unmapped++;
@@ -92,7 +92,7 @@ public class BulkSalesImportService {
                     lines.add(line(sourceKey, k.category(), row, k.qty(), supply, "PREVIEW", null));
                     continue;
                 }
-                long tax = product.isTaxFree() ? 0L : supply / 10L;
+                long tax = com.daesung.sales.common.money.Amounts.taxOf(supply, product.isTaxFree());
                 String salesNo = "I-" + to.format(YYYYMMDD) + "-" + sequenceService.next(SequenceService.SEQ_INVOICE);
                 saleRepository.save(Sale.createBulk(salesNo, to, partner, product,
                         k.shipmentType(), k.category(), row.price(), k.rate(), k.qty(),

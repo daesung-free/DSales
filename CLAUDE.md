@@ -115,7 +115,8 @@ python3 <script> --sheet <ID> --tab <탭명>   # scratchpad의 read_*.py 참고.
 - **★ 재고 정의 단일화(레거시 #4 근절)**: 레거시는 재고 잔고를 저장 안 하고 화면마다 다른 공식으로 계산 → 같은 도서가 화면마다 재고 다름. 우리는 **`inventory_txn`(이벤트 로그)이 유일 진실**, 재고 = `SUM(qty) by 상품×창고`라는 **단 하나의 공식(=제품수불부)**. `inventory.qty`는 그 공식의 **재생성 가능한 캐시**일 뿐(언제든 txn에서 재계산·대사 가능). **화면마다 다른 재고 계산식 금지.**
 - **재고 잔량 갱신 동시성**: read-modify-write 금지. **원자적 UPDATE** `qty = qty + :delta`(`InventoryRepository.addQty`, `@Modifying`)로 갱신 → 동시 갱신에도 lost update 없음(DB 행 잠금 직렬화). 최초 생성(행 없음) 경합은 (product_id, warehouse_id) UNIQUE가 방어. (병렬 20건 입고 검증: 정확히 누적됨. 참고로 파생쿼리 `@Lock`은 이 케이스에서 유실 재현돼 원자 UPDATE 채택.)
 - **화면 선개발 금지**: 대응 백엔드 로직·스키마가 확정되기 전 화면 착수 금지(원칙②).
-- **공통 API 응답 형식**(Claude 추가, 시트 미명시): 모든 컨트롤러는 `ApiResponse<T>`로 감싸 반환(`{success, data, error}`). 도메인 오류는 `throw new BusinessException(ErrorCode.XXX)` → `GlobalExceptionHandler`가 공통 실패 응답으로 변환. 에러코드는 `common/exception/ErrorCode`에 추가(예: PERIOD_LOCKED·NEGATIVE_STOCK·OVER_SETTLEMENT). **예외: 파일 다운로드(예: 계산서 xlsx `TaxController.export`)는 `ResponseEntity<byte[]>`로 반환**(바이너리라 래핑 안 함).
+- **공통 API 응답 형식**(Claude 추가, 시트 미명시): 모든 컨트롤러는 `ApiResponse<T>`로 감싸 반환(`{success, data, error}`). 도메인 오류는 `throw new BusinessException(ErrorCode.XXX)` → `GlobalExceptionHandler`가 공통 실패 응답으로 변환. 에러코드는 `common/exception/ErrorCode`에 추가(예: PERIOD_LOCKED·NEGATIVE_STOCK·OVER_SETTLEMENT·FORBIDDEN). 잘못된 파라미터(enum·날짜 타입오류·필수누락·JSON오류)는 `GlobalExceptionHandler`가 **400**으로 변환(500 아님). **예외: 파일 다운로드(예: 계산서 xlsx `TaxController.export`)는 `ResponseEntity<byte[]>`로 반환**(바이너리라 래핑 안 함).
+- **★금액 계산 단일 소스**: 공급가액·세액·총액은 `common/money/Amounts.of(정가, 공급률, 수량, 면세여부)`(또는 `supplyOf`/`taxOf`) 하나로만 계산. 매출등록·반품입고·위탁정산·매출일괄등록 전부 이걸 호출(복붙 금지). 공식·부가세율(10%)·반올림(현재 버림) 변경은 이 파일만 수정. 페이지 크기 상한 `PageRequestDto` 200.
 - **★ API 작성 규약(신규 API는 항상 이 형태로)**:
   - 경로: `/api/v1` 자동 prefix(WebConfig). 컨트롤러엔 `/masters/...` 처럼만 매핑.
   - 계층: `controller` → `service`(@Transactional) → `repository`. DTO는 각 기능 `dto/` 패키지(record 권장).

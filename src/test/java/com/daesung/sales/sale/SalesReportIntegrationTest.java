@@ -197,6 +197,22 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("잘못된 파라미터 — enum/날짜 오류·필수누락은 500 아닌 400")
+    void 잘못된파라미터_400() {
+        var t = token();
+        // 잘못된 enum
+        assertThat(exchangeRaw(org.springframework.http.HttpMethod.GET,
+                "/sales?salesCategory=BOGUS", null, t, null).getStatusCode().value()).isEqualTo(400);
+        // 잘못된 날짜
+        assertThat(exchangeRaw(org.springframework.http.HttpMethod.GET,
+                "/sales/statement?from=2026-13-99&to=2026-06-30", null, t, null).getStatusCode().value()).isEqualTo(400);
+        // 필수 파라미터 누락(partnerId)
+        assertThat(exchangeRaw(org.springframework.http.HttpMethod.GET,
+                "/sales/transaction-statement?from=2026-06-01&to=2026-06-30", null, t, null)
+                .getStatusCode().value()).isEqualTo(400);
+    }
+
+    @Test
     @DisplayName("엑셀 다운로드 — 매출액명세서 xlsx(한글 헤더·데이터 행)")
     void 엑셀다운로드() throws Exception {
         var resp = getBytes("/sales/statement/export?from=2026-06-01&to=2026-06-30&category=SALE");

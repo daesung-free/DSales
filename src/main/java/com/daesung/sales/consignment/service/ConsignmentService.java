@@ -4,6 +4,7 @@ import com.daesung.sales.closing.service.PeriodLockService;
 import com.daesung.sales.common.sequence.SequenceService;
 import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
+import com.daesung.sales.common.money.Amounts;
 import com.daesung.sales.consignment.dto.ConsignPendingResponse;
 import com.daesung.sales.consignment.dto.ConsignReturnRequest;
 import com.daesung.sales.consignment.dto.ConsignReturnResponse;
@@ -138,9 +139,10 @@ public class ConsignmentService {
             }
 
             Product product = co.getProduct();
-            long supplyAmount = (long) ((double) s.unitPrice() * s.supplyRate() / 100.0 * s.settleQty());
-            long tax = product.isTaxFree() ? 0L : supplyAmount / 10L;
-            long totalAmount = supplyAmount + tax;
+            Amounts amt = Amounts.of(s.unitPrice(), s.supplyRate(), s.settleQty(), product.isTaxFree());
+            long supplyAmount = amt.supplyAmount();
+            long tax = amt.tax();
+            long totalAmount = amt.totalAmount();
             String salesNo = "I-" + datePart + "-" + sequenceService.next(SequenceService.SEQ_INVOICE);
 
             // 정산 이력 → 매출 라인(정산 링크) → 미결 차감
