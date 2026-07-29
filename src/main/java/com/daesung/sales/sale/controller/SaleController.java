@@ -15,6 +15,7 @@ import com.daesung.sales.sale.dto.SalesStatementResponse;
 import com.daesung.sales.sale.dto.SalesSummaryResponse;
 import com.daesung.sales.sale.dto.TransactionStatementResponse;
 import com.daesung.sales.sale.dto.YoyComparisonResponse;
+import com.daesung.sales.sale.service.SaleReportService;
 import com.daesung.sales.sale.service.SaleService;
 import com.daesung.sales.salestype.entity.SalesCategory;
 import com.daesung.sales.salestype.entity.ShipmentType;
@@ -46,6 +47,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class SaleController {
 
     private final SaleService saleService;
+    private final SaleReportService saleReportService;
     private final ExcelExportUtil excel;
 
     @Operation(summary = "통합 매출 조회",
@@ -100,7 +102,7 @@ public class SaleController {
             @Parameter(description = "종료일(yyyy-MM-dd, 미지정 시 오늘)") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @Parameter(description = "거래처 id 필터") @RequestParam(required = false) Long partnerId) {
-        return ApiResponse.success(saleService.summary(fromDate, toDate, partnerId));
+        return ApiResponse.success(saleReportService.summary(fromDate, toDate, partnerId));
     }
 
     @Operation(summary = "콘텐츠구분 순매출 조회",
@@ -113,7 +115,7 @@ public class SaleController {
             @Parameter(description = "종료일(yyyy-MM-dd)") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @Parameter(description = "콘텐츠구분(SELF/EXTERNAL)") @RequestParam(required = false) String contentType) {
-        return ApiResponse.success(saleService.netSales(fromDate, toDate, contentType));
+        return ApiResponse.success(saleReportService.netSales(fromDate, toDate, contentType));
     }
 
     @Operation(summary = "콘텐츠구분 순매출 엑셀 다운로드",
@@ -130,7 +132,7 @@ public class SaleController {
                 new Col("순매출수량", "netQty"), new Col("순매출액", "netAmount"),
                 new Col("매입단가", "purchaseUnitCost"), new Col("매입액", "purchaseAmount"),
                 new Col("이익", "profit"), new Col("이익률(%)", "marginPct"));
-        byte[] xlsx = excel.toXlsx("순매출조회", cols, saleService.netSales(fromDate, toDate, contentType).rows());
+        byte[] xlsx = excel.toXlsx("순매출조회", cols, saleReportService.netSales(fromDate, toDate, contentType).rows());
         return excel.asDownload(xlsx, "순매출조회.xlsx");
     }
 
@@ -146,7 +148,7 @@ public class SaleController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @Parameter(description = "회계구분(SALE/FREE/RETURN, 미지정=전체)") @RequestParam(required = false)
             SalesCategory category) {
-        return ApiResponse.success(saleService.statement(from, to, category));
+        return ApiResponse.success(saleReportService.statement(from, to, category));
     }
 
     @Operation(summary = "매출액명세서 엑셀 다운로드", description = "드라이브 '매출액정리' 형식(분류/도서별 수량·금액·세액·합계).")
@@ -159,7 +161,7 @@ public class SaleController {
                 new Col("구분", "rowType"), new Col("분류코드", "catCode"), new Col("분류명", "catName"),
                 new Col("도서코드", "bookCode"), new Col("도서명", "bookName"), new Col("수량", "qty"),
                 new Col("금액", "amount"), new Col("세액", "tax"), new Col("합계", "total"));
-        byte[] xlsx = excel.toXlsx("매출액명세서", cols, saleService.statement(from, to, category).rows());
+        byte[] xlsx = excel.toXlsx("매출액명세서", cols, saleReportService.statement(from, to, category).rows());
         return excel.asDownload(xlsx, "매출액명세서_" + from + "_" + to + ".xlsx");
     }
 
@@ -175,7 +177,7 @@ public class SaleController {
         LocalDate now = LocalDate.now();
         int y = (year != null) ? year : now.getYear();
         int m = (month != null) ? month : now.getMonthValue();
-        return ApiResponse.success(saleService.monthlyStatement(y, m));
+        return ApiResponse.success(saleReportService.monthlyStatement(y, m));
     }
 
     @Operation(summary = "월별매출액명세서(37p) 엑셀 다운로드",
@@ -193,7 +195,7 @@ public class SaleController {
                 new Col("비처리인원", "ungradedQty"), new Col("비처리금액", "ungradedAmount"),
                 new Col("계인원", "totalQty"), new Col("계금액", "totalAmount"),
                 new Col("과세매출액", "taxableAmount"), new Col("부가세", "vat"));
-        byte[] xlsx = excel.toXlsx("월별매출액명세서", cols, saleService.monthlyStatement(y, m).rows());
+        byte[] xlsx = excel.toXlsx("월별매출액명세서", cols, saleReportService.monthlyStatement(y, m).rows());
         return excel.asDownload(xlsx, "월별매출액명세서_" + y + "-" + String.format("%02d", m) + ".xlsx");
     }
 
@@ -210,7 +212,7 @@ public class SaleController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @Parameter(description = "회계구분(미지정=매출+무가, RETURN=반품명세서)") @RequestParam(required = false)
             SalesCategory category) {
-        return ApiResponse.success(saleService.transactionStatement(partnerId, from, to, category));
+        return ApiResponse.success(saleReportService.transactionStatement(partnerId, from, to, category));
     }
 
     @Operation(summary = "거래명세서 엑셀 다운로드", description = "유가+무가 라인 통합(품명·정가·공급률·단가·수량·금액·세액).")
@@ -220,7 +222,7 @@ public class SaleController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(required = false) SalesCategory category) {
-        var d = saleService.transactionStatement(partnerId, from, to, category);
+        var d = saleReportService.transactionStatement(partnerId, from, to, category);
         var all = new java.util.ArrayList<>(d.pricedLines());
         all.addAll(d.freeLines());
         List<Col> cols = List.of(
@@ -243,7 +245,7 @@ public class SaleController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @Parameter(description = "거래처 id 필터(미지정=전체)") @RequestParam(required = false) Long partnerId,
             @Parameter(description = "분류코드 필터(미지정=전체)") @RequestParam(required = false) String catCode) {
-        return ApiResponse.success(saleService.categorySales(from, to, partnerId, catCode));
+        return ApiResponse.success(saleReportService.categorySales(from, to, partnerId, catCode));
     }
 
     @Operation(summary = "도서입출고현황",
@@ -258,7 +260,7 @@ public class SaleController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @Parameter(description = "분류코드 필터(미지정=전체)") @RequestParam(required = false) String catCode,
             @Parameter(description = "상품 id 필터(미지정=전체)") @RequestParam(required = false) Long productId) {
-        return ApiResponse.success(saleService.bookInout(from, to, catCode, productId));
+        return ApiResponse.success(saleReportService.bookInout(from, to, catCode, productId));
     }
 
     @Operation(summary = "거래처별 매출대비표(전년 동기간)",
@@ -274,7 +276,7 @@ public class SaleController {
             YoyComparisonResponse.GroupBy groupBy,
             @Parameter(description = "거래처 id 필터(미지정=전체)") @RequestParam(required = false) Long partnerId,
             @Parameter(description = "분류코드 필터(미지정=전체)") @RequestParam(required = false) String catCode) {
-        return ApiResponse.success(saleService.yoyComparison(from, to, groupBy, partnerId, catCode));
+        return ApiResponse.success(saleReportService.yoyComparison(from, to, groupBy, partnerId, catCode));
     }
 
     @Operation(summary = "과목별매출현황 엑셀 다운로드", description = "거래처×분류×도서 매출/반품/순매출/교사용 수량+반품률.")
@@ -289,7 +291,7 @@ public class SaleController {
                 new Col("도서코드", "bookCode"), new Col("도서명", "bookName"),
                 new Col("매출수량", "saleQty"), new Col("반품수량", "returnQty"), new Col("순매출수량", "netQty"),
                 new Col("교사용수량", "teacherQty"), new Col("반품률(%)", "returnRate"));
-        byte[] xlsx = excel.toXlsx("과목별매출현황", cols, saleService.categorySales(from, to, partnerId, catCode).rows());
+        byte[] xlsx = excel.toXlsx("과목별매출현황", cols, saleReportService.categorySales(from, to, partnerId, catCode).rows());
         return excel.asDownload(xlsx, "과목별매출현황_" + from + "_" + to + ".xlsx");
     }
 
@@ -309,7 +311,7 @@ public class SaleController {
                 new Col("반품수량", "returnQty"), new Col("반품금액", "returnAmount"), new Col("반품률(%)", "returnRate"),
                 new Col("실판매수량", "netSalesQty"), new Col("실판매금액", "netSalesAmount"),
                 new Col("재고", "stockQty"), new Col("매출총이익", "grossMargin"));
-        byte[] xlsx = excel.toXlsx("도서입출고현황", cols, saleService.bookInout(from, to, catCode, productId).rows());
+        byte[] xlsx = excel.toXlsx("도서입출고현황", cols, saleReportService.bookInout(from, to, catCode, productId).rows());
         return excel.asDownload(xlsx, "도서입출고현황_" + from + "_" + to + ".xlsx");
     }
 
@@ -329,7 +331,7 @@ public class SaleController {
                 new Col("증감수량", "diffQty"), new Col("증감금액", "diffAmount"),
                 new Col("수량비율(%)", "qtyRatioPct"), new Col("금액비율(%)", "amountRatioPct"));
         byte[] xlsx = excel.toXlsx("매출대비표", cols,
-                saleService.yoyComparison(from, to, groupBy, partnerId, catCode).rows());
+                saleReportService.yoyComparison(from, to, groupBy, partnerId, catCode).rows());
         return excel.asDownload(xlsx, "매출대비표_" + from + "_" + to + ".xlsx");
     }
 }
