@@ -30,11 +30,14 @@ services:
       timeout: 3s
       retries: 10
 
-  # DSRE2(MySQL) 로컬 복제본. 운영 DSRE2는 재구축 대상 아님 — 개발/검증용 복제(스키마·함수는 reference/legacy로 로드).
-  # ⚠️ 로컬 개발 전용. 운영 DSRE2 접속은 배포 시 별도 시크릿.
+  # DSRE2 로컬 복제본. 운영 DSRE2는 재구축 대상 아님 — 개발/검증용 복제(스키마·함수는 reference/legacy로 로드).
+  # ★MariaDB 10.2 + lower_case_table_names=1 필수: 운영 DSRE2가 MariaDB 10.2.22이고, 저장함수가
+  #   대문자 테이블명(TBL_REQUEST_CNT 등)을 참조 → 리눅스 기본(대소문자 구분)이면 함수 실행 실패.
+  #   (mysql:8로 띄우면 인원산출/물류비 저장함수가 'table doesn't exist'로 깨짐 — 실검증으로 확인)
   dsre-mysql:
-    image: mysql:8
-    container_name: sales-dsre-mysql
+    image: mariadb:10.2
+    container_name: sales-dsre-mariadb
+    command: ["--lower-case-table-names=1"]
     environment:
       MYSQL_ROOT_PASSWORD: root
       MYSQL_DATABASE: dsre2

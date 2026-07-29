@@ -129,7 +129,9 @@ python3 <script> --sheet <ID> --tab <탭명>   # scratchpad의 read_*.py 참고.
 
 ## 10. 지금까지의 진행 (세션 컨텍스트) — 실측 최신(스키마 V1~V13, git 52커밋)
 
-**인프라**: **MySQL 8(sales)** + Redis(refresh·캐시) + DSRE2 MySQL/MariaDB 복제본(docker `sales-dsre-mysql:3307`, 볼륨 `sales-dsredata`에 영속). 로컬 테스트는 **DB만 docker, 앱은 `./gradlew bootRun` (테스트 포트 8081)**. DSRE 기능은 `--daesung.dsre.enabled=true`로 켬(기본 off).
+**인프라**: **MySQL 8(sales)** + Redis(refresh·캐시) + **DSRE2 복제본(★`mariadb:10.2` + `--lower-case-table-names=1`, docker `sales-dsre-mariadb:3307`)**. 로컬 테스트는 **DB만 docker, 앱은 `./gradlew bootRun` (테스트 포트 8081)**. DSRE 기능은 `--daesung.dsre.enabled=true`로 켬(기본 off).
+  - **★DSRE 복제본은 반드시 MariaDB 10.2 + lower_case_table_names=1** — 운영 DSRE2가 MariaDB 10.2.22이고 저장함수가 대문자 테이블명(TBL_REQUEST_CNT 등) 참조 → mysql:8/리눅스 기본(대소문자 구분)이면 인원산출·물류비 저장함수가 "table doesn't exist"로 깨짐(실검증으로 확인). 스키마=`reference/legacy/dsre-table.sql`, 함수=`dsre-procedure.sql`(DEFINER 제거+DELIMITER 래핑 필요), 실데이터=`reference/legacy/data/dsre2_*.sql`(254MB, gitignore·비커밋·사업자번호 등 민감정보).
+  - **✅실데이터 E2E 검증(2026-07-29)**: 시딩(request_info 1,759·request_cnt 106만·logis_cnt 53,227 등)+저장함수 25개 → **매출일괄등록**(실 미처리 74라인, ★`dissusu` 컬럼모호 버그 발견·수정), **물류비 출고금액**(단건 reqCd 78331=자재 11,400·인원 103 / 기간 2026-07=자재 502,900·인원 4,449·145건), **인원산출**(FUNC_REQINWON_GET 실값) 전부 정상. 마스터 미이관이라 일괄등록은 UNMAPPED(정상).
 
 **✅ 구현+E2E검증 완료 (도메인별)**
 - 공통: ApiResponse/예외/페이징/한글Swagger/채번시퀀스/Flyway
