@@ -213,16 +213,16 @@ public class JdbcDsreGateway implements DsreGateway {
               (SELECT machul_cd FROM tbl_cust_info CUI WHERE CUI.CUST_CD=BLF.cust_cd) cust_cd,
               (SELECT cust_fnm FROM tbl_cust_info CUI WHERE CUI.CUST_CD=BLF.cust_cd) cust_nm,
               BLC.LST_CD lst_cd, BLC.DTL_CD dtl_cd, max(BLD.DTL_NM) book_nm, max(BLC.PRICE) price,
-              IFNULL(max(CASE WHEN req_gn='M' THEN dissusu END),0) sale_rate, IFNULL(sum(CASE WHEN req_gn='M' THEN reqcnt END),0) sale_qty,
-              IFNULL(max(CASE WHEN req_gn='J' THEN dissusu END),0) gift_rate, IFNULL(sum(CASE WHEN req_gn='J' THEN reqcnt END),0) gift_qty,
-              IFNULL(max(CASE WHEN req_gn='B' THEN dissusu END),0) free_rate, IFNULL(sum(CASE WHEN req_gn='B' THEN reqcnt END),0) free_qty,
+              IFNULL(max(CASE WHEN BLC.req_gn='M' THEN BLC.dissusu END),0) sale_rate, IFNULL(sum(CASE WHEN BLC.req_gn='M' THEN BLC.reqcnt END),0) sale_qty,
+              IFNULL(max(CASE WHEN BLC.req_gn='J' THEN BLC.dissusu END),0) gift_rate, IFNULL(sum(CASE WHEN BLC.req_gn='J' THEN BLC.reqcnt END),0) gift_qty,
+              IFNULL(max(CASE WHEN BLC.req_gn='B' THEN BLC.dissusu END),0) free_rate, IFNULL(sum(CASE WHEN BLC.req_gn='B' THEN BLC.reqcnt END),0) free_qty,
               max(BLF.memo) memo
             FROM tbf_booklist_cnt BLC
               LEFT JOIN tbf_booklist_ref BLF ON BLF.req_cd=BLC.req_cd
               LEFT JOIN tbl_booklist_dtl BLD ON BLC.lst_cd=BLD.lst_cd AND BLC.dtl_cd=BLD.dtl_cd
             WHERE BLC.state='A' AND BLF.reqdt BETWEEN ? AND ?
             GROUP BY BLC.REQ_CD, BLF.cust_cd, BLC.lst_cd, BLC.dtl_cd
-            HAVING sum(reqcnt) > 0
+            HAVING sum(BLC.reqcnt) > 0
             ORDER BY BLC.REQ_CD, BLC.lst_cd, BLC.dtl_cd
             """;
 
