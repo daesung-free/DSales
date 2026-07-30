@@ -409,6 +409,70 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("매출 엑셀 업로드 — 표준양식 파싱→일괄등록(공급률 0.75→75, 위탁출고 거부)")
+    void 매출엑셀업로드() throws Exception {
+        createId("/masters/products",
+                Map.of("code", "UP01", "name", "업로드도서", "contentType", "SELF", "price", 10000));   // 분류 UP + 도서 01
+        createId("/masters/clients", Map.of("code", "UPCUST", "name", "업로드거래처", "type", "NORMAL"));
+
+        JsonNode r = uploadXlsx(buildUploadXlsx());
+        assertThat(r.path("success").asBoolean()).as("업로드: %s", r).isTrue();
+        JsonNode d = data(r);
+        assertThat(d.path("imported").asInt()).isEqualTo(1);   // 정상출고 1
+        assertThat(d.path("failed").asInt()).isEqualTo(1);     // 위탁출고 1 거부
+        JsonNode ok = rowByField(d.path("lines"), "result", "IMPORTED");
+        assertThat(ok.path("supplyAmount").asLong()).isEqualTo(75_000);   // 10000×75%×10 (0.75→75)
+
+        // 매출 원장 등록 확인(9월 격리)
+        JsonNode all = data(get("/sales?startDate=2026-09-05&endDate=2026-09-05")).path("content");
+        assertThat(all).isNotEmpty();
+    }
+
+    private byte[] buildUploadXlsx() throws Exception {
+        try (org.apache.poi.xssf.usermodel.XSSFWorkbook wb = new org.apache.poi.xssf.usermodel.XSSFWorkbook()) {
+            var sh = wb.createSheet("업로드양식");
+            sh.createRow(0);   // 헤더(파서가 스킵)
+            var d = sh.createRow(1);   // 정상출고
+            d.createCell(0).setCellValue("2026-09-05");
+            d.createCell(1).setCellValue("UPCUST");
+            d.createCell(2).setCellValue("10002");
+            d.createCell(3).setCellValue("UP");
+            d.createCell(4).setCellValue("01");
+            d.createCell(5).setCellValue(0);
+            d.createCell(6).setCellValue(10000);
+            d.createCell(7).setCellValue(0.75);   // 소수 → 75로 정규화
+            d.createCell(8).setCellValue(10);
+            d.createCell(9).setCellValue(75000);
+            d.createCell(10).setCellValue("정상출고");
+            d.createCell(11).setCellValue("업로드테스트");
+            var d2 = sh.createRow(2);   // 위탁출고 → 거부
+            d2.createCell(0).setCellValue("2026-09-05");
+            d2.createCell(1).setCellValue("UPCUST");
+            d2.createCell(3).setCellValue("UP");
+            d2.createCell(4).setCellValue("01");
+            d2.createCell(8).setCellValue(5);
+            d2.createCell(10).setCellValue("위탁출고");
+            var bos = new java.io.ByteArrayOutputStream();
+            wb.write(bos);
+            return bos.toByteArray();
+        }
+    }
+
+    private JsonNode uploadXlsx(byte[] bytes) throws Exception {
+        var res = new org.springframework.core.io.ByteArrayResource(bytes) {
+            @Override public String getFilename() { return "upload.xlsx"; }
+        };
+        org.springframework.util.MultiValueMap<String, Object> body = new org.springframework.util.LinkedMultiValueMap<>();
+        body.add("file", res);
+        var h = new org.springframework.http.HttpHeaders();
+        h.setContentType(org.springframework.http.MediaType.MULTIPART_FORM_DATA);
+        h.setBearerAuth(token());
+        var resp = rest.exchange("/api/v1/sales/upload", org.springframework.http.HttpMethod.POST,
+                new org.springframework.http.HttpEntity<>(body, h), String.class);
+        return om.readTree(resp.getBody());
+    }
+
+    @Test
     @DisplayName("마스터 엑셀 다운로드 — 거래처목록 xlsx(한글 헤더)")
     void 마스터엑셀() throws Exception {
         createId("/masters/clients", Map.of("code", "XL-CUST", "name", "엑셀거래처", "type", "NORMAL"));

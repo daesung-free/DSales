@@ -105,6 +105,18 @@ public class Sale extends BaseEntity {
     @Column(name = "bulk_import_key", length = 60)
     private String bulkImportKey;
 
+    /** 학교/학원 코드(레거시 salesData.schCode). 매출 업로드 등에서 세부 거래단위. */
+    @Column(name = "school_code", length = 30)
+    private String schoolCode;
+
+    /** 학교/학원명(레거시 salesData.schName). */
+    @Column(name = "school_name", length = 100)
+    private String schoolName;
+
+    /** 세트 상품 회차(레거시 salesData.bookReqSeq). */
+    @Column(name = "book_round")
+    private Integer bookRound;
+
     /** 논리 취소 여부(물리삭제 아님, 이력 보존). */
     @Column(nullable = false)
     private boolean canceled = false;
@@ -188,6 +200,13 @@ public class Sale extends BaseEntity {
     /** 반품 라인에 원본 출고번호 링크(역추적용). */
     public void linkSourceOut(String sourceOutNo) {
         this.sourceOutNo = sourceOutNo;
+    }
+
+    /** 매출 업로드 세부(학교·회차) 설정. */
+    public void applyUploadDetail(String schoolCode, String schoolName, Integer bookRound) {
+        this.schoolCode = schoolCode;
+        this.schoolName = schoolName;
+        this.bookRound = bookRound;
     }
 
     /** 논리 취소. */

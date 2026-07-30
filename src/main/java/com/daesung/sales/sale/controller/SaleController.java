@@ -13,11 +13,13 @@ import com.daesung.sales.sale.dto.SaleResponse;
 import com.daesung.sales.sale.dto.SalesEntryRequest;
 import com.daesung.sales.sale.dto.SalesEntryResponse;
 import com.daesung.sales.sale.dto.SalesStatementResponse;
+import com.daesung.sales.sale.dto.SalesUploadResponse;
 import com.daesung.sales.sale.dto.SalesSummaryResponse;
 import com.daesung.sales.sale.dto.TransactionStatementResponse;
 import com.daesung.sales.sale.dto.YoyComparisonResponse;
 import com.daesung.sales.sale.service.SaleReportService;
 import com.daesung.sales.sale.service.SaleService;
+import com.daesung.sales.sale.service.SalesUploadService;
 import com.daesung.sales.salestype.entity.SalesCategory;
 import com.daesung.sales.salestype.entity.ShipmentType;
 import io.swagger.v3.oas.annotations.Operation;
@@ -31,6 +33,7 @@ import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -38,7 +41,9 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.multipart.MultipartFile;
 
 /** 매출관리. 실제 경로: /api/v1/sales. */
 @Tag(name = "매출관리 · 매출", description = "매출 등록/취소/조회")
@@ -49,6 +54,7 @@ public class SaleController {
 
     private final SaleService saleService;
     private final SaleReportService saleReportService;
+    private final SalesUploadService salesUploadService;
     private final ExcelExportUtil excel;
 
     @Operation(summary = "통합 매출 조회",
@@ -74,6 +80,16 @@ public class SaleController {
     @PostMapping("/entries")
     public ApiResponse<SalesEntryResponse> createEntries(@Valid @RequestBody SalesEntryRequest req) {
         return ApiResponse.success(saleService.createEntries(req));
+    }
+
+    @Operation(summary = "매출 엑셀 업로드(표준양식 일괄등록)",
+            description = "표준양식 엑셀(12컬럼: 거래일자·거래처코드·학교코드·분류코드·도서코드·회차·정가·공급률·수량·금액·구분·메모)을 "
+                    + "매출 원장으로 일괄 등록. 상품=분류+도서 조합, 정가·공급률 미입력 시 도서·거래처단가 자동조회, 공급률 0.75는 75로 정규화. "
+                    + "정상출고/증정용/교사용만 허용(위탁·취소·반품은 거부). 재고는 미반영(레거시 매출가져오기와 동일). 행별 결과 반환.")
+    @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<SalesUploadResponse> upload(
+            @Parameter(description = "표준양식 xlsx 파일", required = true) @RequestPart("file") MultipartFile file) {
+        return ApiResponse.success(salesUploadService.upload(file));
     }
 
     @Operation(summary = "반품 가능내역 조회(교재식 반품)",
