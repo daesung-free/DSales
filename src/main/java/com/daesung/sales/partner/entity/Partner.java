@@ -40,6 +40,14 @@ public class Partner extends BaseEntity {
     @Column(name = "name1", length = 100)
     private String name1;
 
+    /** 지역(관할, 12p 조회 컬럼. 레거시 custData.zone1 / DSRE CITY_NM). */
+    @Column(length = 50)
+    private String region;
+
+    /** 거래처구분(특약점/기타학원/B2B/대성/자사몰 등, 12p 조회 컬럼. 레거시 type1). PartnerType(NORMAL/CONSIGN)과 별개 축. */
+    @Column(name = "client_category", length = 30)
+    private String clientCategory;
+
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 10)
     private PartnerType type = PartnerType.NORMAL;
@@ -90,17 +98,22 @@ public class Partner extends BaseEntity {
     }
 
     /** 수정(코드는 불변). name=거래처명2(풀네임), cityName=도시명, name1=상호만. */
-    public void update(String name, String cityName, String name1, PartnerType type) {
+    public void update(String name, String cityName, String name1, String region,
+                       String clientCategory, PartnerType type) {
         this.name = name;
         this.cityName = cityName;
         this.name1 = name1;
+        this.region = region;
+        this.clientCategory = clientCategory;
         this.type = (type == null) ? PartnerType.NORMAL : type;
     }
 
-    /** 거래처명 분리 필드(도시명·거래처명1) 설정 — 등록 시 사용. */
-    public void applyNames(String cityName, String name1) {
+    /** 거래처명 분리·지역·구분 필드 설정 — 등록 시 사용. */
+    public void applyNames(String cityName, String name1, String region, String clientCategory) {
         this.cityName = cityName;
         this.name1 = name1;
+        this.region = region;
+        this.clientCategory = clientCategory;
     }
 
     /** 담보(여신) 정보 설정. */

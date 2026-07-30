@@ -50,6 +50,15 @@ public record SalesEntryRequest(
                     example = "GRADED")
             ProcType procType,
 
+            @Schema(description = "학교/학원 코드(12p 세부 거래단위, 선택)", example = "A0003")
+            String schoolCode,
+
+            @Schema(description = "학교/학원명(선택)", example = "진주고등학교")
+            String schoolName,
+
+            @Schema(description = "세트 상품 회차(선택)", example = "4")
+            Integer round,
+
             @Schema(description = "비고", example = "6월 정상 매출")
             String memo
     ) {

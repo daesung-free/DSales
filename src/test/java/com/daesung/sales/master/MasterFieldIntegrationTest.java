@@ -387,25 +387,40 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("통합 매출 조회에 도시명/거래처명1/거래처명2 노출(추가4)")
+    @DisplayName("통합 매출 조회 12p 컬럼 노출 — 거래처명분리·지역·거래처구분·학교·학년·분류·회차")
     void 매출조회_거래처명분리노출() {
         Long wh = createId("/masters/warehouses", Map.of("code", "NV-WH", "name", "노출창고", "type", "MAIN"));
-        Long p = createId("/masters/products",
-                Map.of("code", "NV-BK", "name", "노출도서", "contentType", "SELF", "price", 10000));
+        // 도서: 분류(대분류)·학년 세팅
+        Long p = createId("/masters/products", Map.of(
+                "code", "NV-BK", "name", "노출도서", "contentType", "SELF", "price", 10000,
+                "grade", "고2", "catCode", "S2026A02", "catName", "국어모의고사"));
         Long partner = createId("/masters/clients", Map.of(
-                "code", "NV-CUST", "name", "진주 노출도서", "cityName", "진주", "name1", "노출도서", "type", "NORMAL"));
+                "code", "NV-CUST", "name", "진주 노출도서", "cityName", "진주", "name1", "노출도서",
+                "region", "경남", "clientCategory", "특약점", "type", "NORMAL"));
         inbound(wh, p);
         post("/sales/entries", Map.of(
                 "salesDate", "2026-05-12", "partnerId", partner, "warehouseId", wh,
                 "items", List.of(Map.of("productId", p, "shipmentType", "NORMAL_SHIP",
-                        "qty", 5, "unitPrice", 10000, "supplyRate", 70))));
+                        "qty", 5, "unitPrice", 10000, "supplyRate", 70,
+                        "schoolCode", "SCHOOL-1", "schoolName", "진주고", "round", 4))));
 
         JsonNode content = data(get("/sales?startDate=2026-05-12&endDate=2026-05-12&partnerId=" + partner))
                 .path("content");
         JsonNode row = content.get(0);
+        // 거래처 축
+        assertThat(row.path("partnerCode").asText()).isEqualTo("NV-CUST");
         assertThat(row.path("partnerName").asText()).isEqualTo("진주 노출도서");   // 거래처명2
         assertThat(row.path("partnerCityName").asText()).isEqualTo("진주");        // 도시명
         assertThat(row.path("partnerName1").asText()).isEqualTo("노출도서");       // 거래처명1
+        assertThat(row.path("region").asText()).isEqualTo("경남");                 // 지역
+        assertThat(row.path("clientCategory").asText()).isEqualTo("특약점");        // 거래처구분
+        // 학교·학년·분류·회차 축
+        assertThat(row.path("schoolCode").asText()).isEqualTo("SCHOOL-1");
+        assertThat(row.path("schoolName").asText()).isEqualTo("진주고");
+        assertThat(row.path("grade").asText()).isEqualTo("고2");                   // 학년=상품 속성
+        assertThat(row.path("catCode").asText()).isEqualTo("S2026A02");
+        assertThat(row.path("catName").asText()).isEqualTo("국어모의고사");
+        assertThat(row.path("bookRound").asInt()).isEqualTo(4);                    // 회차
     }
 
     @Test

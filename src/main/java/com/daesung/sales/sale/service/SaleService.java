@@ -102,6 +102,7 @@ public class SaleService {
                     SalesType.NORMAL_SALES, item.shipmentType(), salesCategory,
                     unitPrice, supplyRate, item.qty(),
                     supplyAmount, tax, totalAmount, item.procType(), item.memo());
+            sale.applyUploadDetail(item.schoolCode(), item.schoolName(), item.round());   // 학교·회차(12p)
             saleRepository.save(sale);
 
             // 재고 반영(한 트랜잭션): 출고유형 → 부호/이벤트유형. 위탁·취소는 이 API 불가.

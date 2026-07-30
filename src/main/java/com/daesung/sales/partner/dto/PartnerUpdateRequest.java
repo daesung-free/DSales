@@ -17,6 +17,9 @@ public record PartnerUpdateRequest(
         @Schema(description = "거래처명1=상호만(예: 이룸도서). DSRE CUST_NM", example = "이룸도서")
         String name1,
 
+        @Schema(description = "지역(관할)", example = "경남") String region,
+        @Schema(description = "거래처구분(특약점/기타학원/B2B/대성/자사몰)", example = "특약점") String clientCategory,
+
         @Schema(description = "정산유형(NORMAL/CONSIGN)", example = "CONSIGN")
         PartnerType type,
 
