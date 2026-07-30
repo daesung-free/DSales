@@ -340,6 +340,28 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("통합 매출 조회에 도시명/거래처명1/거래처명2 노출(추가4)")
+    void 매출조회_거래처명분리노출() {
+        Long wh = createId("/masters/warehouses", Map.of("code", "NV-WH", "name", "노출창고", "type", "MAIN"));
+        Long p = createId("/masters/products",
+                Map.of("code", "NV-BK", "name", "노출도서", "contentType", "SELF", "price", 10000));
+        Long partner = createId("/masters/clients", Map.of(
+                "code", "NV-CUST", "name", "진주 노출도서", "cityName", "진주", "name1", "노출도서", "type", "NORMAL"));
+        inbound(wh, p);
+        post("/sales/entries", Map.of(
+                "salesDate", "2026-05-12", "partnerId", partner, "warehouseId", wh,
+                "items", List.of(Map.of("productId", p, "shipmentType", "NORMAL_SHIP",
+                        "qty", 5, "unitPrice", 10000, "supplyRate", 70))));
+
+        JsonNode content = data(get("/sales?startDate=2026-05-12&endDate=2026-05-12&partnerId=" + partner))
+                .path("content");
+        JsonNode row = content.get(0);
+        assertThat(row.path("partnerName").asText()).isEqualTo("진주 노출도서");   // 거래처명2
+        assertThat(row.path("partnerCityName").asText()).isEqualTo("진주");        // 도시명
+        assertThat(row.path("partnerName1").asText()).isEqualTo("노출도서");       // 거래처명1
+    }
+
+    @Test
     @DisplayName("마스터 엑셀 다운로드 — 거래처목록 xlsx(한글 헤더)")
     void 마스터엑셀() throws Exception {
         createId("/masters/clients", Map.of("code", "XL-CUST", "name", "엑셀거래처", "type", "NORMAL"));

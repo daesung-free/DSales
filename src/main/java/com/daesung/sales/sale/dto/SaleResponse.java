@@ -12,7 +12,9 @@ public record SaleResponse(
         String salesNo,
         LocalDate salesDate,
         Long partnerId,
-        String partnerName,
+        String partnerName,       // 거래처명2(합쳐진 풀네임)
+        String partnerCityName,   // 도시명
+        String partnerName1,      // 거래처명1(상호만)
         Long productId,
         String productCode,
         String productName,
@@ -32,6 +34,7 @@ public record SaleResponse(
         return new SaleResponse(
                 s.getId(), s.getSalesNo(), s.getSalesDate(),
                 s.getPartner().getId(), s.getPartner().getName(),
+                s.getPartner().getCityName(), s.getPartner().getName1(),
                 s.getProduct().getId(), s.getProduct().getCode(), s.getProduct().getName(),
                 s.getSalesType(), s.getShipmentType(), s.getSalesCategory(),
                 s.getUnitPrice(), s.getSupplyRate(), s.getQty(),
