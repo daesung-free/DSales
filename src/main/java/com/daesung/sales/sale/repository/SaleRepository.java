@@ -3,6 +3,7 @@ package com.daesung.sales.sale.repository;
 import com.daesung.sales.sale.dto.BookSalesAgg;
 import com.daesung.sales.sale.dto.CategorySalesAgg;
 import com.daesung.sales.sale.dto.PartnerProductSalesAgg;
+import com.daesung.sales.sale.dto.ReturnableAgg;
 import com.daesung.sales.sale.dto.SalesStatementAgg;
 import com.daesung.sales.sale.entity.Sale;
 import com.daesung.sales.salestype.entity.SalesCategory;
@@ -89,6 +90,22 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
             + "where s.canceled = false and s.salesDate between :from and :to "
             + "group by p.id")
     List<BookSalesAgg> bookSalesAgg(@Param("from") LocalDate from, @Param("to") LocalDate to);
+
+    /**
+     * 교재식 반품 가능내역: 거래처×도서×정가×공급률 단위로 누적 판매출고(SALE)·기반품(RETURN) 집계.
+     * 반품가능수량 = SALE − RETURN(서비스에서 계산·필터). 취소 제외. productId 옵션 필터.
+     * 공급률·정가별로 그룹 → 반품 시 원 출고건 공급률 고정 적용의 근거가 됨.
+     */
+    @Query("select p.id as productId, p.code as productCode, p.name as productName, "
+            + "s.unitPrice as unitPrice, s.supplyRate as supplyRate, "
+            + "sum(case when s.salesCategory = com.daesung.sales.salestype.entity.SalesCategory.SALE then s.qty else 0 end) as saleQty, "
+            + "sum(case when s.salesCategory = com.daesung.sales.salestype.entity.SalesCategory.RETURN then s.qty else 0 end) as returnQty "
+            + "from Sale s join s.product p "
+            + "where s.partner.id = :partnerId and s.canceled = false "
+            + "and (:productId is null or p.id = :productId) "
+            + "group by p.id, p.code, p.name, s.unitPrice, s.supplyRate "
+            + "order by p.code, s.supplyRate")
+    List<ReturnableAgg> returnableAgg(@Param("partnerId") Long partnerId, @Param("productId") Long productId);
 
     /**
      * 거래처×상품 매출집계(SALE만, 취소 제외). 거래처별 매출대비표(전년 동기간 비교)용.

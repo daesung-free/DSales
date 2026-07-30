@@ -239,6 +239,8 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
     void 계산서_10일분기() {
         Long wh = createId("/masters/warehouses", Map.of("code", "WH-ADJ", "name", "조정창고", "type", "MAIN"));
         Long p = product("ADJ-BK", "Z01", "조정테스트");
+        inbound(wh, p);   // 재고 확보(반품 재고복구 대상)
+        sale("2026-02-01", wh, p, "NORMAL_SHIP", 100, 20);   // 교재식 반품 선행 출고(공급률 100, 20부)
         // 2월로 격리: 5일(≤10=수정발행) 반품 10부, 20일(>10=익월마이너스) 반품 5부
         returnInbound("2026-02-05", wh, p, 10);
         returnInbound("2026-02-20", wh, p, 5);
@@ -269,21 +271,22 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
         Long wh = createId("/masters/warehouses", Map.of("code", "WH-RI", "name", "반품창고", "type", "MAIN"));
         Long p = product("RI-BK", "R01", "반품테스트");
         inbound(wh, p);   // 재고 1000
+        sale("2026-05-01", wh, p, "NORMAL_SHIP", 100, 20);   // 교재식 반품 선행 출고(공급률 100, 20부) → 재고 980
 
-        // 반품입고 10부(정가10000, 공급률100) — 5월로 격리
+        // 반품입고 10부(정가10000, 공급률100) — 5월로 격리. 출고 20 범위 내
         JsonNode d = data(post("/sales/return-inbound", Map.of(
                 "returnDate", "2026-05-10", "partnerId", partnerId, "warehouseId", wh,
                 "items", List.of(Map.of("productId", p, "unitPrice", 10000, "supplyRate", 100, "qty", 10,
                         "sourceOutNo", "OUT-20260501-1")))));
         JsonNode line = d.path("items").get(0);
         assertThat(line.path("salesCategory").asText()).isEqualTo("RETURN");
-        assertThat(line.path("stockBalance").asLong()).isEqualTo(1010);   // 1000 +10 자동 복구
+        assertThat(line.path("stockBalance").asLong()).isEqualTo(990);   // 980 +10 자동 복구
 
-        // 수불부: 반품 버킷 +10, 현재재고 1010
+        // 수불부: 매출 20·반품 +10, 현재재고 990(1000−20+10)
         JsonNode led = data(get("/stock/ledger?warehouseId=" + wh));
         JsonNode row = rowWhere(led, "productCode", "RI-BK");
         assertThat(row.path("salesReturn").asLong()).isEqualTo(10);
-        assertThat(row.path("closing").asLong()).isEqualTo(1010);
+        assertThat(row.path("closing").asLong()).isEqualTo(990);
 
         // 매출장부: RETURN 라인이 생겨 5월 순매출 음수 반영(취소 아님)
         JsonNode sales = data(get("/sales?startDate=2026-05-01&endDate=2026-05-31&salesCategory=RETURN"));

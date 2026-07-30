@@ -14,6 +14,8 @@ import com.daesung.sales.product.entity.Product;
 import com.daesung.sales.product.repository.ProductPartnerPriceRepository;
 import com.daesung.sales.product.repository.ProductRepository;
 import com.daesung.sales.sale.dto.ReturnInboundRequest;
+import com.daesung.sales.sale.dto.ReturnableAgg;
+import com.daesung.sales.sale.dto.ReturnableResponse;
 import com.daesung.sales.sale.dto.SaleResponse;
 import com.daesung.sales.sale.dto.SalesEntryRequest;
 import com.daesung.sales.sale.dto.SalesEntryResponse;
@@ -28,7 +30,9 @@ import com.daesung.sales.warehouse.repository.WarehouseRepository;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -134,10 +138,27 @@ public class SaleService {
         String datePart = req.returnDate().format(YYYYMMDD);
         List<SalesEntryResponse.Line> lines = new ArrayList<>();
 
+        // 교재식 반품: 거래처의 도서×정가×공급률별 반품가능수량(누적 출고−기반품) 맵. 한 요청 내 여러 라인은 누적 차감.
+        Map<String, Long> returnable = new HashMap<>();
+        for (ReturnableAgg a : saleRepository.returnableAgg(req.partnerId(), null)) {
+            returnable.put(returnableKey(a.getProductId(), a.getUnitPrice(), a.getSupplyRate()),
+                    a.getSaleQty() - a.getReturnQty());
+        }
+
         for (ReturnInboundRequest.Item item : req.items()) {
             Product product = productRepository.findById(item.productId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                             "상품이 없습니다. id=" + item.productId()));
+
+            // 범위검증: 반품수량 ≤ (누적 판매출고 − 기반품). 정가·공급률은 원 출고건과 일치해야 함(불일치=잔여 0).
+            String key = returnableKey(item.productId(), item.unitPrice(), item.supplyRate());
+            long remain = returnable.getOrDefault(key, 0L);
+            if (item.qty() > remain) {
+                throw new BusinessException(ErrorCode.RETURN_EXCEEDS,
+                        "반품가능수량 초과: 상품 " + product.getCode() + " 정가 " + item.unitPrice()
+                                + " 공급률 " + item.supplyRate() + " → 반품가능 " + remain + ", 요청 " + item.qty());
+            }
+            returnable.put(key, remain - item.qty());
 
             Amounts amt = Amounts.of(item.unitPrice(), item.supplyRate(), item.qty(), product.isTaxFree());
             long supplyAmount = amt.supplyAmount();
@@ -167,6 +188,29 @@ public class SaleService {
                     ShipmentType.RETURN, SalesCategory.RETURN, item.qty(), supplyAmount, tax, totalAmount, stockBalance));
         }
         return new SalesEntryResponse(partner.getId(), partner.getName(), lines);
+    }
+
+    /** 반품가능내역 맵 키: 도서×정가×공급률(교재식 반품은 원 출고건 공급률·정가 단위로 범위 관리). */
+    private static String returnableKey(Long productId, Integer unitPrice, Integer supplyRate) {
+        return productId + ":" + unitPrice + ":" + supplyRate;
+    }
+
+    /**
+     * 교재식 반품 가능내역 조회. 거래처(옵션 도서)의 도서×정가×공급률별 반품가능수량(누적 출고−기반품, {@literal >}0만).
+     * 프론트는 이 목록에서 라인을 골라 그 범위 내에서 반품 등록(공급률·정가는 원 출고건 고정).
+     */
+    @Transactional(readOnly = true)
+    public ReturnableResponse returnable(Long partnerId, Long productId) {
+        List<ReturnableResponse.Row> rows = new ArrayList<>();
+        for (ReturnableAgg a : saleRepository.returnableAgg(partnerId, productId)) {
+            long remain = a.getSaleQty() - a.getReturnQty();
+            if (remain <= 0) {
+                continue;
+            }
+            rows.add(new ReturnableResponse.Row(a.getProductId(), a.getProductCode(), a.getProductName(),
+                    a.getUnitPrice(), a.getSupplyRate(), a.getSaleQty(), a.getReturnQty(), remain));
+        }
+        return new ReturnableResponse(partnerId, rows);
     }
 
     /** 출고유형별 물류재고 증감 부호. 정상출고/증정/교사용=−차감, 반품=+복구. 위탁·취소는 이 API 불가. */

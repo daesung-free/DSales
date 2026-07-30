@@ -340,6 +340,53 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("교재식 반품 — 반품가능(누적출고−기반품) 조회 + 범위초과 거부(추가2)")
+    void 반품교재식_범위검증() {
+        Long wh = createId("/masters/warehouses", Map.of("code", "RB-WH", "name", "반품창고", "type", "MAIN"));
+        Long p = createId("/masters/products",
+                Map.of("code", "RB-BK", "name", "교재반품도서", "contentType", "SELF", "price", 10000));
+        Long partner = createId("/masters/clients", Map.of("code", "RB-CUST", "name", "교재반품거래처", "type", "NORMAL"));
+        inbound(wh, p);   // 물류 100
+
+        // 정상출고(판매) 30 @공급률70 → 반품가능 30
+        post("/sales/entries", Map.of(
+                "salesDate", "2026-08-03", "partnerId", partner, "warehouseId", wh,
+                "items", List.of(Map.of("productId", p, "shipmentType", "NORMAL_SHIP",
+                        "qty", 30, "unitPrice", 10000, "supplyRate", 70))));
+
+        // 반품가능 조회 → 도서×정가×공급률 라인, 반품가능 30
+        JsonNode able = data(get("/sales/returnable?partnerId=" + partner)).path("rows");
+        JsonNode line = rowByField(able, "productCode", "RB-BK");
+        assertThat(line.path("shippedQty").asLong()).isEqualTo(30);
+        assertThat(line.path("returnedQty").asLong()).isEqualTo(0);
+        assertThat(line.path("returnableQty").asLong()).isEqualTo(30);
+        assertThat(line.path("supplyRate").asInt()).isEqualTo(70);
+
+        // 범위 초과(31 > 30) → 409 RETURN_EXCEEDS
+        JsonNode over = post("/sales/return-inbound", Map.of(
+                "returnDate", "2026-08-10", "partnerId", partner, "warehouseId", wh,
+                "items", List.of(Map.of("productId", p, "unitPrice", 10000, "supplyRate", 70, "qty", 31))));
+        assertThat(over.path("success").asBoolean()).isFalse();
+        assertThat(over.path("error").path("code").asText()).isEqualTo("RETURN_EXCEEDS");
+
+        // 범위 내(20) → 성공, 이후 반품가능 30−20=10
+        JsonNode ok = post("/sales/return-inbound", Map.of(
+                "returnDate", "2026-08-10", "partnerId", partner, "warehouseId", wh,
+                "items", List.of(Map.of("productId", p, "unitPrice", 10000, "supplyRate", 70, "qty", 20))));
+        assertThat(ok.path("success").asBoolean()).as("정상 반품: %s", ok).isTrue();
+        JsonNode after = rowByField(data(get("/sales/returnable?partnerId=" + partner)).path("rows"),
+                "productCode", "RB-BK");
+        assertThat(after.path("returnedQty").asLong()).isEqualTo(20);
+        assertThat(after.path("returnableQty").asLong()).isEqualTo(10);
+
+        // 공급률 불일치(원출고 없음) → 잔여 0으로 거부
+        JsonNode wrongRate = post("/sales/return-inbound", Map.of(
+                "returnDate", "2026-08-10", "partnerId", partner, "warehouseId", wh,
+                "items", List.of(Map.of("productId", p, "unitPrice", 10000, "supplyRate", 50, "qty", 1))));
+        assertThat(wrongRate.path("error").path("code").asText()).isEqualTo("RETURN_EXCEEDS");
+    }
+
+    @Test
     @DisplayName("통합 매출 조회에 도시명/거래처명1/거래처명2 노출(추가4)")
     void 매출조회_거래처명분리노출() {
         Long wh = createId("/masters/warehouses", Map.of("code", "NV-WH", "name", "노출창고", "type", "MAIN"));

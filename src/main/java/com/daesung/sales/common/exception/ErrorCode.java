@@ -19,7 +19,8 @@ public enum ErrorCode {
     // --- 도메인(시트 근거) ---
     PERIOD_LOCKED(HttpStatus.CONFLICT, "마감된 월입니다. 수정할 수 없습니다."),   // 월마감(4.9)
     NEGATIVE_STOCK(HttpStatus.CONFLICT, "재고가 음수가 될 수 없습니다."),          // 로직A 음수방지
-    OVER_SETTLEMENT(HttpStatus.CONFLICT, "정산 수량이 미결 잔여를 초과했습니다.");  // 로직B 초과정산 방지
+    OVER_SETTLEMENT(HttpStatus.CONFLICT, "정산 수량이 미결 잔여를 초과했습니다."),  // 로직B 초과정산 방지
+    RETURN_EXCEEDS(HttpStatus.CONFLICT, "반품 수량이 출고 잔여를 초과했습니다.");    // 교재식 반품(누적 출고−기반품 범위)
 
     private final HttpStatus status;
     private final String message;

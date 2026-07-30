@@ -8,6 +8,7 @@ import com.daesung.sales.sale.dto.CategorySalesResponse;
 import com.daesung.sales.sale.dto.MonthlyStatementResponse;
 import com.daesung.sales.sale.dto.NetSalesResponse;
 import com.daesung.sales.sale.dto.ReturnInboundRequest;
+import com.daesung.sales.sale.dto.ReturnableResponse;
 import com.daesung.sales.sale.dto.SaleResponse;
 import com.daesung.sales.sale.dto.SalesEntryRequest;
 import com.daesung.sales.sale.dto.SalesEntryResponse;
@@ -75,10 +76,21 @@ public class SaleController {
         return ApiResponse.success(saleService.createEntries(req));
     }
 
-    @Operation(summary = "반품입고(29p 물류 진입점)",
-            description = "물류가 반품 물량을 입고하면 한 트랜잭션으로 매출 반품(RETURN) 라인 자동 생성 + "
-                    + "물류창고 재고 +복구. 담당자는 반품 사실(거래처·도서·수량·공급률)만 입력, 재고 잔량은 자동 산출. "
-                    + "재고관리 상품만 재고 복구(모의고사 등 인원기반은 이벤트 없음). 원본 출고번호(선택) 역추적 링크.")
+    @Operation(summary = "반품 가능내역 조회(교재식 반품)",
+            description = "거래처(옵션 도서)의 도서×정가×공급률별 반품가능수량(누적 판매출고 − 기반품, >0만). "
+                    + "반품입고 시 이 목록에서 라인을 골라 그 범위 내에서만 반품하며, 정가·공급률은 원 출고건을 그대로 사용.")
+    @GetMapping("/returnable")
+    public ApiResponse<ReturnableResponse> returnable(
+            @Parameter(description = "거래처 id", required = true) @RequestParam Long partnerId,
+            @Parameter(description = "도서(상품) id 필터(옵션)") @RequestParam(required = false) Long productId) {
+        return ApiResponse.success(saleService.returnable(partnerId, productId));
+    }
+
+    @Operation(summary = "반품입고(29p 물류 진입점, 교재식)",
+            description = "물류가 반품 물량을 입고하면 한 트랜잭션으로 매출 반품(RETURN) 라인 자동 생성 + 물류창고 재고 +복구. "
+                    + "교재식: 반품수량은 (누적 판매출고 − 기반품) 범위 내여야 하며(초과 시 409), 정가·공급률은 원 출고건과 일치해야 함. "
+                    + "재고관리 상품만 재고 복구(모의고사 등 인원기반은 이벤트 없음). 원본 출고번호(선택) 역추적 링크. "
+                    + "반품 가능내역은 GET /sales/returnable로 먼저 조회.")
     @PostMapping("/return-inbound")
     public ApiResponse<SalesEntryResponse> returnInbound(@Valid @RequestBody ReturnInboundRequest req) {
         return ApiResponse.success(saleService.returnInbound(req));
