@@ -59,6 +59,7 @@ public class ProductService {
                 req.catCode(), req.catName(), req.useYnOrDefault(),
                 req.salesDivision(), req.ledgerVisibleOrDefault(), req.webVisibleOrDefault(),
                 req.stockManagedOrDefault());
+        product.applyExtra(req.productYear(), req.productType());
         return ProductResponse.from(productRepository.save(product));
     }
 
@@ -69,6 +70,7 @@ public class ProductService {
                 req.price(), req.taxFree(), req.grade(),
                 req.catCode(), req.catName(), req.useYn(),
                 req.salesDivision(), req.ledgerVisible(), req.webVisible(), req.stockManaged());
+        product.applyExtra(req.productYear(), req.productType());
         return ProductResponse.from(product);
     }
 

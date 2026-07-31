@@ -38,6 +38,12 @@ public record ProductUpdateRequest(
         @Schema(description = "매출구분(매출액정리·순매출조회 집계기준)", example = "정상")
         String salesDivision,
 
+        @Schema(description = "상품년도(32p)", example = "2026")
+        Integer productYear,
+
+        @Schema(description = "상품구분(32p, 레거시 bookData.type 원시값)", example = "교재")
+        String productType,
+
         @Schema(description = "수불부노출 여부", example = "true")
         boolean ledgerVisible,
 

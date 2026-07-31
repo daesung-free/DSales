@@ -60,6 +60,14 @@ public class Product extends BaseEntity {
     @Column(name = "sales_division", length = 30)
     private String salesDivision;
 
+    /** 상품년도(예: 2026). 근거: 32p 도서관리(레거시 bookData 부재→신규). */
+    @Column(name = "product_year")
+    private Integer productYear;
+
+    /** 상품구분(레거시 bookData.type 원시값). contentType(콘텐츠구분 SELF/EXTERNAL)과 별개 분류. 근거: 32p 도서관리. */
+    @Column(name = "product_type", length = 30)
+    private String productType;
+
     /** 수불부노출 여부(제품수불부 집계 포함). 기본 true. */
     @Column(name = "ledger_visible", nullable = false)
     private boolean ledgerVisible = true;
@@ -96,6 +104,12 @@ public class Product extends BaseEntity {
         p.webVisible = webVisible;
         p.stockManaged = stockManaged;
         return p;
+    }
+
+    /** 32p 확장 필드(상품년도·상품구분) 설정 — 등록·수정 시 사용. */
+    public void applyExtra(Integer productYear, String productType) {
+        this.productYear = productYear;
+        this.productType = productType;
     }
 
     /** 수정(코드는 불변). */

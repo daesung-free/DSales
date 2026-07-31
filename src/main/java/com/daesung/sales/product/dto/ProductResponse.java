@@ -17,6 +17,8 @@ public record ProductResponse(
         String catName,
         boolean useYn,
         String salesDivision,
+        Integer productYear,
+        String productType,
         boolean ledgerVisible,
         boolean webVisible,
         boolean stockManaged
@@ -26,6 +28,7 @@ public record ProductResponse(
                 p.getId(), p.getCode(), p.getName(), p.getContentType(),
                 p.isSet(), p.getPrice(), p.isTaxFree(), p.getGrade(),
                 p.getCatCode(), p.getCatName(), p.isUseYn(),
-                p.getSalesDivision(), p.isLedgerVisible(), p.isWebVisible(), p.isStockManaged());
+                p.getSalesDivision(), p.getProductYear(), p.getProductType(),
+                p.isLedgerVisible(), p.isWebVisible(), p.isStockManaged());
     }
 }

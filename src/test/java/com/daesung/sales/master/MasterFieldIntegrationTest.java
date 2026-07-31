@@ -33,10 +33,22 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
     void 도서_신규필드() {
         JsonNode d = data(post("/masters/products", Map.of(
                 "code", "MF-BK1", "name", "확장필드 도서", "contentType", "SELF",
-                "salesDivision", "정상", "ledgerVisible", false, "webVisible", true)));
+                "salesDivision", "정상", "ledgerVisible", false, "webVisible", true,
+                "productYear", 2026, "productType", "교재")));
         assertThat(d.path("salesDivision").asText()).isEqualTo("정상");
         assertThat(d.path("ledgerVisible").asBoolean()).isFalse();
         assertThat(d.path("webVisible").asBoolean()).isTrue();
+        assertThat(d.path("productYear").asInt()).isEqualTo(2026);   // 32p 상품년도
+        assertThat(d.path("productType").asText()).isEqualTo("교재");  // 32p 상품구분
+
+        // 수정으로도 반영
+        long id = d.path("id").asLong();
+        JsonNode upd = data(put("/masters/products/" + id, Map.of(
+                "name", "확장필드 도서", "contentType", "SELF", "set", false, "taxFree", false,
+                "useYn", true, "ledgerVisible", true, "webVisible", false, "stockManaged", true,
+                "productYear", 2027, "productType", "모의고사")));
+        assertThat(upd.path("productYear").asInt()).isEqualTo(2027);
+        assertThat(upd.path("productType").asText()).isEqualTo("모의고사");
 
         // 미지정 시 기본값(수불부노출 true, Web게시 false)
         JsonNode def = data(post("/masters/products", Map.of(
