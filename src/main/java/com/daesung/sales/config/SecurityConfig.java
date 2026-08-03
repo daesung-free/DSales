@@ -63,6 +63,10 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/logistics-costs/**").hasAnyRole("LOGISTICS", "ADMIN")
                         // 마감/채권/세무: 재무 — 쓰기·조회 모두(민감 재무데이터라 VIEWER 제외). ★기본안, 발주처 조정 가능
                         .requestMatchers("/api/v1/closing/**").hasAnyRole("FINANCE", "ADMIN")
+                        // 배치 수동 실행: 재무(담보만기 알림이 25p 재무팀 요구사항) + 관리자
+                        .requestMatchers(HttpMethod.POST, "/api/v1/batch/**").hasAnyRole("FINANCE", "ADMIN")
+                        // 알림 확인 처리: 본인이 본 팝업을 닫는 동작이라 인증만
+                        .requestMatchers(HttpMethod.PUT, "/api/v1/notifications/**").authenticated()
                         // 로그아웃(POST)은 인증만
                         .requestMatchers(HttpMethod.POST, "/api/v1/auth/logout").authenticated()
                         // ★안전망(deny-by-default): 위에서 역할이 명시되지 않은 쓰기(POST/PUT/DELETE)는 거부.
