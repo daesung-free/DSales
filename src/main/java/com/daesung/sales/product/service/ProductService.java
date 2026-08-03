@@ -1,5 +1,6 @@
 package com.daesung.sales.product.service;
 
+import com.daesung.sales.common.audit.CurrentAuditor;
 import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.common.response.PageResponse;
@@ -18,6 +19,7 @@ import com.daesung.sales.product.entity.ProductPartnerPrice;
 import com.daesung.sales.product.repository.BomItemRepository;
 import com.daesung.sales.product.repository.ProductPartnerPriceRepository;
 import com.daesung.sales.product.repository.ProductRepository;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -35,6 +37,7 @@ public class ProductService {
     private final BomItemRepository bomItemRepository;
     private final ProductPartnerPriceRepository partnerPriceRepository;
     private final PartnerRepository partnerRepository;
+    private final CurrentAuditor currentAuditor;
 
     public PageResponse<ProductResponse> findAll(String keyword, Pageable pageable) {
         Page<Product> page = (keyword == null || keyword.isBlank())
@@ -79,11 +82,17 @@ public class ProductService {
         getOrThrow(id).deactivate();
     }
 
-    /** BOM 구성 등록(기존 구성 대체). 완제품은 세트(is_set)로 표시. */
+    /**
+     * BOM 구성 등록(기존 구성 대체). 완제품은 세트(is_set)로 표시.
+     *
+     * <p>기존 구성은 물리삭제가 아니라 논리삭제로 대체된다(게이트규칙) — 언제 어떤 구성이었는지가
+     * 남아야 과거 조립/해체 수량을 소명할 수 있다.
+     */
     @Transactional
     public BomResponse registerBom(Long parentId, BomRegisterRequest req) {
-        Product parent = getOrThrow(parentId);
-        bomItemRepository.deleteByParentId(parentId);
+        getOrThrow(parentId);   // 존재 검증(삭제 전)
+        bomItemRepository.softDeleteByParentId(parentId, LocalDateTime.now(), currentAuditor.username());
+        Product parent = getOrThrow(parentId);   // 벌크 UPDATE가 컨텍스트를 clear하므로 재로딩
         List<BomItem> saved = new ArrayList<>();
         for (BomRegisterRequest.Component c : req.components()) {
             if (c.childProductId().equals(parentId)) {
@@ -133,14 +142,14 @@ public class ProductService {
         return PartnerPriceResponse.from(partnerPriceRepository.save(mapping));
     }
 
-    /** 도서×거래처 매핑 삭제. */
+    /** 도서×거래처 매핑 삭제(논리삭제 — 행은 남고 삭제자·시각이 기록된다). */
     @Transactional
     public void deletePartnerPrice(Long productId, Long partnerId) {
         ProductPartnerPrice mapping = partnerPriceRepository
                 .findByProductIdAndPartnerId(productId, partnerId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                         "거래처별 단가 매핑이 없습니다. product=" + productId + ", partner=" + partnerId));
-        partnerPriceRepository.delete(mapping);
+        mapping.markDeleted(currentAuditor.username());
     }
 
     private Product getOrThrow(Long id) {
