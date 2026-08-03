@@ -101,7 +101,8 @@ public class ProductService {
             Product child = productRepository.findById(c.childProductId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                             "구성품 상품이 없습니다. id=" + c.childProductId()));
-            saved.add(bomItemRepository.save(BomItem.create(parent, child, c.ratio())));
+            saved.add(bomItemRepository.save(BomItem.create(parent, child, c.ratio())
+                    .applyDetail(c.round(), c.examDate(), c.separatePack(), c.materialType(), c.packType())));
         }
         parent.markAsSet();
         return BomResponse.from(parent, saved);

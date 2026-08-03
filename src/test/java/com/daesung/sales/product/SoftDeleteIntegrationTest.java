@@ -105,4 +105,43 @@ class SoftDeleteIntegrationTest extends IntegrationTestSupport {
                 Long.class, book, partner)).as("삭제행 1 + 활성행 1").isEqualTo(2);
     }
 
+    @Test
+    @DisplayName("33p BOM 상세 — 자재구분·물류비용 연계·회차 저장, 같은 자재를 회차별로 등록 가능")
+    void bom_상세필드_회차별등록() {
+        long set = product("SD-SET3", "회차세트");
+        long paper = product("SD-PAPER", "시험지자재");
+        long omr = product("SD-OMR", "OMR자재");
+
+        // 1회차: 시험지 + OMR / 2회차: 같은 시험지 자재 재사용
+        put("/masters/products/" + set + "/bom", Map.of("components", List.of(
+                Map.of("childProductId", paper, "ratio", 1, "round", 1, "examDate", "2026-09-01",
+                        "separatePack", true, "materialType", "EXAM_PAPER", "packType", 3),
+                Map.of("childProductId", omr, "ratio", 1, "round", 1,
+                        "materialType", "OMR", "packType", 3),
+                Map.of("childProductId", paper, "ratio", 2, "round", 2, "examDate", "2026-10-01",
+                        "materialType", "EXAM_PAPER", "packType", 1))));
+
+        JsonNode comps = data(get("/masters/products/" + set + "/bom")).path("components");
+        assertThat(comps).as("회차별 3행이 모두 저장돼야 함(같은 자재 반복 허용)").hasSize(3);
+
+        JsonNode r1 = null;
+        JsonNode r2 = null;
+        for (JsonNode c : comps) {
+            if (c.path("childProductId").asLong() == paper && c.path("round").asInt() == 1) {
+                r1 = c;
+            }
+            if (c.path("childProductId").asLong() == paper && c.path("round").asInt() == 2) {
+                r2 = c;
+            }
+        }
+        assertThat(r1).isNotNull();
+        assertThat(r1.path("materialType").asText()).isEqualTo("EXAM_PAPER");
+        assertThat(r1.path("packType").asInt()).as("물류비용 연계(작업구분)").isEqualTo(3);
+        assertThat(r1.path("examDate").asText()).isEqualTo("2026-09-01");
+        assertThat(r1.path("separatePack").asBoolean()).isTrue();
+
+        assertThat(r2).as("같은 자재라도 회차가 다르면 별개 행").isNotNull();
+        assertThat(r2.path("ratio").asInt()).isEqualTo(2);
+        assertThat(r2.path("packType").asInt()).isEqualTo(1);
+    }
 }
