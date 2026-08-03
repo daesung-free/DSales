@@ -7,6 +7,7 @@ import com.daesung.sales.common.response.ApiResponse;
 import com.daesung.sales.common.response.PageResponse;
 import com.daesung.sales.school.dto.SchoolCreateRequest;
 import com.daesung.sales.school.dto.SchoolResponse;
+import com.daesung.sales.school.dto.SchoolSyncResult;
 import com.daesung.sales.school.dto.SchoolUpdateRequest;
 import com.daesung.sales.school.service.SchoolService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -27,7 +28,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-/** 기초관리 - 학교관리(35p). 실제 경로: /api/v1/masters/schools. DSRE '가져오기'(동기화)는 후속(조건부). */
+/** 기초관리 - 학교관리(35p). 실제 경로: /api/v1/masters/schools. DSRE '가져오기'=보존형 동기화(POST /sync). */
 @Tag(name = "기초관리 · 학교", description = "학교/학원 마스터 관리(35p)")
 @RestController
 @RequiredArgsConstructor
@@ -64,7 +65,7 @@ public class SchoolController {
         return ApiResponse.success(schoolService.findById(id));
     }
 
-    @Operation(summary = "학교 등록", description = "학교코드=거래처코드 동일값. 거래처구분·학교/학원구분은 직접입력.")
+    @Operation(summary = "학교 등록", description = "식별키=거래처코드+학교코드 조합. 거래처구분·학교/학원구분은 직접입력(동기화 미대상).")
     @PostMapping
     public ApiResponse<SchoolResponse> create(@Valid @RequestBody SchoolCreateRequest req) {
         return ApiResponse.success(schoolService.create(req));
@@ -74,5 +75,20 @@ public class SchoolController {
     @PutMapping("/{id}")
     public ApiResponse<SchoolResponse> update(@PathVariable Long id, @Valid @RequestBody SchoolUpdateRequest req) {
         return ApiResponse.success(schoolService.update(id, req));
+    }
+
+    @Operation(summary = "DSRE 가져오기(동기화)",
+            description = """
+                    DSRE2 지사↔학교/학원 매핑을 읽어 **보존형으로 병합**한다(전체삭제 후 재수입 아님).
+                    매칭키 = 거래처코드 + 학교코드.
+                    · 있으면 → DSRE 관리 필드(거래처명·도시·지역·학교명·학교Y/N)만 갱신
+                    · 없으면 → 신규 추가
+                    · DSRE2에서 사라진 건 → 삭제하지 않고 미사용(active=false) 처리
+                    · 매출프로그램 전용 데이터(수기 등록)는 건드리지 않음
+                    거래처구분·학교/학원구분·메모는 수기 입력값이라 동기화가 덮어쓰지 않는다.
+                    DSRE 연동(daesung.dsre.enabled=true) 필요.""")
+    @PostMapping("/sync")
+    public ApiResponse<SchoolSyncResult> sync() {
+        return ApiResponse.success(schoolService.syncFromDsre());
     }
 }

@@ -247,4 +247,46 @@ public class JdbcDsreGateway implements DsreGateway {
                 "UPDATE tbf_booklist_cnt SET state='T' WHERE req_cd=? AND lst_cd=? AND dtl_cd=?",
                 reqCd, lstCd, dtlCd);
     }
+
+    /**
+     * 학교관리 가져오기 원본. tbl_cust_ref(지사↔학교/학원)를 기준으로 거래처·학교 정보를 붙인다.
+     * 학교(MGR_GN='S')는 tbl_school_info, 학원('A')은 tbl_hakwon_info에서 이름을 가져온다.
+     * 도시명은 tbl_city_info PK가 (GROUP_CD, CITY_CD)라 CITY_CD 단독 조인 시 행이 불어난다
+     * → 상관 서브쿼리 LIMIT 1로 고정(행 증식 방지).
+     *
+     * <p><b>거래처·학교 마스터는 LEFT JOIN이다(INNER 아님).</b> 실데이터 검증에서 tbl_cust_ref 76건 중
+     * 32건이 tbl_cust_info에 없는 고아 매핑이었다. INNER로 조이면 매핑의 42%가 소리 없이 사라진다
+     * → 매핑은 살리고 이름만 비운 뒤, 불완전 건수를 동기화 결과에 노출한다.
+     */
+    @Override
+    public List<SchoolRefRow> readSchoolRefs() {
+        return dsreJdbcTemplate.query("""
+                SELECT r.CUST_CD                     cust_cd,
+                       r.MGR_CD                      mgr_cd,
+                       r.MGR_GN                      mgr_gn,
+                       c.CUST_FNM                    cust_nm,
+                       c.CITY_NM                     region,
+                       (SELECT ci.CITY_NM FROM tbl_city_info ci
+                         WHERE ci.CITY_CD = c.CITY_CD LIMIT 1) city,
+                       COALESCE(s.SCH_NM, h.HAK_NM)  sch_nm
+                  FROM tbl_cust_ref r
+                  LEFT JOIN tbl_cust_info c   ON c.CUST_CD = r.CUST_CD
+                  LEFT JOIN tbl_school_info s ON r.MGR_GN = 'S' AND s.MGR_CD = r.MGR_CD
+                  LEFT JOIN tbl_hakwon_info h ON r.MGR_GN = 'A' AND h.MGR_CD = r.MGR_CD
+                 ORDER BY r.CUST_CD, r.MGR_CD
+                """,
+                (rs, i) -> new SchoolRefRow(
+                        trim(rs.getString("cust_cd")),
+                        trim(rs.getString("mgr_cd")),
+                        !"A".equalsIgnoreCase(trim(rs.getString("mgr_gn"))),
+                        rs.getString("cust_nm"),
+                        rs.getString("city"),
+                        rs.getString("region"),
+                        rs.getString("sch_nm")));
+    }
+
+    /** DSRE2 코드 컬럼이 char(5) 고정폭이라 뒤 공백이 붙는다 — 매칭키로 쓰기 전 제거. */
+    private static String trim(String s) {
+        return (s == null) ? null : s.trim();
+    }
 }

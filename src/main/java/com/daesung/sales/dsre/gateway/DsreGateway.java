@@ -46,4 +46,10 @@ public interface DsreGateway {
 
     /** write-back: 해당 (신청×분류×도서)를 처리완료(state='T')로. 중복방지. */
     void markBooklistDone(int reqCd, String lstCd, String dtlCd);
+
+    /**
+     * 학교관리 '가져오기' 원본 — 지사↔학교/학원 매핑 전량(35p).
+     * 근거: DSRE2 {@code tbl_cust_ref} UNIQUE (CUST_CD, MGR_GN, MGR_CD).
+     */
+    java.util.List<SchoolRefRow> readSchoolRefs();
 }
