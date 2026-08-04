@@ -2,6 +2,7 @@ package com.daesung.sales.sale.dto;
 
 import com.daesung.sales.sale.entity.ProcType;
 import com.daesung.sales.salestype.entity.ShipmentType;
+import com.daesung.sales.sale.entity.PackType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotEmpty;
@@ -58,6 +59,11 @@ public record SalesEntryRequest(
 
             @Schema(description = "세트 상품 회차(선택)", example = "4")
             Integer round,
+
+            @Schema(description = "포장구분(물류 회차별 작업현황 집계축, 선택): "
+                    + "INDIVIDUAL_1(개별1·개별봉투)/INDIVIDUAL_2(개별2·개별봉투SET)/CLASS_BUNDLE(반별)",
+                    example = "INDIVIDUAL_1")
+            PackType packType,
 
             @Schema(description = "비고", example = "6월 정상 매출")
             String memo

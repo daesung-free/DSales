@@ -9,6 +9,7 @@ import com.daesung.sales.sale.dto.MonthlyStatementResponse;
 import com.daesung.sales.sale.dto.NetSalesResponse;
 import com.daesung.sales.sale.dto.ReturnInboundRequest;
 import com.daesung.sales.sale.dto.ReturnableResponse;
+import com.daesung.sales.sale.dto.RoundWorkStatusRow;
 import com.daesung.sales.sale.dto.SaleResponse;
 import com.daesung.sales.sale.dto.SalesEntryRequest;
 import com.daesung.sales.sale.dto.SalesEntryResponse;
@@ -361,5 +362,20 @@ public class SaleController {
         byte[] xlsx = excel.toXlsx("매출대비표", cols,
                 saleReportService.yoyComparison(from, to, groupBy, partnerId, catCode).rows());
         return excel.asDownload(xlsx, "매출대비표_" + from + "_" + to + ".xlsx");
+    }
+
+    @Operation(summary = "회차별 작업현황(구 IC회차별작업현황)",
+            description = """
+                    분류×도서×**회차**를 행으로, 포장구분(개별1/개별2/반별) 수량을 열로 펼쳐 보여준다.
+                    레거시 IC회차별작업현황 화면 재현 — 회차가 없는 건(0)은 제외되고, 취소 건도 빠진다.
+                    catCode를 주면 해당 분류만 조회한다.""")
+    @GetMapping("/round-work-status")
+    public ApiResponse<List<RoundWorkStatusRow>> roundWorkStatus(
+            @Parameter(description = "시작일(yyyy-MM-dd)") @RequestParam
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @Parameter(description = "종료일(yyyy-MM-dd)") @RequestParam
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @Parameter(description = "분류코드(선택)") @RequestParam(required = false) String catCode) {
+        return ApiResponse.success(saleReportService.roundWorkStatus(fromDate, toDate, catCode));
     }
 }

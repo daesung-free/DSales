@@ -11,6 +11,7 @@ import com.daesung.sales.sale.dto.BookInoutResponse;
 import com.daesung.sales.sale.dto.BookSalesAgg;
 import com.daesung.sales.sale.dto.CategorySalesAgg;
 import com.daesung.sales.sale.dto.CategorySalesResponse;
+import com.daesung.sales.sale.dto.RoundWorkStatusRow;
 import com.daesung.sales.sale.dto.MonthlyStatementResponse;
 import com.daesung.sales.sale.dto.NetSalesResponse;
 import com.daesung.sales.sale.dto.PartnerProductSalesAgg;
@@ -443,5 +444,25 @@ public class SaleReportService {
                     sale, ret, sale - ret, a.getTeacherQty(), rate));
         }
         return new CategorySalesResponse(from, to, partnerId, catCode, rows);
+    }
+
+    /**
+     * 회차별 작업현황(구 IC회차별작업현황, 물류). 근거: 레거시 IC회차별작업현황.vb.
+     * 분류×도서×회차 단위로 포장구분(개별1/개별2/반별) 수량을 펼쳐 보여준다.
+     * 레거시와 동일하게 회차 없는 건(bookReqSeq=0)은 제외한다.
+     */
+    @Transactional(readOnly = true)
+    public List<RoundWorkStatusRow> roundWorkStatus(LocalDate from, LocalDate to, String catCode) {
+        List<Object[]> raw = saleRepository.roundWorkStatus(from, to,
+                (catCode == null || catCode.isBlank()) ? null : catCode);
+        List<RoundWorkStatusRow> rows = new ArrayList<>(raw.size());
+        for (Object[] r : raw) {
+            rows.add(new RoundWorkStatusRow(
+                    (String) r[0], (String) r[1], (String) r[2], (String) r[3],
+                    (r[4] == null) ? null : ((Number) r[4]).intValue(),
+                    ((Number) r[5]).longValue(), ((Number) r[6]).longValue(),
+                    ((Number) r[7]).longValue(), ((Number) r[8]).longValue()));
+        }
+        return rows;
     }
 }

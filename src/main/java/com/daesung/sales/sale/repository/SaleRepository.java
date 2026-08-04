@@ -353,4 +353,28 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
             ORDER BY LEFT(p.cat_code,1), p.cat_code, p.code
             """, nativeQuery = true)
     List<Object[]> monthlyStatementAgg(@Param("year") int year, @Param("month") int month);
+
+    /**
+     * 회차별 작업현황(구 IC회차별작업현황). 분류×도서×회차 단위로 포장구분별 수량을 펼친다.
+     * 근거: 레거시 IC회차별작업현황.vb — {@code group by catCode, bookCode, bookReqSeq, packType} 후
+     * 포장구분을 열로 피벗한 구조를 한 번에 집계한다.
+     * 레거시의 {@code bookReqSeq<>0} 조건(회차 없는 건 제외)을 그대로 옮겼다.
+     */
+    @Query(value = """
+            SELECT p.cat_code, MAX(p.cat_name), p.code, MAX(p.name), s.book_round,
+                   COALESCE(SUM(CASE WHEN s.pack_type = 'INDIVIDUAL_1' THEN s.qty END), 0) AS indiv1,
+                   COALESCE(SUM(CASE WHEN s.pack_type = 'INDIVIDUAL_2' THEN s.qty END), 0) AS indiv2,
+                   COALESCE(SUM(CASE WHEN s.pack_type = 'CLASS_BUNDLE' THEN s.qty END), 0) AS cls,
+                   COALESCE(SUM(s.qty), 0) AS total
+              FROM sales s JOIN products p ON p.id = s.product_id
+             WHERE s.canceled = false
+               AND s.sales_date BETWEEN :fromDate AND :toDate
+               AND s.book_round IS NOT NULL AND s.book_round <> 0
+               AND (:catCode IS NULL OR p.cat_code = :catCode)
+             GROUP BY p.cat_code, p.code, s.book_round
+             ORDER BY p.cat_code, p.code, s.book_round
+            """, nativeQuery = true)
+    List<Object[]> roundWorkStatus(@Param("fromDate") java.time.LocalDate fromDate,
+                                   @Param("toDate") java.time.LocalDate toDate,
+                                   @Param("catCode") String catCode);
 }

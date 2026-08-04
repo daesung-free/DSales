@@ -114,6 +114,11 @@ public class Sale extends BaseEntity {
     private String schoolName;
 
     /** 세트 상품 회차(레거시 salesData.bookReqSeq). */
+    /** 포장구분(개별1/개별2/반별) — IC회차별작업현황 집계축. 근거: 레거시 distData.packType. */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "pack_type", length = 20)
+    private PackType packType;
+
     @Column(name = "book_round")
     private Integer bookRound;
 
@@ -203,6 +208,11 @@ public class Sale extends BaseEntity {
     }
 
     /** 매출 업로드 세부(학교·회차) 설정. */
+    /** 포장구분 지정(물류 작업현황 집계용). */
+    public void applyPackType(PackType packType) {
+        this.packType = packType;
+    }
+
     public void applyUploadDetail(String schoolCode, String schoolName, Integer bookRound) {
         this.schoolCode = schoolCode;
         this.schoolName = schoolName;
