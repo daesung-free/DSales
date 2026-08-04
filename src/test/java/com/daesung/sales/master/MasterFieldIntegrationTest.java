@@ -183,8 +183,9 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
                 List.of(Map.of("consignmentOutId", coId, "settleQty", 30, "unitPrice", 10000, "supplyRate", 70))));
         assertThat(settle.path("success").asBoolean()).as("정산: %s", settle).isTrue();
 
-        // 정산내역서 — 이 테스트의 거래처 행을 특정(다른 위탁테스트와 공유DB 격리)
-        JsonNode d = data(get("/consignment/settlement-statement?fromDate=2020-01-01&toDate=2030-12-31"));
+        // 정산내역서 — partnerId로 이 테스트의 거래처만 조회(공유 DB라 전역 조회하면 합계가 오염된다)
+        JsonNode d = data(get("/consignment/settlement-statement"
+                + "?fromDate=2020-01-01&toDate=2030-12-31&partnerId=" + partner));
         JsonNode row = rowByField(d.path("rows"), "partnerName", "위탁거래처");
         assertThat(row.path("settleQty").asLong()).isEqualTo(30);
         assertThat(row.path("supplyAmount").asLong()).isEqualTo(210_000);   // 10000×70%×30
