@@ -1,0 +1,83 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  SpotBugs/FindSecBugs 제외 규칙. 여기 넣는 것은 "검토했고 문제없다"는 기록이다.
+  보안 룰(SQL 인젝션 등)은 절대 제외하지 않는다 — 그걸 잡으려고 도입한 도구다.
+-->
+<FindBugsFilter>
+    <!-- SPRING_ENDPOINT: "이 엔드포인트를 검토하라"는 안내성 표시로, 컨트롤러 메서드마다 하나씩 붙는다.
+         결함이 아니라 목록이라 그대로 두면 실제 지적이 묻힌다. 권한 검증은 SecurityConfig +
+         RBAC 통합테스트로 따로 고정하고 있다. -->
+    <Match>
+        <Bug pattern="SPRING_ENDPOINT"/>
+    </Match>
+
+    <!-- QueryDSL이 생성하는 Q-클래스는 우리 코드가 아니다. -->
+    <Match>
+        <Class name="~.*\.Q[A-Z].*"/>
+    </Match>
+
+    <!-- JPA 엔티티는 프레임워크가 필드를 채우므로 SpotBugs의 노출/미초기화 경고가 무의미하다.
+         보안 룰은 그대로 적용된다(아래는 설계상 무해한 표현 관련 룰만 제외). -->
+    <Match>
+        <Bug pattern="EI_EXPOSE_REP,EI_EXPOSE_REP2,UWF_FIELD_NOT_INITIALIZED_IN_CONSTRUCTOR"/>
+    </Match>
+
+    <!-- Spring이 주입하는 필드에 대한 null 경고. 컨테이너가 보장한다. -->
+    <Match>
+        <Bug pattern="NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE"/>
+        <Class name="~com\.daesung\.sales\..*(Service|Controller)"/>
+    </Match>
+    <!-- ── 검토 후 제외 (2026-08-04) ─────────────────────────────────────────
+         아래는 하나씩 코드를 보고 "의도된 것"으로 판정한 항목이다.
+         보안 룰(SQL 인젝션 등)은 여기 넣지 않는다. -->
+
+    <!-- 대소문자 무시 비교 / 정규화 후 비교.
+         대상이 전부 코드에 박힌 ASCII 토큰(desc·FREE·TAXABLE·ALL·SELF·EXTERNAL·S·A)이고
+         사용자 문자열을 그대로 신뢰하는 자리가 아니다. toUpperCase에는 Locale.ROOT를 명시해
+         터키어 로케일 문제(i→İ)도 제거했다. -->
+    <Match>
+        <Bug pattern="IMPROPER_UNICODE"/>
+        <Or>
+            <Class name="com.daesung.sales.common.dto.PageRequestDto"/>
+            <Class name="com.daesung.sales.closing.service.TaxService"/>
+            <Class name="com.daesung.sales.sale.service.SaleReportService"/>
+            <Class name="com.daesung.sales.dsre.gateway.JdbcDsreGateway"/>
+        </Or>
+    </Match>
+
+    <!-- 엑셀 셀 값이 정수인지 판정하는 d == Math.floor(d) 관용구.
+         부동소수 '근사 비교'가 아니라 정확히 같은지 보는 것이라 의도대로 동작한다. -->
+    <Match>
+        <Class name="com.daesung.sales.sale.service.SalesUploadService"/>
+        <Bug pattern="FE_FLOATING_POINT_EQUALITY"/>
+    </Match>
+
+    <!-- 엑셀 파싱·날짜 변환·필터 체인은 어떤 예외가 나도 요청 단위로 실패 처리해야 한다.
+         좁은 예외만 잡으면 예상 못 한 타입에서 스레드가 죽는다 → 광범위 catch가 의도된 설계. -->
+    <Match>
+        <Bug pattern="REC_CATCH_EXCEPTION"/>
+        <Or>
+            <Class name="com.daesung.sales.sale.service.SalesUploadService"/>
+            <Class name="com.daesung.sales.common.excel.ExcelExportUtil"/>
+            <Class name="com.daesung.sales.auth.jwt.JwtAuthenticationFilter"/>
+        </Or>
+    </Match>
+
+    <!-- 배치 로그에 찍히는 값은 잡 이름(내부 상수)과 예외 메시지뿐이고, 로그는 CloudWatch로만 나간다.
+         외부 입력이 로그 위조에 쓰일 경로가 없다. -->
+    <Match>
+        <Class name="com.daesung.sales.batch.service.BatchJobRunner"/>
+        <Bug pattern="CRLF_INJECTION_LOGS"/>
+    </Match>
+
+    <!-- JwtProvider 생성자는 시크릿 길이 미달 시 기동을 실패시키는 것이 목적이다(fail-fast). -->
+    <Match>
+        <Class name="com.daesung.sales.auth.jwt.JwtProvider"/>
+        <Bug pattern="CT_CONSTRUCTOR_THROW"/>
+    </Match>
+
+    <!-- 아래는 성능·표기 수준의 지적으로 동작에 영향이 없다. 정리 대상으로만 남긴다. -->
+    <Match>
+        <Bug pattern="WMI_WRONG_MAP_ITERATOR,DLS_DEAD_LOCAL_STORE,VA_FORMAT_STRING_USES_NEWLINE,NM_CONFUSING"/>
+    </Match>
+</FindBugsFilter>

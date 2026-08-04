@@ -12,6 +12,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -208,7 +209,7 @@ public class TaxService {
         if (taxType == null || taxType.isBlank()) {
             return "ALL";
         }
-        String t = taxType.trim().toUpperCase();
+        String t = taxType.trim().toUpperCase(Locale.ROOT);
         return switch (t) {
             case "FREE", "TAXABLE", "ALL" -> t;
             default -> "ALL";

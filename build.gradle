@@ -2,6 +2,8 @@ plugins {
 	id 'java'
 	id 'org.springframework.boot' version '3.4.5'
 	id 'io.spring.dependency-management' version '1.1.7'
+	// 정적분석(P0-07 / 검수 S-7 "정적분석 SQLi 0건"). SpotBugs + FindSecBugs 보안 룰.
+	id 'com.github.spotbugs' version '6.0.26'
 }
 
 group = 'com.daesung'
@@ -25,6 +27,7 @@ ext {
 	poiVersion = '5.3.0'
 	springdocVersion = '2.7.0'
 	awsJdbcWrapperVersion = '2.6.0'
+	findSecBugsVersion = '1.13.0'
 	awsSdkVersion = '2.46.7'
 	// Docker Engine 29.x(min API 1.40) 대응 — Boot 3.4.5 기본 TC(1.20.6)의 docker-java가 구 API로 핑해 실패.
 	set('testcontainers.version', '1.21.3')
@@ -115,4 +118,30 @@ tasks.named('test') {
 
 clean {
 	delete file(generatedDir)
+}
+
+// ── 정적분석 (P0-07 / 검수 S-7) ────────────────────────────────────────────
+// 근거: 검수 통과 기준 "정적분석 SQLi 0건" — 검사할 도구 자체가 없었다.
+// SpotBugs 본체 + FindSecBugs 플러그인(SQL 인젝션·하드코딩 비밀·경로조작 등 보안 룰).
+dependencies {
+	spotbugsPlugins "com.h3xstream.findsecbugs:findsecbugs-plugin:${findSecBugsVersion}"
+}
+
+spotbugs {
+	toolVersion = '4.8.6'
+	effort = com.github.spotbugs.snom.Effort.valueOf('MAX')  // 보안 룰은 최대 분석에서 잘 잡힌다
+	reportLevel = com.github.spotbugs.snom.Confidence.valueOf('LOW') // 낮은 확신도까지 = 놓치는 것보다 낫다
+	excludeFilter = file('config/spotbugs-exclude.xml')
+	// 테스트 코드는 대상에서 제외(운영 코드만 본다)
+	ignoreFailures = false
+}
+
+// 테스트 소스는 검사하지 않는다 — 픽스처의 문자열 조립까지 잡으면 노이즈만 커진다.
+tasks.named('spotbugsTest') { enabled = false }
+
+tasks.named('spotbugsMain') {
+	reports {
+		html { required = true; outputLocation = file("$buildDir/reports/spotbugs/main.html") }
+		xml { required = true }
+	}
 }

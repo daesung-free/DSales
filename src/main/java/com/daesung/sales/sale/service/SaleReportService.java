@@ -29,6 +29,7 @@ import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -84,7 +85,8 @@ public class SaleReportService {
     public NetSalesResponse netSales(LocalDate fromDate, LocalDate toDate, String contentType) {
         LocalDate from = (fromDate != null) ? fromDate : LocalDate.now().withDayOfYear(1);
         LocalDate to = (toDate != null) ? toDate : LocalDate.now();
-        String filter = (contentType == null || contentType.isBlank()) ? null : contentType.trim().toUpperCase();
+        String filter = (contentType == null || contentType.isBlank())
+                ? null : contentType.trim().toUpperCase(Locale.ROOT);
 
         // 상품별 매입원가(입고 가중평균)
         Map<Long, Long> avgCost = new HashMap<>();

@@ -56,14 +56,19 @@ public class JdbcDsreGateway implements DsreGateway {
         long material = paper + omr + etc + label;
 
         // 2) 인원(PACKTYPE별 DSRE2 함수 호출). 1·2=PACKTYPE1, 3(SET)=PACKTYPE2.
-        String fn = (packtype == 3) ? "FUNC_REQINWON_GET_PACKTYPE2" : "FUNC_REQINWON_GET_PACKTYPE1";
-        Integer inwonObj = dsreJdbcTemplate.queryForObject("SELECT " + fn + "(?)", Integer.class, reqCd);
+        // SQL을 조립하지 않고 완성된 상수 중에서 고른다 — 문자열 결합이 없으면 인젝션 여지 자체가 없다.
+        String sql = (packtype == 3) ? INWON_PACKTYPE2_SQL : INWON_PACKTYPE1_SQL;
+        Integer inwonObj = dsreJdbcTemplate.queryForObject(sql, Integer.class, reqCd);
         int inwon = (inwonObj == null) ? 0 : inwonObj;
 
         long labor = (long) inwon * (basic + trade);
         return new OutboundLogisCost(reqCd, paper, omr, etc, label, material,
                 inwon, basic, trade, labor, material + labor);
     }
+
+    /** PACKTYPE별 인원 산출 함수 호출. 조립 대신 완성된 상수 2개로 둔다(정적분석 SQLi 0건 기준). */
+    private static final String INWON_PACKTYPE1_SQL = "SELECT FUNC_REQINWON_GET_PACKTYPE1(?)";
+    private static final String INWON_PACKTYPE2_SQL = "SELECT FUNC_REQINWON_GET_PACKTYPE2(?)";
 
     private static long num(Object o) {
         return (o == null) ? 0L : ((Number) o).longValue();
@@ -85,6 +90,8 @@ public class JdbcDsreGateway implements DsreGateway {
               JOIN tbl_request_info req ON lc.REQ_CD=req.REQ_CD
               JOIN tbl_logis_cost cost ON cost.DTL_CD=req.DTL_CD
             WHERE lc.RES_GN='R' AND req.REQ_DATE BETWEEN ? AND ?
+              AND (? IS NULL OR req.APPLY_GN = ?)
+              AND (? = 1 OR req.STATE != 'C')
             """;
 
     // 인원비: 신청(REQ) 단위로 인원 1회 산정(PACKTYPE별 함수) 후 인별 단가(BASIC+TRADE)로 합산.
@@ -102,17 +109,24 @@ public class JdbcDsreGateway implements DsreGateway {
                 JOIN tbl_request_info req ON lc.REQ_CD=req.REQ_CD
                 JOIN tbl_logis_cost cost ON cost.DTL_CD=req.DTL_CD
               WHERE lc.RES_GN='R' AND req.REQ_DATE BETWEEN ? AND ?
+                AND (? IS NULL OR req.APPLY_GN = ?)
+                AND (? = 1 OR req.STATE != 'C')
+              GROUP BY req.REQ_CD ) t
             """;
 
     @Override
     public PeriodLogisCost calcOutboundPeriod(LocalDate from, LocalDate to, LogisMode mode, boolean includeCancel) {
-        String applyGn = mode.applyGnClause();
-        String cancel = includeCancel ? " " : " AND req.STATE != 'C' ";
+        // 필터를 SQL 조각으로 이어붙이지 않고 바인딩 값으로 넘긴다(게이트규칙: 파라미터 바인딩 전수 적용).
+        //   applyGn = null 이면 구분 필터 없음(ALL), 값이 있으면 해당 APPLY_GN 만
+        //   cancelFlag = 1 이면 취소 포함, 0 이면 STATE='C' 제외
+        String applyGn = mode.applyGnValue();
+        int cancelFlag = includeCancel ? 1 : 0;
         String f = from.format(YYYYMMDD), t = to.format(YYYYMMDD);
 
-        Map<String, Object> mat = dsreJdbcTemplate.queryForMap(OUT_MATERIAL_SQL + applyGn + cancel, f, t);
-        String laborSql = OUT_LABOR_SQL + applyGn + cancel + " GROUP BY req.REQ_CD ) t";
-        Map<String, Object> lab = dsreJdbcTemplate.queryForMap(laborSql, f, t);
+        Map<String, Object> mat = dsreJdbcTemplate.queryForMap(
+                OUT_MATERIAL_SQL, f, t, applyGn, applyGn, cancelFlag);
+        Map<String, Object> lab = dsreJdbcTemplate.queryForMap(
+                OUT_LABOR_SQL, f, t, applyGn, applyGn, cancelFlag);
 
         return PeriodLogisCost.outbound(mode, from, to,
                 num(mat.get("paper_amt")), num(mat.get("omr_amt")),

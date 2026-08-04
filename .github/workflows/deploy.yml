@@ -22,6 +22,19 @@ jobs:
       - name: 테스트
         run: chmod +x gradlew && ./gradlew test
 
+      # 정적분석(P0-07 / 검수 S-7 "정적분석 SQLi 0건").
+      # 지적이 하나라도 남으면 실패한다 — config/spotbugs-exclude.xml 에 사유를 적어 제외하거나 고칠 것.
+      - name: 정적분석 (SpotBugs + FindSecBugs)
+        run: ./gradlew spotbugsMain
+
+      - name: 정적분석 리포트 보관
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: spotbugs-report
+          path: build/reports/spotbugs/
+          if-no-files-found: ignore
+
   # 2) 이미지 빌드 → ECR push → EC2 배포
   build-deploy:
     needs: test

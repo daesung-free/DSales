@@ -11,12 +11,15 @@ package com.daesung.sales.dsre.gateway;
 public enum LogisMode {
     ALL, NORMAL, ACCIDENT;
 
-    /** 출고 집계 시 APPLY_GN 필터 조각. ALL은 필터 없음. */
-    public String applyGnClause() {
+    /**
+     * 출고 집계 APPLY_GN 바인딩 값. ALL은 null(필터 없음).
+     * SQL 조각이 아니라 <b>값</b>을 돌려준다 — 쿼리 문자열을 조립하지 않기 위해서다.
+     */
+    public String applyGnValue() {
         return switch (this) {
-            case NORMAL -> " AND req.APPLY_GN = 'S' ";
-            case ACCIDENT -> " AND req.APPLY_GN = 'A' ";
-            case ALL -> " ";
+            case NORMAL -> "S";
+            case ACCIDENT -> "A";
+            case ALL -> null;
         };
     }
 }
