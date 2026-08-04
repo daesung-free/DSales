@@ -2,6 +2,8 @@ package com.daesung.sales.consignment.service;
 
 import com.daesung.sales.closing.service.PeriodLockService;
 import com.daesung.sales.common.sequence.SequenceService;
+import com.daesung.sales.audit.entity.StatusEntityType;
+import com.daesung.sales.audit.service.StatusHistoryService;
 import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.common.money.Amounts;
@@ -57,6 +59,7 @@ public class ConsignmentService {
     private final WarehouseRepository warehouseRepository;
     private final PartnerRepository partnerRepository;
     private final PeriodLockService periodLockService;
+    private final StatusHistoryService statusHistoryService;
 
     /** 위탁출고. 품목마다 물류→위탁 이고 + 미결(OPEN) 생성. 한 트랜잭션. 매출 미발생. */
     @Transactional
@@ -154,7 +157,13 @@ public class ConsignmentService {
                     salesNo, req.salesDate(), co.getPartner(), product,
                     s.unitPrice(), s.supplyRate(), s.settleQty(),
                     supplyAmount, tax, totalAmount, co.getSourceOutNo(), settlement, s.memo()));
+            String beforeStatus = co.getStatus().name();   // ★바꾸기 전에 읽는다
             co.settle(s.settleQty());
+            if (!beforeStatus.equals(co.getStatus().name())) {
+                statusHistoryService.record(StatusEntityType.CONSIGNMENT_OUT, co.getId(), "status",
+                        beforeStatus, co.getStatus().name(),
+                        "정산 " + s.settleQty() + "건(" + co.getSourceOutNo() + ")");
+            }
 
             lines.add(new ConsignSettleResponse.Line(
                     salesNo, co.getId(), co.getSourceOutNo(), s.settleQty(),

@@ -1,5 +1,7 @@
 package com.daesung.sales.sale.service;
 
+import com.daesung.sales.audit.entity.StatusEntityType;
+import com.daesung.sales.audit.service.StatusHistoryService;
 import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.common.money.Amounts;
@@ -52,6 +54,7 @@ public class SaleService {
     private final WarehouseRepository warehouseRepository;
     private final InventoryService inventoryService;
     private final PeriodLockService periodLockService;
+    private final StatusHistoryService statusHistoryService;
     private final SequenceService sequenceService;
 
     /**
@@ -301,7 +304,10 @@ public class SaleService {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "이미 취소된 매출입니다: " + sale.getSalesNo());
         }
         periodLockService.assertNotLocked(sale.getSalesDate());
+        boolean before = sale.isCanceled();   // ★바꾸기 전에 읽는다
         sale.cancel();
+        statusHistoryService.record(StatusEntityType.SALE, sale.getId(), "canceled",
+                before, true, "매출 취소(" + sale.getSalesNo() + ")");
 
         // 위탁정산 매출 취소면 미결원장 복원(settled↔remaining 역산). 감사 결함 수정:
         // 이 처리가 없으면 settled_qty가 좌초되어 재정산 불가·재무/물류 desync.

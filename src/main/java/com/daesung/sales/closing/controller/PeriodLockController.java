@@ -37,7 +37,7 @@ public class PeriodLockController {
             description = "마감된 월을 다시 열어 재무 쓰기를 허용. (해제 권한 정책은 발주처 확인 대상)")
     @PostMapping("/unlock")
     public ApiResponse<PeriodLockResponse> unlock(@Valid @RequestBody PeriodLockRequest req) {
-        return ApiResponse.success(periodLockService.unlock(req.year(), req.month()));
+        return ApiResponse.success(periodLockService.unlock(req.year(), req.month(), req.memo()));
     }
 
     @Operation(summary = "월마감 현황 조회", description = "연도별 월 마감 상태 목록.")

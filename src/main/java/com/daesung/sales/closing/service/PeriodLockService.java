@@ -3,6 +3,9 @@ package com.daesung.sales.closing.service;
 import com.daesung.sales.closing.dto.PeriodLockResponse;
 import com.daesung.sales.closing.entity.PeriodLock;
 import com.daesung.sales.closing.repository.PeriodLockRepository;
+import com.daesung.sales.audit.entity.StatusEntityType;
+import com.daesung.sales.audit.service.StatusHistoryService;
+import com.daesung.sales.common.audit.CurrentAuditor;
 import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
 import java.time.LocalDate;
@@ -20,6 +23,8 @@ import org.springframework.transaction.annotation.Transactional;
 public class PeriodLockService {
 
     private final PeriodLockRepository periodLockRepository;
+    private final StatusHistoryService statusHistoryService;
+    private final CurrentAuditor currentAuditor;
     private final PeriodLockCache periodLockCache;
 
     /** 해당 일자가 속한 월이 마감이면 PERIOD_LOCKED. 모든 재무 쓰기 API의 횡단 검사(캐시 조회). */
@@ -31,21 +36,28 @@ public class PeriodLockService {
         }
     }
 
-    /** 월마감(잠금). 없으면 생성 후 잠금. 캐시 무효화. */
+    /** 월마감(잠금). 없으면 생성 후 잠금. 캐시 무효화. 상태변경 이력 기록. */
     @Transactional
     public PeriodLockResponse lock(int year, int month, String memo) {
         PeriodLock pl = getOrCreate(year, month);
-        pl.lock(null, memo); // lockedBy는 RBAC 도입 시 인증 주체로
+        boolean before = pl.isLocked();   // ★바꾸기 전에 읽는다
+        pl.lock(currentAuditor.username(), memo);
         periodLockCache.evict(year, month);
+        // 같은 월을 여러 번 여닫아도 각 회차가 남는다(기존엔 마지막 상태만 남아 중간 기록이 소실됐다).
+        statusHistoryService.record(StatusEntityType.PERIOD_LOCK, pl.getId(), "locked",
+                before, true, memo);
         return PeriodLockResponse.from(pl);
     }
 
-    /** 월마감 해제(재오픈). 캐시 무효화. */
+    /** 월마감 해제(재오픈). 캐시 무효화. 상태변경 이력 기록 — "왜 풀었나"가 감사 핵심 질문이다. */
     @Transactional
-    public PeriodLockResponse unlock(int year, int month) {
+    public PeriodLockResponse unlock(int year, int month, String reason) {
         PeriodLock pl = getOrCreate(year, month);
+        boolean before = pl.isLocked();
         pl.unlock();
         periodLockCache.evict(year, month);
+        statusHistoryService.record(StatusEntityType.PERIOD_LOCK, pl.getId(), "locked",
+                before, false, reason);
         return PeriodLockResponse.from(pl);
     }
 
