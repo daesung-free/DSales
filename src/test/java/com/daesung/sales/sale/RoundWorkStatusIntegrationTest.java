@@ -22,7 +22,9 @@ class RoundWorkStatusIntegrationTest extends IntegrationTestSupport {
 
     /** 실행별 고유 접두어 — 테스트 워커 JVM 재사용 시 코드 충돌 방지. */
     private static final String SFX = "-" + (System.nanoTime() % 1_000_000L);
-    private static final String CAT = "RW" + SFX;
+    /** 분류코드는 [영문1자][연도4자][영문·숫자1~3자] 형식이라 뒤 3자만 실행별로 달리한다. */
+    private static final String CAT = "R2026" + Long.toString(
+            Math.abs(System.nanoTime()) % 46_656L, 36).toUpperCase(java.util.Locale.ROOT);
 
     private Long partner;
     private Long warehouse;

@@ -35,11 +35,12 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
         // 거래처(공급·판매 겸용)
         partnerId = createId("/masters/clients",
                 Map.of("code", "CUST-1", "name", "테스트거래처", "type", "NORMAL"));
-        // 상품(catCode): 대분류 A(A01×2, A02), B(B01)
-        pA011 = product("BK-A011", "A01", "국어모의");
-        pA012 = product("BK-A012", "A01", "국어모의");
-        pA021 = product("BK-A021", "A02", "수학모의");
-        pB011 = product("BK-B011", "B01", "교재");
+        // 상품(catCode): 대분류 A(A2026A01×2, A2026A02), B(B2026B01)
+        // 분류코드는 [영문1자][연도4자][영문·숫자1~3자] 형식이어야 한다(실데이터 규칙).
+        pA011 = product("BK-A011", "A2026A01", "국어모의");
+        pA012 = product("BK-A012", "A2026A01", "국어모의");
+        pA021 = product("BK-A021", "A2026A02", "수학모의");
+        pB011 = product("BK-B011", "B2026B01", "교재");
         // 입고 1000씩 @원가 3000
         for (Long pid : List.of(pA011, pA012, pA021, pB011)) {
             inbound(whId, pid);
@@ -81,7 +82,7 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
         return createId("/masters/products", Map.of(
                 "code", code, "name", code + " 외부콘텐츠", "contentType", "EXTERNAL", "set", false,
                 "price", 10000, "taxFree", false, "grade", "고3",
-                "catCode", "E01", "catName", "이감국어", "useYn", true));
+                "catCode", "E2026E01", "catName", "이감국어", "useYn", true));
     }
 
     private void sale(String date, Long whId, Long productId, String shipmentType, int rate, int qty) {
@@ -116,7 +117,7 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
         JsonNode d = data(get("/sales/statement?from=2026-06-01&to=2026-06-30&category=SALE"));
         JsonNode rows = d.path("rows");
         JsonNode a01 = rowWhere(rows, "rowType", "CAT_SUBTOTAL");  // 첫 소계 = A01
-        assertThat(a01.path("catCode").asText()).isEqualTo("A01");
+        assertThat(a01.path("catCode").asText()).isEqualTo("A2026A01");
         assertThat(a01.path("qty").asLong()).isEqualTo(30);        // 10+20
         assertThat(a01.path("amount").asLong()).isEqualTo(150_000);
         JsonNode grand = rowWhere(rows, "rowType", "GRAND_TOTAL");
@@ -156,7 +157,7 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
     @Test
     @DisplayName("도서입출고현황 — 매입+매출 이중장부 + 정본 재고")
     void 도서입출고현황() {
-        JsonNode d = data(get("/sales/book-inout?from=2026-06-01&to=2026-06-30&catCode=A01"));
+        JsonNode d = data(get("/sales/book-inout?from=2026-06-01&to=2026-06-30&catCode=A2026A01"));
         JsonNode a011 = rowWhere(d.path("rows"), "bookCode", "BK-A011");
         assertThat(a011.path("inboundQty").asLong()).isEqualTo(1000);
         assertThat(a011.path("inboundAmount").asLong()).isEqualTo(3_000_000);  // 1000×3000
@@ -238,7 +239,7 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
     @DisplayName("계산서 10일 분기 — 10일 이전=수정발행/이후=익월 마이너스")
     void 계산서_10일분기() {
         Long wh = createId("/masters/warehouses", Map.of("code", "WH-ADJ", "name", "조정창고", "type", "MAIN"));
-        Long p = product("ADJ-BK", "Z01", "조정테스트");
+        Long p = product("ADJ-BK", "Z2026Z01", "조정테스트");
         inbound(wh, p);   // 재고 확보(반품 재고복구 대상)
         sale("2026-02-01", wh, p, "NORMAL_SHIP", 100, 20);   // 교재식 반품 선행 출고(공급률 100, 20부)
         // 2월로 격리: 5일(≤10=수정발행) 반품 10부, 20일(>10=익월마이너스) 반품 5부
@@ -269,7 +270,7 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
     @DisplayName("반품입고(29p) — 매출반품 라인 + 재고 복구 한 트랜잭션")
     void 반품입고() {
         Long wh = createId("/masters/warehouses", Map.of("code", "WH-RI", "name", "반품창고", "type", "MAIN"));
-        Long p = product("RI-BK", "R01", "반품테스트");
+        Long p = product("RI-BK", "R2026R01", "반품테스트");
         inbound(wh, p);   // 재고 1000
         sale("2026-05-01", wh, p, "NORMAL_SHIP", 100, 20);   // 교재식 반품 선행 출고(공급률 100, 20부) → 재고 980
 
@@ -297,7 +298,7 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
     @DisplayName("월별매출액명세서(37p) — 성적처리/비처리 인원·금액 분리 + 과세·부가세")
     void 월별매출액명세서() {
         Long wh = createId("/masters/warehouses", Map.of("code", "WH-37", "name", "37창고", "type", "MAIN"));
-        Long mp = product("MST-M01", "M01", "더프모의");   // 과세(taxFree=false), 대분류 'M'
+        Long mp = product("MST-M01", "M2026M01", "더프모의");   // 과세(taxFree=false), 대분류 'M'
         inbound(wh, mp);   // 재고 확보(1000)
         // 3월로 격리: 성적처리 30명 + 비처리 20명 (같은 상품)
         saleP("2026-03-10", wh, mp, "NORMAL_SHIP", 100, 30, "GRADED");

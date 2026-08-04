@@ -29,8 +29,9 @@ public record ProductCreateRequest(
         @Schema(description = "학년", example = "고3")
         String grade,
 
-        @Schema(description = "분류코드(계층, 첫 글자=대분류)", example = "A01")
-        String catCode,
+        @Schema(description = "분류코드 — [영문1자][연도4자][영문·숫자1~3자]. 첫 글자=대분류, 연도가 코드에 포함된다",
+                example = "M2026A01")
+        @CatCode String catCode,
 
         @Schema(description = "분류명", example = "국어 모의고사")
         String catName,

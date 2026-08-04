@@ -614,4 +614,38 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
         rows.forEach(r -> out.add(r.path("productCode").asText()));
         return out;
     }
+
+    @Test
+    @DisplayName("분류코드 형식 검증 — 연도 없는 코드는 거부, 6자·8자 실제 형식은 통과")
+    void 분류코드_형식검증() {
+        // 레거시 실데이터 4,600건이 모두 따르는 형식: [영문1자][연도4자][영문·숫자1~3자]
+        // 법인마다 뒤 자릿수가 다르다 — 교재 6자(A2026A), 연구소 8자(M2026A01). 둘 다 허용해야 한다.
+        assertThat(post("/masters/products", Map.of(
+                "code", "CC-OK6", "name", "6자형식", "contentType", "SELF",
+                "catCode", "A2026A")).path("success").asBoolean())
+                .as("교재 법인 6자 형식은 통과해야 함").isTrue();
+        assertThat(post("/masters/products", Map.of(
+                "code", "CC-OK8", "name", "8자형식", "contentType", "SELF",
+                "catCode", "M2026A01")).path("success").asBoolean())
+                .as("연구소 8자 형식은 통과해야 함").isTrue();
+
+        // 연도가 빠진 옛 표기(A01)는 리포트 집계축을 깨뜨린다 → 거부
+        JsonNode noYear = post("/masters/products", Map.of(
+                "code", "CC-BAD1", "name", "연도없음", "contentType", "SELF", "catCode", "A01"));
+        assertThat(noYear.path("success").asBoolean()).as("연도 없는 코드: %s", noYear).isFalse();
+        assertThat(noYear.path("error").path("code").asText()).isEqualTo("INVALID_INPUT");
+
+        // 소문자·특수문자·자릿수 초과도 거부
+        for (String bad : new String[] {"a2026A01", "A2026A0123", "A2026-01", "2026A01"}) {
+            assertThat(post("/masters/products", Map.of(
+                    "code", "CC-BAD-" + bad.hashCode(), "name", "불량", "contentType", "SELF",
+                    "catCode", bad)).path("success").asBoolean())
+                    .as("거부돼야 할 코드: %s", bad).isFalse();
+        }
+
+        // 미입력은 허용 — 분류를 나중에 지정하는 상품이 있다
+        assertThat(post("/masters/products", Map.of(
+                "code", "CC-NULL", "name", "분류미지정", "contentType", "SELF")).path("success").asBoolean())
+                .as("분류코드 미입력은 허용").isTrue();
+    }
 }
