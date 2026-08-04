@@ -64,6 +64,20 @@ jobs:
           #   Secrets Manager 조회를 무력화한다(=로테이션 장애 재발). DB_HOST/DB_SECRET_ID 만 전달.
           script: |
             set -e
+            # 필수 시크릿 선검사 — 비어 있으면 컨테이너를 띄우지 않고 즉시 실패한다.
+            # 빈 값으로 띄우면 접속 URL이 'secretsManagerSecretId=' 로 만들어져 앱이 기동 중 죽고,
+            # 그때는 health 폴링 5분을 다 태운 뒤에야 원인을 알 수 있다(2026-08-04 배포 실패).
+            missing=""
+            [ -n "$DB_HOST" ]      || missing="$missing DB_HOST"
+            [ -n "$DB_SECRET_ID" ] || missing="$missing DB_SECRET_ID"
+            [ -n "$REDIS_HOST" ]   || missing="$missing REDIS_HOST"
+            [ -n "$JWT_SECRET" ]   || missing="$missing JWT_SECRET"
+            if [ -n "$missing" ]; then
+              echo "!! GitHub Secret 미설정:$missing"
+              echo "   저장소 Settings → Secrets and variables → Actions 에서 등록할 것."
+              echo "   DB_SECRET_ID = RDS 관리형 시크릿 이름 또는 ARN (예: rds!db-xxxxxxxx)"
+              exit 1
+            fi
             echo "$ECR_PW" | docker login --username AWS --password-stdin "$REGISTRY"
             docker pull "$REGISTRY/dsales:latest"
             docker stop dsales || true
