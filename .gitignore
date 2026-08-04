@@ -51,3 +51,6 @@ reference/legacy/
 
 ### 개발 가이드/워크프로세스 (내부용) ###
 guide/
+
+### graphify 코드 인덱스 — 레거시 소스 내용이 그래프에 포함됨, 커밋 금지 ###
+graphify-out/

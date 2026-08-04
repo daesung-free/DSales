@@ -131,6 +131,12 @@ python3 <script> --sheet <ID> --tab <탭명>   # scratchpad의 read_*.py 참고.
   - **참고 템플릿**: `product`/`warehouse`/`partner` 패키지(상품·창고·거래처 CRUD)가 표준 예시. 새 API는 이걸 복제·변형.
   - 보안: **인증 필수(JWT)**. 로그인/토큰재발급/부트스트랩·Swagger·`/actuator/health`만 공개, 그 외 인증 요구. 새 API는 기본적으로 인증 하에 동작(테스트 시 `POST /auth/login`으로 토큰 받아 `Authorization: Bearer` 헤더). **역할별 세부 권한 매트릭스(마감=FINANCE 등)는 발주처 확정 후 경로/@PreAuthorize로 확장** — 현재는 "인증된 사용자면 허용"까지. `created_by/updated_by`는 로그인 사용자 자동. Swagger는 `/swagger-ui/index.html`.
 - 언어: 산출물·주석·커밋 메시지는 한국어 우선(팀 문서가 한국어).
+- **★ 코드 탐색은 graphify 인덱스 먼저(2026-07-31 도입)**: 우리 소스(`src`, Java+Flyway SQL)의 구조·호출관계·영향범위를 물을 땐 grep 난사 전에 `graphify` 쿼리부터. 로컬 AST라 LLM 호출 0회·2초.
+  - `graphify affected "<심볼>" --depth 2` — 변경 영향범위(예: `Amounts` 수정 시 호출부 4곳). **불변식 검증에 특히 유용**(금액 단일소스·재고 단일공식).
+  - `graphify query "<질문>"` / `explain "<노드>"` / `path "A" "B"` / `god-nodes` — 탐색·설명·경로·허브.
+  - **갱신**: 코드 변경 후 `graphify extract . --code-only --no-cluster --force`. **안 돌리면 낡은 지도를 보고 틀린 답을 낸다** — 커밋 전후로 갱신할 것.
+  - **한계(반드시 인지)**: ① `reference/legacy/`는 `.gitignore` 대상이라 **인덱스에 없음** → 레거시 대조는 종전대로 `grep`/`Read`. ② **`.vb` 파서 자체가 없음** — `DsSales-main` 121개(`제품수불부.vb`·`매출가져오기.vb` 등)는 graphify로 못 찾는다. 레거시 3중 확인 규율은 그대로 유지.
+  - 산출물 `graphify-out/`은 **커밋 금지**(gitignore됨).
 
 ## 10. 지금까지의 진행 (세션 컨텍스트) — 실측 최신(스키마 V1~V13, git 52커밋)
 
@@ -194,7 +200,9 @@ python3 <script> --sheet <ID> --tab <탭명>   # scratchpad의 read_*.py 참고.
 - **[추가3] 거래처 도시명/거래처명1·2(미구현)**: Partner에 **도시명·거래처명1(상호만) 신규 컬럼**, 기존 `name`→거래처명2(풀네임 유지). **DSRE `tbl_cust_info`에 이미 3필드 분리 존재**(`CITY_NM`=도시/관할·`CUST_NM`=상호·`CUST_FNM`=풀네임, 실데이터 74건 확인) → 거래처코드 조인해 그대로 매핑. ⚠️CITY_NM 값이 일부 법인은 브랜드/그룹명(DSRE 원본 따름, 우리가 보정 안 함).
 - **[추가4] 조회화면 반영(미구현)**: [출고/반품조회]·[통합매출조회] 응답에 도시명/거래처명1/거래처명2 노출(현 `SaleResponse`엔 `partnerName`만) + **'세부거래처' 컬럼(=학교명 중복) 삭제**. 추가3의 후속.
 - **착수 우선순위(전부 회신 대기 없이 지금 가능 — 양식·레거시 대조 완료로 추가1도 착수 가능해짐)**: ~~추가3(거래처 컬럼)~~ **✅완료(커밋 0f000bf, V20)** →~~추가4(조회 반영)~~**✅완료(SaleResponse에 partnerCityName·partnerName1)**→~~추가2(반품 교재식)~~**✅완료(GET /sales/returnable + return-inbound 범위검증, RETURN_EXCEEDS)**→~~추가1(매출 업로드)~~**✅완료(POST /sales/upload, V21 학교·회차, SalesUploadService)**. **발주처 추가요청 4건 전부 완료.**
-- **📌 잔여작업 상세 = `guide/잔여작업_백엔드.md`(gitignore·비커밋)** — 각 잔여 작업의 파일 위치·레거시 근거·구현 메모가 여기 있음. 세션 재개 시 이 파일부터 읽을 것.
+- **📌 잔여작업 상세 = `guide/잔여작업_백엔드.md`(gitignore·비커밋)** — 각 잔여 작업의 파일 위치·레거시 근거·구현 메모 + **세션 진척 스냅샷**이 여기 있음. **세션 재개 시 이 파일부터 읽을 것.**
+- **★ 진척 스냅샷(2026-07-31): 스키마 V1~V24, 통합테스트 47건.** 이번 세션 완료: 위탁정산 동시성 락 / 거래처명분리(V20) / 통합매출조회 12p 데이터 완비(V23: 학교·학년(product.grade)·분류·회차·지역·거래처구분) / 반품 교재식(returnable, **단 entries RETURN 경로는 미통일=75%**) / 매출 엑셀업로드(V21) / 학교관리 마스터(V22) / 도서 상품년도·상품구분(V24) / 채권·대시보드 테스트. 프론트(Netlify) 화면 데이터 갭 대조 완료 — 남음: 매출상세대시보드·물류비용마스터·작업요청서/결과/응시현황(물류·DSRE)·필드명 @JsonProperty 별칭.
+- **★★ 데이터 이관 = 실데이터 왔음(엑셀!). 오해 금지.** 매출프로그램 레거시 실데이터 = **드라이브 `DSLab.xlsx`(id `1JdvGbJL-tq2NWV6cgmT4-kOw1QmIjeN1`)·`DSTxtBook.xlsx`(id `15T4tvKFfcZLIIQeWGaxH4YxFNPwPNwbt`)** — 시트=테이블(salesData·custData·bookData·schData·carrData·AmtData, 두 법인 실 행 있음). `reference/legacy/data/dsre2_*.sql`은 **DSRE2**(연동대상, 분리유지)로 **이관 대상 아님**. → **이관 착수 가능**(매핑표+엑셀 임포터+법인축 결정). Drive API 다운로드→openpyxl로 읽음.
 
 **★ 프론트 프로토타입(Netlify) 데이터 커버리지 대조 (2026-07-30, 내일 개발보고→발주처 컨펌 시 아래 ⚠️/❌ 채워야 함)**:
 - 프론트 프로토타입 = React SPA **30화면**(메뉴 라우트+한글 라벨 확인). 번들에서 화면 컬럼 정의 추출해 우리 API 데이터셋과 대조함.
