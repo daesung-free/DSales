@@ -1,0 +1,35 @@
+# AWS 배포 전용 프로파일 (SPRING_PROFILES_ACTIVE=aws).
+# 목적: DB 계정/비번을 이미지·env·GitHub Secret 어디에도 두지 않고 Secrets Manager에서만 가져온다.
+#
+# ★왜 JDBC 드라이버를 바꾸나
+#   RDS 관리형 자격증명(Manage master credentials in AWS Secrets Manager)은 AWS가 주기적으로 비번을 로테이션한다.
+#   비번을 기동 시 1회만 읽어 두면 로테이션 순간부터 신규 커넥션이 전부 Access denied 로 죽는다(2026-08-01 장애).
+#   AWS Advanced JDBC Wrapper의 awsSecretsManager 플러그인은 커넥션을 만들 때마다 캐시된 시크릿을 쓰고,
+#   인증에 실패하면 캐시를 버리고 시크릿을 재조회해 한 번 더 시도한다 → 재시작 없이 로테이션을 따라간다.
+#
+# ★전제(운영 셋업)
+#   - EC2 인스턴스 프로파일에 secretsmanager:GetSecretValue 권한 (대상 시크릿 ARN 한정)
+#   - DB_SECRET_ID = RDS 관리형 시크릿 이름/ARN (예: rds!db-xxxxxxxx)
+#   - 시크릿 JSON 은 {"username":..., "password":...} 형식 (RDS 관리형 기본 형식)
+#   - 로컬/테스트는 이 프로파일을 쓰지 않는다 → default 프로파일의 순정 mysql-connector-j 경로 유지
+
+spring:
+  datasource:
+    driver-class-name: software.amazon.jdbc.Driver
+    # jdbc:aws-wrapper:mysql://... 형태. 호스트/DB명만 env 로 받고 자격증명은 URL 에 넣지 않는다.
+    # ⚠️ 한 줄 유지 — YAML 접기(>-)를 쓰면 줄바꿈이 공백이 되어 URL 이 깨진다.
+    url: "jdbc:aws-wrapper:mysql://${DB_HOST}:${DB_PORT:3306}/${DB_NAME:sales}?characterEncoding=UTF-8&useUnicode=true&serverTimezone=Asia/Seoul&wrapperPlugins=awsSecretsManager&secretsManagerSecretId=${DB_SECRET_ID}&secretsManagerRegion=${AWS_REGION:ap-northeast-2}"
+    # 아래 둘은 플러그인이 시크릿 값으로 덮어쓴다. default 프로파일의 로컬 더미(sales/sales)가
+    # 남아 오해를 사지 않도록 명시적으로 비워 둔다.
+    username: ""
+    password: ""
+    hikari:
+      # 자격증명이 어긋났을 때 30초씩 붙들려 헬스체크가 통째로 멎는 것을 막는다(장애 당시 30초 블로킹).
+      # 첫 커넥션은 Secrets Manager 조회 + IMDS 자격증명 획득이 얹히므로 5초는 빠듯 → 10초.
+      connection-timeout: 10000
+      validation-timeout: 5000
+
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT:6379}

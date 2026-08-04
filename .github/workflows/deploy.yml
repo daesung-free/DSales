@@ -53,26 +53,30 @@ jobs:
         id: token
         run: echo "pw=$(aws ecr get-login-password --region $AWS_REGION)" >> "$GITHUB_OUTPUT"
 
-      - name: EC2 배포 (SSH) — 설정도 Secrets에서 자동 주입(수동 app.env 불필요)
+      - name: EC2 배포 (SSH) — DB 자격증명은 Secrets Manager에서 앱이 직접 조회
         uses: appleboy/ssh-action@v1
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
-          envs: REGISTRY,ECR_PW,DB_URL,DB_USER,DB_PASSWORD,REDIS_HOST,JWT_SECRET
+          envs: REGISTRY,ECR_PW,DB_HOST,DB_SECRET_ID,REDIS_HOST,JWT_SECRET,AWS_REGION
+          # ★DB 계정/비번을 -e 로 넣지 않는다. 넣으면 환경변수가 application-aws.yml 보다 우선순위가 높아
+          #   Secrets Manager 조회를 무력화한다(=로테이션 장애 재발). DB_HOST/DB_SECRET_ID 만 전달.
           script: |
+            set -e
             echo "$ECR_PW" | docker login --username AWS --password-stdin "$REGISTRY"
             docker pull "$REGISTRY/dsales:latest"
             docker stop dsales || true
             docker rm dsales || true
             docker run -d --name dsales --restart unless-stopped -p 8080:8080 \
               --log-driver=awslogs \
-              --log-opt awslogs-region=ap-northeast-2 \
+              --log-opt awslogs-region="$AWS_REGION" \
               --log-opt awslogs-group=/dsales/app \
               --log-opt awslogs-create-group=true \
-              -e SPRING_DATASOURCE_URL="$DB_URL" \
-              -e SPRING_DATASOURCE_USERNAME="$DB_USER" \
-              -e SPRING_DATASOURCE_PASSWORD="$DB_PASSWORD" \
+              -e SPRING_PROFILES_ACTIVE=aws \
+              -e AWS_REGION="$AWS_REGION" \
+              -e DB_HOST="$DB_HOST" \
+              -e DB_SECRET_ID="$DB_SECRET_ID" \
               -e SPRING_DATA_REDIS_HOST="$REDIS_HOST" \
               -e SPRING_DATA_REDIS_PORT=6379 \
               -e DAESUNG_SECURITY_JWTSECRET="$JWT_SECRET" \
@@ -81,8 +85,29 @@ jobs:
         env:
           REGISTRY: ${{ steps.ecr.outputs.registry }}
           ECR_PW: ${{ steps.token.outputs.pw }}
-          DB_URL: ${{ secrets.DB_URL }}
-          DB_USER: ${{ secrets.DB_USER }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          DB_HOST: ${{ secrets.DB_HOST }}
+          DB_SECRET_ID: ${{ secrets.DB_SECRET_ID }}
           REDIS_HOST: ${{ secrets.REDIS_HOST }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          AWS_REGION: ${{ env.AWS_REGION }}
+
+      # 배포가 "컨테이너는 떴는데 DB 못 붙음" 상태로 조용히 성공 처리되는 것을 막는다.
+      # (2026-08-01 장애가 며칠간 안 잡힌 이유 = 기동 검증이 없었음)
+      - name: 기동 검증 (health)
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ec2-user
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            for i in $(seq 1 30); do
+              body=$(curl -s -m 10 http://localhost:8080/actuator/health || true)
+              case "$body" in
+                *'"status":"UP"'*) echo "health OK: $body"; exit 0 ;;
+              esac
+              echo "waiting for health... ($i/30) $body"
+              sleep 10
+            done
+            echo "!! 기동 검증 실패 — 컨테이너 로그:"
+            docker logs --tail 100 dsales
+            exit 1

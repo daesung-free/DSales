@@ -24,6 +24,8 @@ ext {
 	querydslVersion = '5.1.0'
 	poiVersion = '5.3.0'
 	springdocVersion = '2.7.0'
+	awsJdbcWrapperVersion = '2.6.0'
+	awsSdkVersion = '2.46.7'
 	// Docker Engine 29.x(min API 1.40) 대응 — Boot 3.4.5 기본 TC(1.20.6)의 docker-java가 구 API로 핑해 실패.
 	set('testcontainers.version', '1.21.3')
 }
@@ -37,6 +39,14 @@ dependencies {
 	// --- Persistence (JPA + QueryDSL + MySQL 8) ---
 	implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
 	runtimeOnly 'com.mysql:mysql-connector-j'
+
+	// --- DB 자격증명을 Secrets Manager에서 (aws 프로파일 전용) ---
+	// AWS Advanced JDBC Wrapper의 awsSecretsManager 플러그인: 커넥션 생성 시마다 시크릿의 계정/비번을 사용하고,
+	// 인증 실패 시 캐시를 버리고 시크릿을 재조회해 1회 재시도 → RDS 관리형 자격증명 자동 로테이션 중에도 앱이 안 죽는다.
+	// (로컬/테스트는 default 프로파일 = 순정 mysql-connector-j 경로 그대로. application-aws.yml에서만 드라이버 교체)
+	runtimeOnly "software.amazon.jdbc:aws-advanced-jdbc-wrapper:${awsJdbcWrapperVersion}"
+	runtimeOnly platform("software.amazon.awssdk:bom:${awsSdkVersion}")
+	runtimeOnly 'software.amazon.awssdk:secretsmanager'
 	implementation "com.querydsl:querydsl-jpa:${querydslVersion}:jakarta"
 	annotationProcessor "com.querydsl:querydsl-apt:${querydslVersion}:jakarta"
 	annotationProcessor 'jakarta.annotation:jakarta.annotation-api'
