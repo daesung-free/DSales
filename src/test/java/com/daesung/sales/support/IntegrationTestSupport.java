@@ -46,6 +46,7 @@ public abstract class IntegrationTestSupport {
         r.add("daesung.dsre.enabled", () -> "false");
         r.add("daesung.supplier.name", () -> "(주)대성테스트");
         r.add("daesung.supplier.biz-no", () -> "111-11-11111");
+        r.add("daesung.supplier.tel", () -> "02-880-2301");
     }
 
     @Autowired

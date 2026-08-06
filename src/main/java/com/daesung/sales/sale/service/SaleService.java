@@ -33,6 +33,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -158,13 +159,12 @@ public class SaleService {
         Map<String, Long> returnable = loadReturnable(partnerId);
         for (ResolvedItem r : resolved) {
             if (r.salesCategory() == SalesCategory.SALE) {
-                returnable.merge(returnableKey(r.product().getId(), r.unitPrice(), r.supplyRate()),
-                        (long) r.item().qty(), Long::sum);
+                returnable.merge(returnableKey(r.product().getId()), (long) r.item().qty(), Long::sum);
             }
         }
         for (ResolvedItem r : resolved) {
             if (r.salesCategory() == SalesCategory.RETURN) {
-                consumeReturnable(returnable, r.product(), r.unitPrice(), r.supplyRate(), r.item().qty());
+                consumeReturnable(returnable, r.product(), r.item().qty());
             }
         }
     }
@@ -195,7 +195,7 @@ public class SaleService {
                     .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                             "상품이 없습니다. id=" + item.productId()));
 
-            consumeReturnable(returnable, product, item.unitPrice(), item.supplyRate(), item.qty());
+            consumeReturnable(returnable, product, item.qty());
 
             Amounts amt = Amounts.of(item.unitPrice(), item.supplyRate(), item.qty(), product.isTaxFree());
             long supplyAmount = amt.supplyAmount();
@@ -227,55 +227,77 @@ public class SaleService {
         return new SalesEntryResponse(partner.getId(), partner.getName(), lines);
     }
 
-    /** 반품가능내역 맵 키: 도서×정가×공급률(교재식 반품은 원 출고건 공급률·정가 단위로 범위 관리). */
-    private static String returnableKey(Long productId, Integer unitPrice, Integer supplyRate) {
-        return productId + ":" + unitPrice + ":" + supplyRate;
+    /**
+     * 반품가능내역 맵 키: <b>도서 단위</b>.
+     *
+     * <p>정가·공급률을 키에 넣지 않는다 — 발주처 확정(2026-08-05 데이터구조 확정사항 2.2):
+     * "공급률은 원 출고건 값을 기준으로 <b>표시</b>하되, 담당자가 필요 시 <b>수정 가능</b>해야 함(고정·잠금 아님)".
+     * 키에 공급률이 있으면 담당자가 값을 바꾸는 순간 원 출고건을 못 찾아 반품이 거부된다(=사실상 잠금).
+     * 범위 판정은 "거래처의 그 도서를 얼마나 내보냈나"만 보고, 정가·공급률은 입력값을 그대로 쓴다.
+     */
+    private static String returnableKey(Long productId) {
+        return String.valueOf(productId);
     }
 
     /**
-     * 거래처의 도서×정가×공급률별 반품가능수량(누적 판매출고 − 기반품) 맵.
+     * 거래처의 <b>도서별</b> 반품가능수량(누적 판매출고 − 기반품) 맵.
      * 교재식 반품 규칙의 단일 소스 — 반품입고(29p)·매출등록 RETURN 라인이 모두 이걸 쓴다.
+     * 같은 도서가 정가·공급률 달리 여러 번 출고됐어도 도서 단위로 합산한다.
      */
     private Map<String, Long> loadReturnable(Long partnerId) {
         Map<String, Long> returnable = new HashMap<>();
         for (ReturnableAgg a : saleRepository.returnableAgg(partnerId, null)) {
-            returnable.put(returnableKey(a.getProductId(), a.getUnitPrice(), a.getSupplyRate()),
-                    a.getSaleQty() - a.getReturnQty());
+            returnable.merge(returnableKey(a.getProductId()),
+                    a.getSaleQty() - a.getReturnQty(), Long::sum);
         }
         return returnable;
     }
 
     /**
      * 반품 1건 범위검증 + 잔여 차감(한 요청 내 여러 라인은 누적 차감).
-     * 반품수량 ≤ (누적 판매출고 − 기반품), 정가·공급률은 원 출고건과 일치해야 함(불일치=잔여 0 → 거부).
+     * 반품수량 ≤ (그 도서의 누적 판매출고 − 기반품). 정가·공급률은 검증에 쓰지 않고 입력값을 그대로 반영한다.
      */
-    private void consumeReturnable(Map<String, Long> returnable, Product product,
-                                   Integer unitPrice, Integer supplyRate, int qty) {
-        String key = returnableKey(product.getId(), unitPrice, supplyRate);
+    private void consumeReturnable(Map<String, Long> returnable, Product product, int qty) {
+        String key = returnableKey(product.getId());
         long remain = returnable.getOrDefault(key, 0L);
         if (qty > remain) {
             throw new BusinessException(ErrorCode.RETURN_EXCEEDS,
-                    "반품가능수량 초과: 상품 " + product.getCode() + " 정가 " + unitPrice
-                            + " 공급률 " + supplyRate + " → 반품가능 " + remain + ", 요청 " + qty);
+                    "반품가능수량 초과: 상품 " + product.getCode()
+                            + " → 반품가능 " + remain + ", 요청 " + qty);
         }
         returnable.put(key, remain - qty);
     }
 
     /**
-     * 교재식 반품 가능내역 조회. 거래처(옵션 도서)의 도서×정가×공급률별 반품가능수량(누적 출고−기반품, {@literal >}0만).
-     * 프론트는 이 목록에서 라인을 골라 그 범위 내에서 반품 등록(공급률·정가는 원 출고건 고정).
+     * 교재식 반품 가능내역 조회. 거래처(옵션 도서)의 도서×정가×공급률 단위 출고내역과 반품가능수량.
+     *
+     * <p>정가·공급률은 <b>원 출고건 값을 화면에 표시</b>해 주기 위한 참고값이다.
+     * 담당자가 반품 등록 시 다른 값으로 바꿔도 되고(발주처 확정 2.2), 범위 판정은 도서 단위로만 한다.
      */
     @Transactional(readOnly = true)
     public ReturnableResponse returnable(Long partnerId, Long productId) {
-        List<ReturnableResponse.Row> rows = new ArrayList<>();
+        // 도서 단위로 합산한다 — 범위 판정과 같은 기준이어야 화면의 '반품가능'과 실제 허용치가 어긋나지 않는다.
+        // 정가·공급률은 그 도서의 출고 중 수량이 가장 많은 건의 값을 대표로 보여 준다(입력 기본값 용도).
+        Map<Long, ReturnableResponse.Row> byProduct = new LinkedHashMap<>();
+        Map<Long, Long> repQty = new HashMap<>();
         for (ReturnableAgg a : saleRepository.returnableAgg(partnerId, productId)) {
-            long remain = a.getSaleQty() - a.getReturnQty();
-            if (remain <= 0) {
-                continue;
+            ReturnableResponse.Row prev = byProduct.get(a.getProductId());
+            long shipped = a.getSaleQty() + (prev == null ? 0 : prev.shippedQty());
+            long returned = a.getReturnQty() + (prev == null ? 0 : prev.returnedQty());
+            // 대표 정가·공급률: 출고수량이 가장 큰 건
+            boolean takeRep = prev == null || a.getSaleQty() > repQty.getOrDefault(a.getProductId(), 0L);
+            Integer unitPrice = takeRep ? a.getUnitPrice() : prev.unitPrice();
+            Integer supplyRate = takeRep ? a.getSupplyRate() : prev.supplyRate();
+            if (takeRep) {
+                repQty.put(a.getProductId(), a.getSaleQty());
             }
-            rows.add(new ReturnableResponse.Row(a.getProductId(), a.getProductCode(), a.getProductName(),
-                    a.getUnitPrice(), a.getSupplyRate(), a.getSaleQty(), a.getReturnQty(), remain));
+            byProduct.put(a.getProductId(), new ReturnableResponse.Row(
+                    a.getProductId(), a.getProductCode(), a.getProductName(),
+                    unitPrice, supplyRate, shipped, returned, shipped - returned));
         }
+        List<ReturnableResponse.Row> rows = byProduct.values().stream()
+                .filter(r -> r.returnableQty() > 0)
+                .toList();
         return new ReturnableResponse(partnerId, rows);
     }
 

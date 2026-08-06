@@ -353,7 +353,7 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("교재식 반품 — 반품가능(누적출고−기반품) 조회 + 범위초과 거부(추가2)")
+    @DisplayName("교재식 반품 — 도서 단위 반품가능 조회 + 범위초과 거부 + 공급률 수정 허용(2026-08-05 확정)")
     void 반품교재식_범위검증() {
         Long wh = createId("/masters/warehouses", Map.of("code", "RB-WH", "name", "반품창고", "type", "MAIN"));
         Long p = createId("/masters/products",
@@ -392,11 +392,24 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
         assertThat(after.path("returnedQty").asLong()).isEqualTo(20);
         assertThat(after.path("returnableQty").asLong()).isEqualTo(10);
 
-        // 공급률 불일치(원출고 없음) → 잔여 0으로 거부
-        JsonNode wrongRate = post("/sales/return-inbound", Map.of(
+        // ★공급률을 바꿔도 반품 가능해야 한다(발주처 확정 2026-08-05 §2.2 — 표시는 원 출고건 값,
+        //   담당자가 필요 시 수정 가능. 고정·잠금 아님). 범위 판정은 도서 단위 잔여로만 한다.
+        JsonNode otherRate = post("/sales/return-inbound", Map.of(
                 "returnDate", "2026-08-10", "partnerId", partner, "warehouseId", wh,
-                "items", List.of(Map.of("productId", p, "unitPrice", 10000, "supplyRate", 50, "qty", 1))));
-        assertThat(wrongRate.path("error").path("code").asText()).isEqualTo("RETURN_EXCEEDS");
+                "items", List.of(Map.of("productId", p, "unitPrice", 10000, "supplyRate", 50, "qty", 5))));
+        assertThat(otherRate.path("success").asBoolean())
+                .as("공급률을 수정해도 반품이 되어야 함: %s", otherRate).isTrue();
+
+        // 도서 단위 잔여에서 차감된다: 30 − 20 − 5 = 5
+        JsonNode after2 = rowByField(data(get("/sales/returnable?partnerId=" + partner)).path("rows"),
+                "productCode", "RB-BK");
+        assertThat(after2.path("returnableQty").asLong()).isEqualTo(5);
+
+        // 잔여(5)를 넘기면 여전히 거부된다 — 범위 자체는 살아 있다
+        JsonNode stillOver = post("/sales/return-inbound", Map.of(
+                "returnDate", "2026-08-10", "partnerId", partner, "warehouseId", wh,
+                "items", List.of(Map.of("productId", p, "unitPrice", 10000, "supplyRate", 55, "qty", 6))));
+        assertThat(stillOver.path("error").path("code").asText()).isEqualTo("RETURN_EXCEEDS");
     }
 
     @Test

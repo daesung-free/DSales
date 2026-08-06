@@ -15,6 +15,7 @@ public record TransactionStatementResponse(
         @Schema(description = "회계구분 필터(null=매출+무가)") String category,
         @Schema(description = "공급자(자사)") Party provider,
         @Schema(description = "공급받는자(거래처)") Party receiver,
+        @Schema(description = "학교(원)명 — 실물 양식 거래정보 블록. 여러 곳이면 대표 1건") String schoolName,
         @Schema(description = "유가 품목(공급가액>0)") List<Line> pricedLines,
         @Schema(description = "무가 품목(교사용/증정 등, 공급가액=0)") List<Line> freeLines,
         @Schema(description = "합계") Totals totals
@@ -27,7 +28,8 @@ public record TransactionStatementResponse(
             @Schema(description = "대표자") String bossName,
             @Schema(description = "주소") String address,
             @Schema(description = "업태") String bizStatus,
-            @Schema(description = "종목") String bizItem
+            @Schema(description = "종목") String bizItem,
+            @Schema(description = "전화번호") String tel
     ) {
     }
 
@@ -53,7 +55,8 @@ public record TransactionStatementResponse(
             @Schema(description = "공급가액 합") long supplyAmount,
             @Schema(description = "세액 합") long tax,
             @Schema(description = "합계(공급가액+세액)") long total,
-            @Schema(description = "무가 수량 합") long freeQty
+            @Schema(description = "무가 수량 합") long freeQty,
+            @Schema(description = "전체 수량 합(유가+무가) — 실물 양식 상단 \"○권\"") long totalQty
     ) {
     }
 }

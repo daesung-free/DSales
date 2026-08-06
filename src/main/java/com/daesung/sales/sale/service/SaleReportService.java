@@ -267,6 +267,8 @@ public class SaleReportService {
         List<TransactionStatementResponse.Line> free = new ArrayList<>();
         long pQty = 0, pSupply = 0, pTax = 0, fQty = 0;
         int pSeq = 0, fSeq = 0;
+        // 실물 양식 거래정보 블록의 "학교(원)" 칸. 한 명세서는 보통 한 학교 건이라 첫 값을 대표로 쓴다.
+        String schoolName = null;
 
         for (Sale s : sales) {
             long supply = s.getSupplyAmount() == null ? 0 : s.getSupplyAmount();
@@ -276,6 +278,9 @@ public class SaleReportService {
                     ? p.getName() : p.getCatName() + " / " + p.getName();
             long unit = (s.getQty() != 0) ? supply / s.getQty() : 0;
             String cat = s.getSalesCategory().name();
+            if (schoolName == null && s.getSchoolName() != null && !s.getSchoolName().isBlank()) {
+                schoolName = s.getSchoolName();
+            }
 
             if (supply != 0) {
                 priced.add(new TransactionStatementResponse.Line(++pSeq, label, p.getCode(), s.getQty(),
@@ -290,17 +295,19 @@ public class SaleReportService {
             }
         }
 
-        TransactionStatementResponse.Totals totals =
-                new TransactionStatementResponse.Totals(pQty, pSupply, pTax, pSupply + pTax, fQty);
+        // 실물 양식 상단 "23 권" = 유가+무가 전체 수량(2026-08-05 거래명세서 실물 대조).
+        TransactionStatementResponse.Totals totals = new TransactionStatementResponse.Totals(
+                pQty, pSupply, pTax, pSupply + pTax, fQty, pQty + fQty);
         TransactionStatementResponse.Party provider = new TransactionStatementResponse.Party(
                 null, supplier.name(), supplier.bizNo(), supplier.bossName(),
-                supplier.addr(), supplier.bizStatus(), supplier.bizItem());
+                supplier.addr(), supplier.bizStatus(), supplier.bizItem(), supplier.tel());
         TransactionStatementResponse.Party receiver = new TransactionStatementResponse.Party(
                 partner.getCode(), partner.getName(), partner.getBizNo(), partner.getBossName(),
-                joinAddr(partner.getAddr1(), partner.getAddr2()), partner.getBizStatus(), partner.getBizItem());
+                joinAddr(partner.getAddr1(), partner.getAddr2()), partner.getBizStatus(),
+                partner.getBizItem(), null);   // 실물 양식은 공급자 전화만 표기
 
         return new TransactionStatementResponse(from, to, category == null ? null : category.name(),
-                provider, receiver, priced, free, totals);
+                provider, receiver, schoolName, priced, free, totals);
     }
 
     private static String joinAddr(String a1, String a2) {

@@ -14,6 +14,7 @@ public record SupplierProperties(
         String bossName,
         String addr,
         String bizStatus,
-        String bizItem
+        String bizItem,
+        String tel
 ) {
 }

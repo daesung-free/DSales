@@ -86,10 +86,12 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
     }
 
     private void sale(String date, Long whId, Long productId, String shipmentType, int rate, int qty) {
+        // 학교명을 함께 넣는다 — 거래명세서 실물 양식의 "학교(원)" 칸 원천이다.
         JsonNode r = post("/sales/entries", Map.of(
                 "salesDate", date, "partnerId", partnerId, "warehouseId", whId,
                 "items", List.of(Map.of("productId", productId, "shipmentType", shipmentType,
-                        "unitPrice", 10000, "supplyRate", rate, "qty", qty))));
+                        "unitPrice", 10000, "supplyRate", rate, "qty", qty,
+                        "schoolName", "엔컴잇올스파르타학원"))));
         assertThat(r.path("success").asBoolean()).as("매출등록 성공: %s", r).isTrue();
     }
 
@@ -128,7 +130,7 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("거래명세서 — 공급자/공급받는자 + 유가/무가 분리")
+    @DisplayName("거래명세서 — 공급자/공급받는자 + 유가·무가 분리 + 실물 양식 항목(학교·전체수량·전화)")
     void 거래명세서() {
         JsonNode d = data(get("/sales/transaction-statement?partnerId=" + partnerId
                 + "&from=2026-06-01&to=2026-06-30"));
@@ -140,6 +142,15 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
         assertThat(t.path("supplyAmount").asLong()).isEqualTo(195_000);
         assertThat(t.path("total").asLong()).isEqualTo(214_500);
         assertThat(t.path("freeQty").asLong()).isEqualTo(3);
+
+        // ★2026-08-05 거래명세서 실물 양식 대조로 채운 항목
+        assertThat(d.path("provider").path("tel").asText())
+                .as("공급자 블록 전화번호").isEqualTo("02-880-2301");
+        assertThat(t.path("totalQty").asLong())
+                .as("상단 '○권' = 유가+무가 전체 수량")
+                .isEqualTo(t.path("pricedQty").asLong() + t.path("freeQty").asLong());
+        assertThat(d.path("schoolName").asText())
+                .as("학교(원) 칸 — 매출의 학교명이 올라와야 함").isEqualTo("엔컴잇올스파르타학원");
     }
 
     @Test
