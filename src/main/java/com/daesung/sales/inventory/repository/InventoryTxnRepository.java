@@ -90,4 +90,24 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
                                    @Param("toDate") LocalDate toDate,
                                    @Param("catCode") String catCode,
                                    @Param("productId") Long productId);
+
+    /**
+     * 세트 조립 작업비 내역(기간별). 조립 이벤트 중 완제품 행(수량 양수)만 — 작업비는 거기에 1건으로 기록된다.
+     * 근거: 발주처 확정 2026-08-05(물류팀이 이 내역을 다운로드해 가공·정산 요청).
+     * 반환 Object[]: [tradeDate, warehouseName, productCode, productName, qty, workCost, memo]
+     */
+    @Query(value = """
+            SELECT t.trade_date, w.name, p.code, p.name, t.qty,
+                   COALESCE(t.work_cost, 0), t.memo
+              FROM inventory_txn t
+              JOIN products p ON p.id = t.product_id
+              JOIN warehouses w ON w.id = t.warehouse_id
+             WHERE t.txn_type = 'BOM_ASSEMBLE' AND t.qty > 0
+               AND t.trade_date BETWEEN :fromDate AND :toDate
+               AND (CAST(:warehouseId AS SIGNED) IS NULL OR t.warehouse_id = :warehouseId)
+             ORDER BY t.trade_date, p.code
+            """, nativeQuery = true)
+    List<Object[]> assemblyCosts(@Param("fromDate") java.time.LocalDate fromDate,
+                                 @Param("toDate") java.time.LocalDate toDate,
+                                 @Param("warehouseId") Long warehouseId);
 }

@@ -10,7 +10,9 @@ public record BomWorkResponse(
         @Schema(description = "작업 창고명") String warehouseName,
         @Schema(description = "방향") BomDirection direction,
         @Schema(description = "완제품 결과") Line parent,
-        @Schema(description = "구성품 결과") List<Line> components
+        @Schema(description = "구성품 결과") List<Line> components,
+        @Schema(description = "조립 작업비(자동계산). 해체는 0 — 포장 작업이 없다", example = "24000")
+        long workCost
 ) {
     public record Line(
             @Schema(description = "상품 id") Long productId,
