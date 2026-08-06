@@ -23,6 +23,7 @@ public record StocktakeRequest(
         @Schema(description = "실사 품목", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotEmpty @Valid List<Item> items
 ) {
+    @Schema(name = "StocktakeItem")
     public record Item(
 
             @Schema(description = "상품 id", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)

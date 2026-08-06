@@ -14,6 +14,7 @@ public record StocktakeResponse(
         @Schema(description = "차이가 발생해 조정된 품목 수") int adjustedCount,
         @Schema(description = "실사 명세") List<Line> lines
 ) {
+    @Schema(name = "StocktakeLine")
     public record Line(
             @Schema(description = "상품 id") Long productId,
             @Schema(description = "상품코드") String productCode,

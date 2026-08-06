@@ -11,6 +11,7 @@ public record TransferResponse(
         @Schema(description = "도착 창고명") String toWarehouseName,
         @Schema(description = "이동 결과 품목") List<Line> items
 ) {
+    @Schema(name = "TransferLine")
     public record Line(
             @Schema(description = "상품 id") Long productId,
             @Schema(description = "상품코드") String productCode,

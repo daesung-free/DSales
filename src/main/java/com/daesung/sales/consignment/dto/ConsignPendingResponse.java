@@ -11,6 +11,7 @@ public record ConsignPendingResponse(
         @Schema(description = "위탁 거래처명") String partnerName,
         @Schema(description = "미결 라인") List<Line> items
 ) {
+    @Schema(name = "ConsignPendingLine")
     public record Line(
             @Schema(description = "미결(consignment_out) id") Long consignmentOutId,
             @Schema(description = "위탁출고번호", example = "OUT-20260608-1") String sourceOutNo,

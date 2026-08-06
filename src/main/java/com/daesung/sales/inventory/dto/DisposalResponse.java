@@ -10,6 +10,7 @@ public record DisposalResponse(
         @Schema(description = "창고명") String warehouseName,
         @Schema(description = "폐기 결과 품목") List<Line> items
 ) {
+    @Schema(name = "DisposalLine")
     public record Line(
             @Schema(description = "상품 id") Long productId,
             @Schema(description = "상품코드") String productCode,

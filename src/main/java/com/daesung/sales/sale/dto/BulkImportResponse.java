@@ -11,6 +11,7 @@ public record BulkImportResponse(
         @Schema(description = "거래처/도서 매핑 실패로 제외된 라인 수") int unmappedCount,
         @Schema(description = "라인 상세") List<Line> lines
 ) {
+    @Schema(name = "BulkImportLine")
     public record Line(
             @Schema(description = "DSRE 소스키(req:lst:dtl:구분)") String sourceKey,
             @Schema(description = "구분(SALE=매출/GIFT=증정/TEACHER_USE=무상)") String kind,

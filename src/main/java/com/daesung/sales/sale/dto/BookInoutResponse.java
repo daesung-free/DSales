@@ -18,6 +18,7 @@ public record BookInoutResponse(
      * 도서 한 행. 취소=매입취소(INBOUND 역분개), 반품=매출반품.
      * 매출총이익=실판매금액−실매입금액(레거시가 '순매출금액'으로 오칭한 값).
      */
+    @Schema(name = "BookInoutRow")
     public record Row(
             @Schema(description = "상품 id") Long productId,
             @Schema(description = "도서코드") String bookCode,

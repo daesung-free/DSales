@@ -19,6 +19,7 @@ public record InboundResponse(
         @Schema(description = "입고 결과 품목")
         List<Line> items
 ) {
+    @Schema(name = "InboundLine")
     public record Line(
 
             @Schema(description = "상품 id", example = "1")

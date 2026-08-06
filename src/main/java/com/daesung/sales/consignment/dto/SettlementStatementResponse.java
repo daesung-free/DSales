@@ -14,6 +14,7 @@ public record SettlementStatementResponse(
         @Schema(description = "정산 내역 행") List<Row> rows,
         @Schema(description = "합계") Summary summary
 ) {
+    @Schema(name = "SettlementStatementRow")
     public record Row(
             @Schema(description = "정산일") LocalDate settledDate,
             @Schema(description = "거래처명") String partnerName,
@@ -31,6 +32,8 @@ public record SettlementStatementResponse(
             @Schema(description = "미결 상태(OPEN/PARTIAL/CLOSED)") String status
     ) {
     }
+
+    @Schema(name = "SettlementStatementSummary")
 
     public record Summary(
             @Schema(description = "정산 건수") long count,

@@ -11,6 +11,7 @@ public record ArStatusResponse(
         @Schema(description = "거래처별 채권 현황") List<Row> rows,
         @Schema(description = "합계행") Row total
 ) {
+    @Schema(name = "ArStatusRow")
     public record Row(
             @Schema(description = "거래처 id(합계행 null)") Long partnerId,
             @Schema(description = "거래처코드") String partnerCode,

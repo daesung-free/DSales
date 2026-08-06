@@ -13,6 +13,7 @@ public record CollateralExpiryResponse(
         @Schema(description = "임박 판정 일수(기준일+이 일수 이내)") int withinDays,
         @Schema(description = "만기 임박/만료 거래처") List<Row> rows
 ) {
+    @Schema(name = "CollateralExpiryRow")
     public record Row(
             @Schema(description = "거래처 id") Long partnerId,
             @Schema(description = "거래처코드") String code,

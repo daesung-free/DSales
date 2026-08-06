@@ -13,6 +13,7 @@ public record CategorySalesResponse(
         @Schema(description = "행 목록(거래처→분류→도서 순)") List<Row> rows
 ) {
     /** 과목별매출현황 한 행(거래처×분류×도서). */
+    @Schema(name = "CategorySalesRow")
     public record Row(
             @Schema(description = "거래처 id") Long partnerId,
             @Schema(description = "거래처코드") String partnerCode,

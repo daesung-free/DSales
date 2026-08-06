@@ -14,6 +14,7 @@ public record MonthlyStatementResponse(
         @Schema(description = "월", example = "6") int month,
         @Schema(description = "명세 행(상세/대분류계/총계)") List<Row> rows
 ) {
+    @Schema(name = "MonthlyStatementRow")
     public record Row(
             @Schema(description = "행 구분", allowableValues = {"GRAND_TOTAL", "MAJOR_SUBTOTAL", "DETAIL"})
             RowType rowType,

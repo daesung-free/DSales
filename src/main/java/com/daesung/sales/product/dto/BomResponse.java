@@ -15,6 +15,7 @@ public record BomResponse(
         List<Component> components
 ) {
     /** 33p 세트구성 상세 탭 1행. */
+    @Schema(name = "BomComponent")
     public record Component(
             @Schema(description = "자재(구성품) 상품 id") Long childProductId,
             @Schema(description = "자재코드") String childCode,

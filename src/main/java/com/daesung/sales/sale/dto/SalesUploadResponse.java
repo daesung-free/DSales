@@ -1,5 +1,7 @@
 package com.daesung.sales.sale.dto;
 
+
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
 
 /**
@@ -7,6 +9,8 @@ import java.util.List;
  * 행별 처리결과(등록/오류) + 요약. 재고는 건드리지 않음(매출 원장만).
  */
 public record SalesUploadResponse(int imported, int failed, List<Line> lines) {
+
+    @Schema(name = "SalesUploadLine")
 
     public record Line(
             int row,             // 엑셀 행번호(1-base)

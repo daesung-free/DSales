@@ -29,6 +29,7 @@ public record ReturnInboundRequest(
         @NotEmpty @Valid List<Item> items
 ) {
     /** 반품 품목. 금액=정가×공급률/100×수량, 세액=면세면 0 아니면 공급가액의 10%. */
+    @Schema(name = "ReturnInboundItem")
     public record Item(
 
             @Schema(description = "상품 id", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)

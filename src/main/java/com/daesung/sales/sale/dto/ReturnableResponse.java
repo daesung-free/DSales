@@ -1,5 +1,7 @@
 package com.daesung.sales.sale.dto;
 
+
+import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
 
 /**
@@ -10,6 +12,8 @@ import java.util.List;
  * 반품 범위 판정은 <b>도서 단위 합계</b>로 한다.
  */
 public record ReturnableResponse(Long partnerId, List<Row> rows) {
+
+    @Schema(name = "ReturnableRow")
 
     public record Row(
             Long productId,

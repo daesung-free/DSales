@@ -17,6 +17,7 @@ public record SalesEntryResponse(
         @Schema(description = "등록된 매출 라인")
         List<Line> items
 ) {
+    @Schema(name = "SalesEntryLine")
     public record Line(
 
             @Schema(description = "매출번호(I)", example = "I-20260622-1001")

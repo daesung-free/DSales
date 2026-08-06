@@ -57,9 +57,9 @@ public class LogisticsController {
     @GetMapping("/outbound/period")
     public ApiResponse<PeriodLogisCost> outboundPeriod(
             @Parameter(description = "시작일", example = "2024-01-01")
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(name = "fromDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @Parameter(description = "종료일", example = "2024-12-31")
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(name = "toDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @Parameter(description = "구분(전체/일반/사고)", example = "ALL")
             @RequestParam(defaultValue = "ALL") LogisMode mode,
             @Parameter(description = "취소분 포함 여부", example = "false")
@@ -74,9 +74,9 @@ public class LogisticsController {
     @GetMapping("/return")
     public ApiResponse<PeriodLogisCost> returnPeriod(
             @Parameter(description = "시작일", example = "2024-01-01")
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(name = "fromDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @Parameter(description = "종료일", example = "2024-12-31")
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(name = "toDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @Parameter(description = "구분(전체/반품/사고)", example = "ALL")
             @RequestParam(defaultValue = "ALL") LogisMode mode) {
         return ApiResponse.success(dsreGateway.calcReturnPeriod(from, to, mode));

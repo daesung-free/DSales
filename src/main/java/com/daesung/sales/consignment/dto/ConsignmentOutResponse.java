@@ -12,6 +12,7 @@ public record ConsignmentOutResponse(
         @Schema(description = "도착(위탁) 창고 id") Long toWarehouseId,
         @Schema(description = "생성된 미결 라인") List<Line> items
 ) {
+    @Schema(name = "ConsignmentOutLine")
     public record Line(
             @Schema(description = "미결(consignment_out) id") Long consignmentOutId,
             @Schema(description = "위탁출고번호", example = "OUT-20260608-1") String sourceOutNo,

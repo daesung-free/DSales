@@ -20,6 +20,7 @@ public record DisposalRequest(
         @Schema(description = "폐기 품목", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotEmpty @Valid List<Item> items
 ) {
+    @Schema(name = "DisposalItem")
     public record Item(
 
             @Schema(description = "상품 id", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)

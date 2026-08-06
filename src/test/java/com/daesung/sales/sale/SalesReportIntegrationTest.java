@@ -138,7 +138,7 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
     @Test
     @DisplayName("매출액명세서 — 분류 rollup + 합계=금액+세액")
     void 매출액명세서() {
-        JsonNode d = data(get("/sales/statement?from=2026-06-01&to=2026-06-30&category=SALE"));
+        JsonNode d = data(get("/sales/statement?fromDate=2026-06-01&toDate=2026-06-30&category=SALE"));
         JsonNode rows = d.path("rows");
         JsonNode a01 = rowWhere(rows, "rowType", "CAT_SUBTOTAL");  // 첫 소계 = A01
         assertThat(a01.path("catCode").asText()).isEqualTo("A2026A01");
@@ -155,7 +155,7 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
     @DisplayName("거래명세서 — 공급자/공급받는자 + 유가·무가 분리 + 실물 양식 항목(학교·전체수량·전화)")
     void 거래명세서() {
         JsonNode d = data(get("/sales/transaction-statement?partnerId=" + partnerId
-                + "&from=2026-06-01&to=2026-06-30"));
+                + "&fromDate=2026-06-01&toDate=2026-06-30"));
         assertThat(d.path("provider").path("name").asText()).isEqualTo("(주)대성테스트");
         assertThat(d.path("receiver").path("code").asText()).isEqualTo("CUST-1");
         assertThat(d.path("pricedLines")).hasSize(4);
@@ -178,7 +178,7 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
     @Test
     @DisplayName("과목별매출현황 — 매출/반품/교사용 버킷 + 반품률")
     void 과목별매출현황() {
-        JsonNode d = data(get("/sales/category-summary?from=2026-06-01&to=2026-06-30&partnerId=" + partnerId));
+        JsonNode d = data(get("/sales/category-summary?fromDate=2026-06-01&toDate=2026-06-30&partnerId=" + partnerId));
         JsonNode a011 = rowWhere(d.path("rows"), "bookCode", "BK-A011");
         assertThat(a011.path("saleQty").asLong()).isEqualTo(10);
         assertThat(a011.path("returnQty").asLong()).isEqualTo(2);
@@ -190,7 +190,7 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
     @Test
     @DisplayName("도서입출고현황 — 매입+매출 이중장부 + 정본 재고")
     void 도서입출고현황() {
-        JsonNode d = data(get("/sales/book-inout?from=2026-06-01&to=2026-06-30&catCode=A2026A01"));
+        JsonNode d = data(get("/sales/book-inout?fromDate=2026-06-01&toDate=2026-06-30&catCode=A2026A01"));
         JsonNode a011 = rowWhere(d.path("rows"), "bookCode", "BK-A011");
         assertThat(a011.path("inboundQty").asLong()).isEqualTo(1000);
         assertThat(a011.path("inboundAmount").asLong()).isEqualTo(3_000_000);  // 1000×3000
@@ -205,7 +205,7 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
     @Test
     @DisplayName("거래처별 매출대비표 — 전년 동기간 비교")
     void 매출대비표() {
-        JsonNode d = data(get("/sales/yoy-comparison?from=2026-06-01&to=2026-06-30&groupBy=PARTNER&partnerId="
+        JsonNode d = data(get("/sales/yoy-comparison?fromDate=2026-06-01&toDate=2026-06-30&groupBy=PARTNER&partnerId="
                 + partnerId));
         assertThat(d.path("prevFrom").asText()).isEqualTo("2025-06-01");
         JsonNode row = d.path("rows").get(0);
@@ -218,7 +218,7 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
     @Test
     @DisplayName("매출대비표 BOOK — 전년0이면 비율 null, 감소 처리")
     void 매출대비표_BOOK() {
-        JsonNode d = data(get("/sales/yoy-comparison?from=2026-06-01&to=2026-06-30&groupBy=BOOK&partnerId="
+        JsonNode d = data(get("/sales/yoy-comparison?fromDate=2026-06-01&toDate=2026-06-30&groupBy=BOOK&partnerId="
                 + partnerId));
         JsonNode rows = d.path("rows");
         JsonNode a012 = rowWhere(rows, "bookCode", "BK-A012");
@@ -239,17 +239,17 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
                 "/sales?salesCategory=BOGUS", null, t, null).getStatusCode().value()).isEqualTo(400);
         // 잘못된 날짜
         assertThat(exchangeRaw(org.springframework.http.HttpMethod.GET,
-                "/sales/statement?from=2026-13-99&to=2026-06-30", null, t, null).getStatusCode().value()).isEqualTo(400);
+                "/sales/statement?fromDate=2026-13-99&toDate=2026-06-30", null, t, null).getStatusCode().value()).isEqualTo(400);
         // 필수 파라미터 누락(partnerId)
         assertThat(exchangeRaw(org.springframework.http.HttpMethod.GET,
-                "/sales/transaction-statement?from=2026-06-01&to=2026-06-30", null, t, null)
+                "/sales/transaction-statement?fromDate=2026-06-01&toDate=2026-06-30", null, t, null)
                 .getStatusCode().value()).isEqualTo(400);
     }
 
     @Test
     @DisplayName("엑셀 다운로드 — 매출액명세서 xlsx(한글 헤더·데이터 행)")
     void 엑셀다운로드() throws Exception {
-        var resp = getBytes("/sales/statement/export?from=2026-06-01&to=2026-06-30&category=SALE");
+        var resp = getBytes("/sales/statement/export?fromDate=2026-06-01&toDate=2026-06-30&category=SALE");
         assertThat(resp.getStatusCode().is2xxSuccessful()).isTrue();
         assertThat(resp.getHeaders().getContentType().toString()).contains("spreadsheetml");
         byte[] xlsx = resp.getBody();
@@ -394,7 +394,7 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
         // 매출: 공급률 100%, 10부 → 매출액 100,000. 7월로 격리(공유 6월 집계 테스트와 분리)
         sale("2026-07-15", whId, ext, "NORMAL_SHIP", 100, 10);
 
-        JsonNode d = data(get("/sales/net-summary?from=2026-07-01&to=2026-07-31&contentType=EXTERNAL"));
+        JsonNode d = data(get("/sales/net-summary?fromDate=2026-07-01&toDate=2026-07-31&contentType=EXTERNAL"));
         JsonNode row = rowWhere(d.path("rows"), "productCode", "EXT-이감01");
         assertThat(row.path("contentType").asText()).isEqualTo("EXTERNAL");
         assertThat(row.path("netAmount").asLong()).isEqualTo(100_000);

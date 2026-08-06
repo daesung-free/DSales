@@ -23,6 +23,8 @@ public record InvoiceAdjustmentResponse(
         NEXT_MONTH_MINUS
     }
 
+    @Schema(name = "InvoiceAdjustmentRow")
+
     public record Row(
             @Schema(description = "매출(반품)번호") String salesNo,
             @Schema(description = "거래처명") String partnerName,
@@ -34,6 +36,8 @@ public record InvoiceAdjustmentResponse(
             @Schema(description = "반영 신고월(yyyyMM)") String reportingMonth
     ) {
     }
+
+    @Schema(name = "InvoiceAdjustmentSummary")
 
     public record Summary(
             @Schema(description = "당월 수정발행 공급가 합") long amendSupply,

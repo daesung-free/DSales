@@ -9,6 +9,7 @@ public record ConsignSettleResponse(
 
         @Schema(description = "정산 결과 라인") List<Line> items
 ) {
+    @Schema(name = "ConsignSettleLine")
     public record Line(
             @Schema(description = "확정 매출번호", example = "I-20260622-1") String salesNo,
             @Schema(description = "미결(consignment_out) id") Long consignmentOutId,

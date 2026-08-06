@@ -29,6 +29,8 @@ public record TaxInvoiceResponse(
     ) {
     }
 
+    @Schema(name = "TaxInvoiceItem")
+
     public record Item(
             @Schema(description = "품목(도서명)") String name,
             @Schema(description = "공급가액") long supply,

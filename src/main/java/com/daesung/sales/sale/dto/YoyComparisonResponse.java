@@ -28,6 +28,7 @@ public record YoyComparisonResponse(
      * 대비 한 행. 비율(%)=당해÷전년×100(레거시 index, 100=전년동일, 전년0이면 null).
      * cat/book 필드는 groupBy에 따라 채워짐.
      */
+    @Schema(name = "YoyComparisonRow")
     public record Row(
             @Schema(description = "거래처 id") Long partnerId,
             @Schema(description = "거래처코드") String partnerCode,

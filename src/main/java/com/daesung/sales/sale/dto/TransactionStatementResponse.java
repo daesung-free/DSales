@@ -34,6 +34,7 @@ public record TransactionStatementResponse(
     }
 
     /** 명세 라인. bookLabel=분류명/도서명. */
+    @Schema(name = "TransactionStatementLine")
     public record Line(
             @Schema(description = "순번") int seq,
             @Schema(description = "도서표기(분류명 / 도서명)") String bookLabel,

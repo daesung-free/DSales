@@ -171,9 +171,9 @@ public class SaleController {
                     + "category=SALE(매출)/FREE(무가)/RETURN(반품)/미지정(전체).")
     @GetMapping("/statement")
     public ApiResponse<SalesStatementResponse> statement(
-            @Parameter(description = "시작일(yyyy-MM-dd)", required = true) @RequestParam
+            @Parameter(description = "시작일(yyyy-MM-dd)", required = true) @RequestParam(name = "fromDate")
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @Parameter(description = "종료일(yyyy-MM-dd)", required = true) @RequestParam
+            @Parameter(description = "종료일(yyyy-MM-dd)", required = true) @RequestParam(name = "toDate")
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @Parameter(description = "회계구분(SALE/FREE/RETURN, 미지정=전체)") @RequestParam(required = false)
             SalesCategory category) {
@@ -183,8 +183,8 @@ public class SaleController {
     @Operation(summary = "매출액명세서 엑셀 다운로드", description = "드라이브 '매출액정리' 형식(분류/도서별 수량·금액·세액·합계).")
     @GetMapping("/statement/export")
     public ResponseEntity<byte[]> statementExport(
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(name = "fromDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(name = "toDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(required = false) SalesCategory category) {
         List<Col> cols = List.of(
                 new Col("구분", "rowType"), new Col("분류코드", "catCode"), new Col("분류명", "catName"),
@@ -235,9 +235,9 @@ public class SaleController {
     @GetMapping("/transaction-statement")
     public ApiResponse<TransactionStatementResponse> transactionStatement(
             @Parameter(description = "거래처 id", required = true) @RequestParam Long partnerId,
-            @Parameter(description = "시작일(yyyy-MM-dd)", required = true) @RequestParam
+            @Parameter(description = "시작일(yyyy-MM-dd)", required = true) @RequestParam(name = "fromDate")
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @Parameter(description = "종료일(yyyy-MM-dd)", required = true) @RequestParam
+            @Parameter(description = "종료일(yyyy-MM-dd)", required = true) @RequestParam(name = "toDate")
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @Parameter(description = "회계구분(미지정=매출+무가, RETURN=반품명세서)") @RequestParam(required = false)
             SalesCategory category) {
@@ -248,8 +248,8 @@ public class SaleController {
     @GetMapping("/transaction-statement/export")
     public ResponseEntity<byte[]> transactionStatementExport(
             @RequestParam Long partnerId,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(name = "fromDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(name = "toDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(required = false) SalesCategory category) {
         var d = saleReportService.transactionStatement(partnerId, from, to, category);
         var all = new java.util.ArrayList<>(d.pricedLines());
@@ -268,9 +268,9 @@ public class SaleController {
                     + "반품률(%). 취소 제외. 거래처·분류 옵션 필터.")
     @GetMapping("/category-summary")
     public ApiResponse<CategorySalesResponse> categorySummary(
-            @Parameter(description = "시작일(yyyy-MM-dd)", required = true) @RequestParam
+            @Parameter(description = "시작일(yyyy-MM-dd)", required = true) @RequestParam(name = "fromDate")
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @Parameter(description = "종료일(yyyy-MM-dd)", required = true) @RequestParam
+            @Parameter(description = "종료일(yyyy-MM-dd)", required = true) @RequestParam(name = "toDate")
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @Parameter(description = "거래처 id 필터(미지정=전체)") @RequestParam(required = false) Long partnerId,
             @Parameter(description = "분류코드 필터(미지정=전체)") @RequestParam(required = false) String catCode) {
@@ -283,9 +283,9 @@ public class SaleController {
                     + "취소=매입취소(INBOUND 역분개), 반품=매출반품. 취소건 제외. 분류·상품 옵션 필터.")
     @GetMapping("/book-inout")
     public ApiResponse<BookInoutResponse> bookInout(
-            @Parameter(description = "시작일(yyyy-MM-dd)", required = true) @RequestParam
+            @Parameter(description = "시작일(yyyy-MM-dd)", required = true) @RequestParam(name = "fromDate")
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @Parameter(description = "종료일(yyyy-MM-dd)", required = true) @RequestParam
+            @Parameter(description = "종료일(yyyy-MM-dd)", required = true) @RequestParam(name = "toDate")
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @Parameter(description = "분류코드 필터(미지정=전체)") @RequestParam(required = false) String catCode,
             @Parameter(description = "상품 id 필터(미지정=전체)") @RequestParam(required = false) Long productId) {
@@ -297,9 +297,9 @@ public class SaleController {
                     + "groupBy=PARTNER(거래처)/CATEGORY(거래처×분류)/BOOK(거래처×도서). SALE만, 취소 제외. 거래처·분류 옵션 필터.")
     @GetMapping("/yoy-comparison")
     public ApiResponse<YoyComparisonResponse> yoyComparison(
-            @Parameter(description = "당해 시작일(yyyy-MM-dd)", required = true) @RequestParam
+            @Parameter(description = "당해 시작일(yyyy-MM-dd)", required = true) @RequestParam(name = "fromDate")
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @Parameter(description = "당해 종료일(yyyy-MM-dd)", required = true) @RequestParam
+            @Parameter(description = "당해 종료일(yyyy-MM-dd)", required = true) @RequestParam(name = "toDate")
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @Parameter(description = "집계 단위(PARTNER/CATEGORY/BOOK)") @RequestParam(defaultValue = "PARTNER")
             YoyComparisonResponse.GroupBy groupBy,
@@ -311,8 +311,8 @@ public class SaleController {
     @Operation(summary = "과목별매출현황 엑셀 다운로드", description = "거래처×분류×도서 매출/반품/순매출/교사용 수량+반품률.")
     @GetMapping("/category-summary/export")
     public ResponseEntity<byte[]> categorySummaryExport(
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(name = "fromDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(name = "toDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(required = false) Long partnerId, @RequestParam(required = false) String catCode) {
         List<Col> cols = List.of(
                 new Col("거래처코드", "partnerCode"), new Col("거래처명", "partnerName"),
@@ -327,8 +327,8 @@ public class SaleController {
     @Operation(summary = "도서입출고현황 엑셀 다운로드", description = "도서별 매입+매출 이중장부 + 정본재고 + 매출총이익.")
     @GetMapping("/book-inout/export")
     public ResponseEntity<byte[]> bookInoutExport(
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(name = "fromDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(name = "toDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(required = false) String catCode, @RequestParam(required = false) Long productId) {
         List<Col> cols = List.of(
                 new Col("도서코드", "bookCode"), new Col("도서명", "bookName"),
@@ -347,8 +347,8 @@ public class SaleController {
     @Operation(summary = "거래처별 매출대비표 엑셀 다운로드", description = "당해 vs 전년 동기간 수량·금액 증감·비율.")
     @GetMapping("/yoy-comparison/export")
     public ResponseEntity<byte[]> yoyComparisonExport(
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
-            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(name = "fromDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(name = "toDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(defaultValue = "PARTNER") YoyComparisonResponse.GroupBy groupBy,
             @RequestParam(required = false) Long partnerId, @RequestParam(required = false) String catCode) {
         List<Col> cols = List.of(

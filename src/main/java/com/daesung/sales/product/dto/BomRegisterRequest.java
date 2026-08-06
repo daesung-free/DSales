@@ -20,6 +20,7 @@ public record BomRegisterRequest(
      * 세트 구성 1행(33p 세트구성 상세 탭).
      * 회차별 자재 단위로 등록하므로 같은 자재가 회차만 달리해 반복될 수 있다.
      */
+    @Schema(name = "BomRegisterComponent")
     public record Component(
 
             @Schema(description = "구성품(자재) 상품 id", example = "2", requiredMode = Schema.RequiredMode.REQUIRED)

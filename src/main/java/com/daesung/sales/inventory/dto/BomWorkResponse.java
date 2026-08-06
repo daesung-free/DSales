@@ -14,6 +14,7 @@ public record BomWorkResponse(
         @Schema(description = "조립 작업비(자동계산). 해체는 0 — 포장 작업이 없다", example = "24000")
         long workCost
 ) {
+    @Schema(name = "BomWorkLine")
     public record Line(
             @Schema(description = "상품 id") Long productId,
             @Schema(description = "상품코드") String productCode,

@@ -15,6 +15,7 @@ public record NetSalesResponse(
         @Schema(description = "상품별 순매출") List<Row> rows,
         @Schema(description = "합계") Row total
 ) {
+    @Schema(name = "NetSalesRow")
     public record Row(
             @Schema(description = "상품 id(합계행 null)") Long productId,
             @Schema(description = "상품코드") String productCode,

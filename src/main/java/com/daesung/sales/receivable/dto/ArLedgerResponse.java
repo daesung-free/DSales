@@ -17,6 +17,7 @@ public record ArLedgerResponse(
         @Schema(description = "기말잔액(누계 마지막)") long closing,
         @Schema(description = "명세 라인(일자순)") List<Line> lines
 ) {
+    @Schema(name = "ArLedgerLine")
     public record Line(
             @Schema(description = "거래일자") LocalDate date,
             @Schema(description = "구분(매출/교사용/증정/반품/수금)") String kind,

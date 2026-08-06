@@ -20,6 +20,7 @@ public record ConsignReturnRequest(
         @Schema(description = "반품 항목", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotEmpty @Valid List<Item> items
 ) {
+    @Schema(name = "ConsignReturnItem")
     public record Item(
 
             @Schema(description = "미결(consignment_out) id", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)

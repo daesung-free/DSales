@@ -8,6 +8,7 @@ import java.util.List;
 public record ConsignReturnResponse(
         @Schema(description = "반품 처리 라인") List<Line> items
 ) {
+    @Schema(name = "ConsignReturnLine")
     public record Line(
             @Schema(description = "미결(consignment_out) id") Long consignmentOutId,
             @Schema(description = "위탁출고번호(OUT-)") String sourceOutNo,

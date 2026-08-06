@@ -72,7 +72,7 @@ class AuthSecurityIntegrationTest extends IntegrationTestSupport {
         assertThat(status(HttpMethod.PUT, "/logistics-costs/rates/1", Map.of(), viewer)).isEqualTo(403);
 
         // 일반 조회는 VIEWER도 200
-        assertThat(status(HttpMethod.GET, "/sales/statement?from=2026-06-01&to=2026-06-30", null, viewer))
+        assertThat(status(HttpMethod.GET, "/sales/statement?fromDate=2026-06-01&toDate=2026-06-30", null, viewer))
                 .isEqualTo(200);
 
         // /auth/me 역할 반영

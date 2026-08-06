@@ -23,6 +23,7 @@ public record TransferRequest(
         @Schema(description = "이동 품목", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotEmpty @Valid List<Item> items
 ) {
+    @Schema(name = "TransferItem")
     public record Item(
 
             @Schema(description = "상품 id", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
