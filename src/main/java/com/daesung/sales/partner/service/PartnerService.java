@@ -44,12 +44,15 @@ public class PartnerService {
         return new CollateralExpiryResponse(reference, withinDays, rows);
     }
 
-    public PageResponse<PartnerResponse> findAll(String keyword, Pageable pageable) {
-        Page<Partner> page = (keyword == null || keyword.isBlank())
-                ? partnerRepository.findAll(pageable)
-                : partnerRepository.findByCodeContainingIgnoreCaseOrNameContainingIgnoreCase(
-                        keyword, keyword, pageable);
-        return PageResponse.of(page.map(PartnerResponse::from));
+    /**
+     * 거래처 목록. 레거시 거래처관리와 동일하게 <b>거래중(만료일 없음)만 기본 노출</b>하고,
+     * includeExpired=true면 만료된 거래처까지 보여준다(화면의 '만료된 거래처 포함' 체크박스).
+     * 근거: 거래처관리.vb — {@code where len(endDate) = 0} / {@code >= 0} 분기.
+     */
+    public PageResponse<PartnerResponse> findAll(String keyword, boolean includeExpired, Pageable pageable) {
+        String kw = (keyword == null || keyword.isBlank()) ? null : keyword.trim();
+        return PageResponse.of(partnerRepository.search(kw, includeExpired, pageable)
+                .map(PartnerResponse::from));
     }
 
     public PartnerResponse findById(Long id) {
@@ -63,6 +66,8 @@ public class PartnerService {
         });
         Partner partner = Partner.create(req.code(), req.name(), req.type());
         partner.applyNames(req.cityName(), req.name1(), req.region(), req.clientCategory());
+        partner.updateContact(req.bossId(), req.tel1(), req.tel2(), req.cellPhone(), req.fax(),
+                req.zip(), req.zone2(), req.startDate(), req.endDate());
         return PartnerResponse.from(partnerRepository.save(partner));
     }
 
@@ -73,6 +78,8 @@ public class PartnerService {
         partner.updateCredit(req.assureAmount(), req.assureExpiry(), req.assureNote());
         partner.updateTaxInfo(req.bizNo(), req.bossName(), req.addr1(), req.addr2(),
                 req.bizStatus(), req.bizItem(), req.email1(), req.email2());
+        partner.updateContact(req.bossId(), req.tel1(), req.tel2(), req.cellPhone(), req.fax(),
+                req.zip(), req.zone2(), req.startDate(), req.endDate());
         return PartnerResponse.from(partner);
     }
 

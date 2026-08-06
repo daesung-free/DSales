@@ -40,21 +40,40 @@ public class PartnerController {
     private final PartnerService partnerService;
     private final ExcelExportUtil excel;
 
-    @Operation(summary = "거래처 목록 조회", description = "keyword(코드/명 부분일치)로 검색, 페이징·정렬 지원")
+    @Operation(summary = "거래처 목록 조회",
+            description = """
+                    keyword(코드/명 부분일치)로 검색, 페이징·정렬 지원.
+                    **기본은 거래중인 거래처만** 보여준다(만료일이 없는 건).
+                    includeExpired=true면 만료된 거래처까지 포함 — 화면의 '만료된 거래처 포함' 체크박스.""")
     @GetMapping
     public ApiResponse<PageResponse<PartnerResponse>> list(
             @Parameter(description = "검색어(거래처코드 또는 거래처명 부분일치)") @RequestParam(required = false) String keyword,
+            @Parameter(description = "만료된 거래처 포함(기본 false)")
+            @RequestParam(required = false, defaultValue = "false") boolean includeExpired,
             @ParameterObject PageRequestDto pageReq) {
-        return ApiResponse.success(partnerService.findAll(keyword, pageReq.toPageable()));
+        return ApiResponse.success(partnerService.findAll(keyword, includeExpired, pageReq.toPageable()));
     }
 
-    @Operation(summary = "거래처 목록 엑셀 다운로드", description = "검색조건 전체를 xlsx로.")
+    @Operation(summary = "거래처 목록 엑셀 다운로드", description = "30p 거래처관리 컬럼 전체. 검색조건 그대로.")
     @GetMapping("/export")
-    public ResponseEntity<byte[]> listExport(@RequestParam(required = false) String keyword) {
-        List<Col> cols = List.of(new Col("거래처코드", "code"), new Col("도시명", "cityName"),
-                new Col("거래처명1", "name1"), new Col("거래처명2", "name"), new Col("구분", "type"));
+    public ResponseEntity<byte[]> listExport(
+            @RequestParam(required = false) String keyword,
+            @RequestParam(required = false, defaultValue = "false") boolean includeExpired) {
+        List<Col> cols = List.of(
+                new Col("거래처코드", "code"), new Col("거래처명", "name"), new Col("신고명", "name1"),
+                new Col("사업자번호", "bizNo"), new Col("업종", "bizStatus"), new Col("업태", "bizItem"),
+                new Col("사업자명", "bossName"), new Col("사업자주민번호", "bossId"),
+                new Col("연락처1", "tel1"), new Col("연락처2", "tel2"),
+                new Col("휴대폰번호", "cellPhone"), new Col("팩스번호", "fax"),
+                new Col("이메일1", "email1"), new Col("이메일2", "email2"),
+                new Col("우편번호", "zip"), new Col("기본주소", "addr1"), new Col("상세주소", "addr2"),
+                new Col("등록일", "startDate"), new Col("만료일", "endDate"),
+                new Col("도시명", "cityName"), new Col("지역", "region"), new Col("관할지역", "zone2"),
+                new Col("거래처구분", "clientCategory"),
+                new Col("담보금액", "assureAmount"), new Col("담보만기", "assureExpiry"),
+                new Col("담보내용", "assureNote"));
         byte[] xlsx = excel.toXlsx("거래처목록", cols,
-                partnerService.findAll(keyword, PageRequest.of(0, 100000)).getContent());
+                partnerService.findAll(keyword, includeExpired, PageRequest.of(0, 100000)).getContent());
         return excel.asDownload(xlsx, "거래처목록.xlsx");
     }
 

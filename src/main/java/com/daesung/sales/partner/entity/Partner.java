@@ -89,6 +89,47 @@ public class Partner extends BaseEntity {
     @Column(length = 100)
     private String email2;
 
+    // ── 거래처관리(30p) 연락처·거래기간 — 레거시 custData 컬럼 대응 ──────────────
+
+    /** 사업자주민번호(custData.bossID). */
+    @Column(name = "boss_id", length = 20)
+    private String bossId;
+
+    @Column(length = 20)
+    private String tel1;
+
+    @Column(length = 20)
+    private String tel2;
+
+    @Column(name = "cell_phone", length = 20)
+    private String cellPhone;
+
+    @Column(length = 20)
+    private String fax;
+
+    @Column(length = 10)
+    private String zip;
+
+    /** 관할지역(custData.zone2). region(지역, zone1)과 별개 축이다. */
+    @Column(length = 200)
+    private String zone2;
+
+    /** 등록일(거래 시작). */
+    @Column(name = "start_date")
+    private LocalDate startDate;
+
+    /**
+     * 만료일. NULL이면 거래중.
+     * 레거시 조회는 만료 안 된 거래처만 기본 노출하고, '만료된 거래처 포함' 체크 시 전체를 보여준다.
+     */
+    @Column(name = "end_date")
+    private LocalDate endDate;
+
+    /** 거래 만료 여부. */
+    public boolean isExpired() {
+        return endDate != null;
+    }
+
     public static Partner create(String code, String name, PartnerType type) {
         Partner p = new Partner();
         p.code = code;
@@ -121,6 +162,20 @@ public class Partner extends BaseEntity {
         this.assureAmount = assureAmount;
         this.assureExpiry = assureExpiry;
         this.assureNote = assureNote;
+    }
+
+    /** 연락처·거래기간 설정(30p 거래처관리). */
+    public void updateContact(String bossId, String tel1, String tel2, String cellPhone, String fax,
+                              String zip, String zone2, LocalDate startDate, LocalDate endDate) {
+        this.bossId = bossId;
+        this.tel1 = tel1;
+        this.tel2 = tel2;
+        this.cellPhone = cellPhone;
+        this.fax = fax;
+        this.zip = zip;
+        this.zone2 = zone2;
+        this.startDate = startDate;
+        this.endDate = endDate;
     }
 
     /** 세무(계산서 공급받는자) 정보 설정. */

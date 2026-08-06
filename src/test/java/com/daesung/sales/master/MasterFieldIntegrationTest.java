@@ -661,4 +661,44 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
                 "code", "CC-NULL", "name", "분류미지정", "contentType", "SELF")).path("success").asBoolean())
                 .as("분류코드 미입력은 허용").isTrue();
     }
+
+    @Test
+    @DisplayName("거래처관리(30p) — 연락처·거래기간 필드 왕복 + '만료된 거래처 포함' 필터")
+    void 거래처_연락처_만료필터() {
+        // 레거시 거래처관리.vb 조회 컬럼 전수 대응 필드
+        Map<String, Object> body = new java.util.HashMap<>();   // Map.of는 10쌍 제한
+        body.put("code", "PC-A");
+        body.put("name", "연락처거래처");
+        body.put("type", "NORMAL");
+        body.put("bossId", "800101-1234567");
+        body.put("tel1", "02-123-4567");
+        body.put("tel2", "02-123-4568");
+        body.put("cellPhone", "010-1234-5678");
+        body.put("fax", "02-123-4569");
+        body.put("zip", "13588");
+        body.put("zone2", "경남권");
+        body.put("startDate", "2026-01-01");
+        long id = createId("/masters/clients", body);
+
+        JsonNode d = data(get("/masters/clients/" + id));
+        assertThat(d.path("bossId").asText()).isEqualTo("800101-1234567");
+        assertThat(d.path("tel1").asText()).isEqualTo("02-123-4567");
+        assertThat(d.path("cellPhone").asText()).isEqualTo("010-1234-5678");
+        assertThat(d.path("fax").asText()).isEqualTo("02-123-4569");
+        assertThat(d.path("zip").asText()).isEqualTo("13588");
+        assertThat(d.path("zone2").asText()).isEqualTo("경남권");
+        assertThat(d.path("expired").asBoolean()).as("만료일 없으면 거래중").isFalse();
+
+        // 만료 거래처 등록 — 기본 조회에서는 빠지고, 포함 옵션에서만 보인다
+        createId("/masters/clients", Map.of(
+                "code", "PC-END", "name", "만료거래처", "type", "NORMAL", "endDate", "2026-06-30"));
+
+        assertThat(data(get("/masters/clients?keyword=PC-&size=100")).path("content")
+                .findValuesAsText("code"))
+                .as("기본 조회는 거래중만").contains("PC-A").doesNotContain("PC-END");
+
+        assertThat(data(get("/masters/clients?keyword=PC-&includeExpired=true&size=100")).path("content")
+                .findValuesAsText("code"))
+                .as("포함 옵션이면 만료분도 노출").contains("PC-A", "PC-END");
+    }
 }

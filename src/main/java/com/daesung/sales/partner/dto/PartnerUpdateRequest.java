@@ -39,6 +39,17 @@ public record PartnerUpdateRequest(
         @Schema(description = "업태", example = "도소매") String bizStatus,
         @Schema(description = "종목", example = "서적") String bizItem,
         @Schema(description = "이메일1", example = "a@b.com") String email1,
-        @Schema(description = "이메일2") String email2
+        @Schema(description = "이메일2") String email2,
+
+        // ── 연락처·거래기간(30p 거래처관리) ──
+        @Schema(description = "사업자주민번호", example = "800101-1234567") String bossId,
+        @Schema(description = "연락처1", example = "02-123-4567") String tel1,
+        @Schema(description = "연락처2") String tel2,
+        @Schema(description = "휴대폰번호", example = "010-1234-5678") String cellPhone,
+        @Schema(description = "팩스번호") String fax,
+        @Schema(description = "우편번호", example = "13588") String zip,
+        @Schema(description = "관할지역 — '지역'과 별개 축", example = "경남권") String zone2,
+        @Schema(description = "등록일(거래 시작)") LocalDate startDate,
+        @Schema(description = "만료일 — 값이 있으면 만료 거래처로 분류") LocalDate endDate
 ) {
 }
