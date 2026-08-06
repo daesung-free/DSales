@@ -47,6 +47,10 @@ public record SalesEntryRequest(
             @Schema(description = "수량", example = "100", requiredMode = Schema.RequiredMode.REQUIRED)
             @Positive int qty,
 
+            @Schema(description = "세액(선택). 자동산출하지 않으며 미입력 시 0. 면세 상품에는 입력 불가",
+                    example = "0")
+            @PositiveOrZero Integer tax,
+
             @Schema(description = "성적처리 구분(37p 월별매출액명세서 인원 집계축): GRADED(성적처리)/UNGRADED(비처리). 미지정 시 비처리로 집계",
                     example = "GRADED")
             ProcType procType,

@@ -144,7 +144,7 @@ public class ConsignmentService {
             }
 
             Product product = co.getProduct();
-            Amounts amt = Amounts.of(s.unitPrice(), s.supplyRate(), s.settleQty(), product.isTaxFree());
+            Amounts amt = Amounts.of(s.unitPrice(), s.supplyRate(), s.settleQty(), product.isTaxFree(), s.tax());
             long supplyAmount = amt.supplyAmount();
             long tax = amt.tax();
             long totalAmount = amt.totalAmount();

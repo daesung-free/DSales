@@ -89,7 +89,7 @@ public class SaleService {
             SalesEntryRequest.Item item = r.item();
             Product product = r.product();
 
-            Amounts amt = Amounts.of(r.unitPrice(), r.supplyRate(), item.qty(), product.isTaxFree());
+            Amounts amt = Amounts.of(r.unitPrice(), r.supplyRate(), item.qty(), product.isTaxFree(), item.tax());
             long supplyAmount = amt.supplyAmount();
             long tax = amt.tax();
             long totalAmount = amt.totalAmount();
@@ -197,7 +197,7 @@ public class SaleService {
 
             consumeReturnable(returnable, product, item.qty());
 
-            Amounts amt = Amounts.of(item.unitPrice(), item.supplyRate(), item.qty(), product.isTaxFree());
+            Amounts amt = Amounts.of(item.unitPrice(), item.supplyRate(), item.qty(), product.isTaxFree(), item.tax());
             long supplyAmount = amt.supplyAmount();
             long tax = amt.tax();
             long totalAmount = amt.totalAmount();

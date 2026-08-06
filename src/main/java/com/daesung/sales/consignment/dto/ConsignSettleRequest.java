@@ -34,6 +34,9 @@ public record ConsignSettleRequest(
             @Schema(description = "공급률(%)", example = "75", requiredMode = Schema.RequiredMode.REQUIRED)
             @NotNull Integer supplyRate,
 
+            @Schema(description = "세액(선택). 미입력 시 0", example = "0")
+            @jakarta.validation.constraints.PositiveOrZero Integer tax,
+
             @Schema(description = "메모") String memo
     ) {
     }

@@ -85,22 +85,44 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
                 "catCode", "E2026E01", "catName", "이감국어", "useYn", true));
     }
 
+    /**
+     * 매출 등록. 세액은 <b>자동산출되지 않으므로</b>(발주처 확정) 명시적으로 넣는다 —
+     * 세무 리포트들이 세액이 제대로 흘러가는지를 보기 때문에, 입력한 값으로 검증한다.
+     * 학교명도 함께 넣는다(거래명세서 실물 양식의 "학교(원)" 칸 원천).
+     */
     private void sale(String date, Long whId, Long productId, String shipmentType, int rate, int qty) {
-        // 학교명을 함께 넣는다 — 거래명세서 실물 양식의 "학교(원)" 칸 원천이다.
+        Map<String, Object> item = new java.util.HashMap<>();
+        item.put("productId", productId);
+        item.put("shipmentType", shipmentType);
+        item.put("unitPrice", 10000);
+        item.put("supplyRate", rate);
+        item.put("qty", qty);
+        item.put("tax", taxOf(rate, qty));
+        item.put("schoolName", "엔컴잇올스파르타학원");
         JsonNode r = post("/sales/entries", Map.of(
                 "salesDate", date, "partnerId", partnerId, "warehouseId", whId,
-                "items", List.of(Map.of("productId", productId, "shipmentType", shipmentType,
-                        "unitPrice", 10000, "supplyRate", rate, "qty", qty,
-                        "schoolName", "엔컴잇올스파르타학원"))));
+                "items", List.of(item)));
         assertThat(r.path("success").asBoolean()).as("매출등록 성공: %s", r).isTrue();
     }
 
-    /** 성적처리 구분 포함 매출 등록(37p 검증용). */
+    /** 공급가액(정가 10000 기준)의 10%. 담당자가 입력하는 세액을 테스트에서 재현. */
+    private static int taxOf(int rate, int qty) {
+        return (int) ((long) (10000L * rate / 100 * qty) / 10);
+    }
+
+    /** 성적처리 구분 포함 매출 등록(37p 검증용). 세액은 명시 입력. */
     private void saleP(String date, Long whId, Long productId, String shipmentType, int rate, int qty, String procType) {
+        Map<String, Object> item = new java.util.HashMap<>();
+        item.put("productId", productId);
+        item.put("shipmentType", shipmentType);
+        item.put("unitPrice", 10000);
+        item.put("supplyRate", rate);
+        item.put("qty", qty);
+        item.put("tax", taxOf(rate, qty));
+        item.put("procType", procType);
         JsonNode r = post("/sales/entries", Map.of(
                 "salesDate", date, "partnerId", partnerId, "warehouseId", whId,
-                "items", List.of(Map.of("productId", productId, "shipmentType", shipmentType,
-                        "unitPrice", 10000, "supplyRate", rate, "qty", qty, "procType", procType))));
+                "items", List.of(item)));
         assertThat(r.path("success").asBoolean()).as("매출등록 성공: %s", r).isTrue();
     }
 
@@ -270,10 +292,12 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
         assertThat(sum.path("nextMonthTax").asLong()).isEqualTo(5_000);
     }
 
+    /** 반품입고. 세액은 자동산출되지 않으므로 원 출고와 동일 기준으로 명시 입력한다. */
     private void returnInbound(String date, Long whId, Long productId, int qty) {
         JsonNode r = post("/sales/return-inbound", Map.of(
                 "returnDate", date, "partnerId", partnerId, "warehouseId", whId,
-                "items", List.of(Map.of("productId", productId, "unitPrice", 10000, "supplyRate", 100, "qty", qty))));
+                "items", List.of(Map.of("productId", productId, "unitPrice", 10000,
+                        "supplyRate", 100, "qty", qty, "tax", taxOf(100, qty)))));
         assertThat(r.path("success").asBoolean()).as("반품입고 성공: %s", r).isTrue();
     }
 

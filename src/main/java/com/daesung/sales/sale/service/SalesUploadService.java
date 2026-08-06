@@ -121,6 +121,7 @@ public class SalesUploadService {
                                 "정가·공급률이 없고 거래처별 단가 매핑도 없음");
                     }
 
+                    // 표준 업로드 양식(12컬럼)에 세액 항목이 없다 → 0. 세액이 필요한 건은 등록 후 수정한다.
                     Amounts amt = Amounts.of(unitPrice, supplyRate, qty, product.isTaxFree());
                     String salesNo = "I-" + date.format(YYYYMMDD) + "-" + sequenceService.next(SequenceService.SEQ_INVOICE);
                     Sale sale = Sale.createBulk(salesNo, date, partner, product,

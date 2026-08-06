@@ -178,9 +178,11 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
         long coId = data(outResp).path("items").get(0).path("consignmentOutId").asLong();
 
         // 부분정산 30 (정가 10000, 공급률 70) → 매출 210,000
+        // 세액은 자동산출되지 않으므로(발주처 확정) 명시 입력한다: 10000×70%×30 = 210,000 → 세액 21,000
         JsonNode settle = post("/consignment/settle", Map.of(
                 "salesDate", "2026-10-15", "settlements",
-                List.of(Map.of("consignmentOutId", coId, "settleQty", 30, "unitPrice", 10000, "supplyRate", 70))));
+                List.of(Map.of("consignmentOutId", coId, "settleQty", 30,
+                        "unitPrice", 10000, "supplyRate", 70, "tax", 21_000))));
         assertThat(settle.path("success").asBoolean()).as("정산: %s", settle).isTrue();
 
         // 정산내역서 — partnerId로 이 테스트의 거래처만 조회(공유 DB라 전역 조회하면 합계가 오염된다)
@@ -700,5 +702,46 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
         assertThat(data(get("/masters/clients?keyword=PC-&includeExpired=true&size=100")).path("content")
                 .findValuesAsText("code"))
                 .as("포함 옵션이면 만료분도 노출").contains("PC-A", "PC-END");
+    }
+
+    @Test
+    @DisplayName("세액 — 자동산출하지 않는다(미입력=0, 입력값 그대로, 면세 상품엔 입력 거부)")
+    void 세액_수동입력() {
+        Long wh = createId("/masters/warehouses", Map.of("code", "TX-WH", "name", "세액창고", "type", "MAIN"));
+        Long partner = createId("/masters/clients", Map.of("code", "TX-CUST", "name", "세액거래처", "type", "NORMAL"));
+        // 과세 상품(taxFree=false)
+        Long taxable = createId("/masters/products", Map.of(
+                "code", "TX-TAXABLE", "name", "과세도서", "contentType", "SELF", "price", 10000, "taxFree", false));
+        Long free = createId("/masters/products", Map.of(
+                "code", "TX-FREE", "name", "면세도서", "contentType", "SELF", "price", 10000, "taxFree", true));
+        inbound(wh, taxable);
+        inbound(wh, free);
+
+        // ① 과세 상품인데 세액 미입력 → 0 (예전엔 공급가액의 10%가 자동으로 붙었다)
+        JsonNode noTax = data(post("/sales/entries", Map.of(
+                "salesDate", "2026-12-01", "partnerId", partner, "warehouseId", wh,
+                "items", List.of(Map.of("productId", taxable, "shipmentType", "NORMAL_SHIP",
+                        "unitPrice", 10000, "supplyRate", 100, "qty", 10)))));
+        JsonNode line = noTax.path("items").get(0);
+        assertThat(line.path("supplyAmount").asLong()).isEqualTo(100_000);
+        assertThat(line.path("tax").asLong()).as("자동산출 없음 → 0").isZero();
+        assertThat(line.path("totalAmount").asLong()).as("총금액=금액+세액").isEqualTo(100_000);
+
+        // ② 담당자가 입력하면 그 값이 그대로 반영된다
+        JsonNode withTax = data(post("/sales/entries", Map.of(
+                "salesDate", "2026-12-02", "partnerId", partner, "warehouseId", wh,
+                "items", List.of(Map.of("productId", taxable, "shipmentType", "NORMAL_SHIP",
+                        "unitPrice", 10000, "supplyRate", 100, "qty", 10, "tax", 7_777)))));
+        JsonNode line2 = withTax.path("items").get(0);
+        assertThat(line2.path("tax").asLong()).as("입력값 그대로").isEqualTo(7_777);
+        assertThat(line2.path("totalAmount").asLong()).isEqualTo(107_777);
+
+        // ③ 면세 상품에 세액을 넣으면 거부 — 조용히 무시하면 담당자가 값이 사라진 걸 모른다
+        JsonNode bad = post("/sales/entries", Map.of(
+                "salesDate", "2026-12-03", "partnerId", partner, "warehouseId", wh,
+                "items", List.of(Map.of("productId", free, "shipmentType", "NORMAL_SHIP",
+                        "unitPrice", 10000, "supplyRate", 100, "qty", 5, "tax", 5_000))));
+        assertThat(bad.path("success").asBoolean()).as("면세+세액: %s", bad).isFalse();
+        assertThat(bad.path("error").path("code").asText()).isEqualTo("INVALID_INPUT");
     }
 }

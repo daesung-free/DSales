@@ -43,6 +43,9 @@ public record ReturnInboundRequest(
             @Schema(description = "반품수량", example = "10", requiredMode = Schema.RequiredMode.REQUIRED)
             @Positive int qty,
 
+            @Schema(description = "세액(선택). 미입력 시 0", example = "0")
+            @PositiveOrZero Integer tax,
+
             @Schema(description = "원본 출고번호(역추적용, 선택)", example = "OUT-20260601-1")
             String sourceOutNo,
 

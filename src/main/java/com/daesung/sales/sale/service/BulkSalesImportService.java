@@ -92,7 +92,8 @@ public class BulkSalesImportService {
                     lines.add(line(sourceKey, k.category(), row, k.qty(), supply, "PREVIEW", null));
                     continue;
                 }
-                long tax = com.daesung.sales.common.money.Amounts.taxOf(supply, product.isTaxFree());
+                // DSRE 작업리스트에 세액 항목이 없다 → 0. 세액은 자동산출하지 않는다(발주처 확정).
+                long tax = 0L;
                 String salesNo = "I-" + to.format(YYYYMMDD) + "-" + sequenceService.next(SequenceService.SEQ_INVOICE);
                 saleRepository.save(Sale.createBulk(salesNo, to, partner, product,
                         k.shipmentType(), k.category(), row.price(), k.rate(), k.qty(),
