@@ -52,4 +52,17 @@ public interface DsreGateway {
      * 근거: DSRE2 {@code tbl_cust_ref} UNIQUE (CUST_CD, MGR_GN, MGR_CD).
      */
     java.util.List<SchoolRefRow> readSchoolRefs();
+
+    /**
+     * 주문·진행상태 조회(읽기 전용). 근거: 레거시 조회 SQL(FM_DSRE_RegStateChng.cs).
+     *
+     * <p>상태 전이는 DSRE2 데스크톱이 수행하고 우리는 읽기만 한다(발주처 확정 2026-08-11
+     * "DSRE는 그대로 사용"). 따라서 이 게이트웨이에 상태 변경 메서드는 두지 않는다.
+     *
+     * @param state 진행상태 필터(null=전체). 취소분은 {@code C}로만 조회되며 지사 취소는 행이 없다.
+     * @param custCode 거래처코드 필터(null=전체)
+     * @param mode 구분 필터 ALL/NORMAL(APPLY_GN='S')/ACCIDENT(APPLY_GN='A')
+     */
+    java.util.List<DsreOrderRow> findOrders(java.time.LocalDate from, java.time.LocalDate to,
+                                            OrderState state, String custCode, LogisMode mode);
 }

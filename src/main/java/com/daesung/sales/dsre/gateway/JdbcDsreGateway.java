@@ -299,6 +299,99 @@ public class JdbcDsreGateway implements DsreGateway {
                         rs.getString("sch_nm")));
     }
 
+    // ── 주문·진행상태 조회 (읽기 전용) — 근거: FM_DSRE_RegStateChng.cs 조회 SQL ──────────
+    // 상태 전이는 DSRE2 데스크톱 소관이라 여기엔 조회만 둔다(발주처 확정 2026-08-11).
+    // 레거시 화면은 'AND STATE NOT IN (W,D,C) AND APPLY_GN=S'로 대상을 좁히지만,
+    // 그건 '상태를 바꿀 수 있는 건'만 뽑는 그 화면의 사정이라 일반 조회에는 옮기지 않는다.
+    // 필터는 전부 바인딩 값으로 넘긴다(게이트규칙: SQL 조각 조립 금지).
+    private static final String ORDER_SQL = """
+            SELECT req.REQ_CD                                   req_cd,
+                   req.REQ_DATE                                 req_date,
+                   req.STATE                                    state,
+                   req.CUST_CD                                  cust_cd,
+                   cust.CUST_NM                                 cust_nm,
+                   cust.CUST_FNM                                cust_fnm,
+                   city.CITY_NM                                 city_nm,
+                   req.MGR_CD                                   mgr_cd,
+                   COALESCE(sch.SCH_NM, hak.HAK_NM)             mgr_nm,
+                   prod.PROD_NM                                 prod_nm,
+                   dtl.DTL_NM                                   dtl_nm,
+                   dtl.GRADE                                    grade,
+                   FUNC_REQINWON_GET(req.REQ_CD)                inwon,
+                   cls.CLS_CNT                                  cls_cnt,
+                   req.PROC_YN                                  proc_yn,
+                   req.TEACHER                                  teacher,
+                   req.TEL                                      tel,
+                   req.ADDRESS                                  address,
+                   req.BIGO                                     bigo
+              FROM tbl_request_info req
+              LEFT JOIN tbl_product_dtl  dtl  ON dtl.DTL_CD  = req.DTL_CD
+              LEFT JOIN tbl_product_info prod ON prod.PROD_CD = dtl.PROD_CD
+              LEFT JOIN tbl_cust_info    cust ON cust.CUST_CD = req.CUST_CD
+              LEFT JOIN tbl_city_info    city ON city.CITY_CD = cust.CITY_CD
+              LEFT JOIN tbl_school_info  sch  ON sch.MGR_CD  = req.MGR_CD
+              LEFT JOIN tbl_hakwon_info  hak  ON hak.MGR_CD  = req.MGR_CD
+              LEFT JOIN (SELECT REQ_CD, COUNT(CLS_NM) CLS_CNT
+                           FROM tbl_request_dtl GROUP BY REQ_CD) cls ON cls.REQ_CD = req.REQ_CD
+             WHERE req.REQ_DATE BETWEEN ? AND ?
+               AND (? IS NULL OR req.STATE = ?)
+               AND (? IS NULL OR req.CUST_CD = ?)
+               AND (? IS NULL OR req.APPLY_GN = ?)
+             ORDER BY req.REQ_DATE DESC, req.REQ_CD DESC
+            """;
+
+    @Override
+    public List<DsreOrderRow> findOrders(LocalDate from, LocalDate to,
+                                         OrderState state, String custCode, LogisMode mode) {
+        String stateCode = (state == null) ? null : state.code();
+        String cust = (custCode == null || custCode.isBlank()) ? null : custCode.trim();
+        String applyGn = (mode == null) ? null : mode.applyGnValue();
+
+        return dsreJdbcTemplate.query(ORDER_SQL,
+                (rs, i) -> {
+                    String code = trim(rs.getString("state"));
+                    return new DsreOrderRow(
+                            rs.getInt("req_cd"),
+                            trim(rs.getString("req_date")),
+                            code,
+                            OrderState.labelOf(code),
+                            trim(rs.getString("cust_cd")),
+                            rs.getString("cust_nm"),
+                            rs.getString("cust_fnm"),
+                            rs.getString("city_nm"),
+                            trim(rs.getString("mgr_cd")),
+                            rs.getString("mgr_nm"),
+                            rs.getString("prod_nm"),
+                            rs.getString("dtl_nm"),
+                            trim(rs.getString("grade")),
+                            intOrNull(rs.getObject("inwon")),
+                            intOrNull(rs.getObject("cls_cnt")),
+                            procLabel(trim(rs.getString("proc_yn"))),
+                            rs.getString("teacher"),
+                            rs.getString("tel"),
+                            rs.getString("address"),
+                            rs.getString("bigo"));
+                },
+                from.format(YYYYMMDD), to.format(YYYYMMDD),
+                stateCode, stateCode, cust, cust, applyGn, applyGn);
+    }
+
+    /**
+     * 집계·저장함수 결과를 Integer로. MySQL이 COUNT()·FUNC_REQINWON_GET()을 BIGINT로 돌려줘
+     * Integer 직접 캐스팅은 ClassCastException이 난다(실제로 발생).
+     */
+    private static Integer intOrNull(Object v) {
+        return (v instanceof Number n) ? n.intValue() : null;
+    }
+
+    /** 성적처리 여부 표기(레거시 조회 SQL의 CASE와 동일). */
+    private static String procLabel(String procYn) {
+        if ("Y".equalsIgnoreCase(procYn)) {
+            return "처리";
+        }
+        return "N".equalsIgnoreCase(procYn) ? "비처리" : "";
+    }
+
     /** DSRE2 코드 컬럼이 char(5) 고정폭이라 뒤 공백이 붙는다 — 매칭키로 쓰기 전 제거. */
     private static String trim(String s) {
         return (s == null) ? null : s.trim();
