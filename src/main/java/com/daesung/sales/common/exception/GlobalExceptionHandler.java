@@ -42,6 +42,20 @@ public class GlobalExceptionHandler {
                         "정렬/조회 기준이 올바르지 않습니다: " + e.getPropertyName())));
     }
 
+    /**
+     * 지원하지 않는 HTTP 메서드 → 405.
+     *
+     * <p>이게 없으면 경로는 맞는데 메서드만 틀린 호출이 500 "서버 오류"로 나간다.
+     * 프론트가 원인을 찾을 수 없고, 서버가 진짜로 깨진 것처럼 보인다(실제로 겪었다).
+     */
+    @ExceptionHandler(org.springframework.web.HttpRequestMethodNotSupportedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMethodNotSupported(
+            org.springframework.web.HttpRequestMethodNotSupportedException e) {
+        return ResponseEntity.status(ErrorCode.METHOD_NOT_ALLOWED.getStatus())
+                .body(ApiResponse.fail(ErrorResponse.of(ErrorCode.METHOD_NOT_ALLOWED,
+                        "지원하지 않는 메서드입니다: " + e.getMethod())));
+    }
+
     /** 존재하지 않는 경로/리소스 → 404. */
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<ApiResponse<Void>> handleNotFound(NoResourceFoundException e) {

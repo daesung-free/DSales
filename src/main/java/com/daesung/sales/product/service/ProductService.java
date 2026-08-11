@@ -8,6 +8,8 @@ import com.daesung.sales.partner.entity.Partner;
 import com.daesung.sales.partner.repository.PartnerRepository;
 import com.daesung.sales.product.dto.BomRegisterRequest;
 import com.daesung.sales.product.dto.BomResponse;
+import com.daesung.sales.product.dto.PartnerPriceBulkRequest;
+import com.daesung.sales.product.dto.PartnerPriceBulkResult;
 import com.daesung.sales.product.dto.PartnerPriceRequest;
 import com.daesung.sales.product.dto.PartnerPriceResponse;
 import com.daesung.sales.product.dto.ProductCreateRequest;
@@ -62,7 +64,7 @@ public class ProductService {
                 req.catCode(), req.catName(), req.useYnOrDefault(),
                 req.salesDivision(), req.ledgerVisibleOrDefault(), req.webVisibleOrDefault(),
                 req.stockManagedOrDefault());
-        product.applyExtra(req.productYear(), req.productType());
+        product.applyExtra(req.productYear(), req.productType(), req.supplyRate());
         return ProductResponse.from(productRepository.save(product));
     }
 
@@ -73,7 +75,7 @@ public class ProductService {
                 req.price(), req.taxFree(), req.grade(),
                 req.catCode(), req.catName(), req.useYn(),
                 req.salesDivision(), req.ledgerVisible(), req.webVisible(), req.stockManaged());
-        product.applyExtra(req.productYear(), req.productType());
+        product.applyExtra(req.productYear(), req.productType(), req.supplyRate());
         return ProductResponse.from(product);
     }
 
@@ -141,6 +143,44 @@ public class ProductService {
                 .orElseGet(() -> ProductPartnerPrice.create(product, partner, null, true));
         mapping.update(req.supplyRate(), req.visibleOrDefault());
         return PartnerPriceResponse.from(partnerPriceRepository.save(mapping));
+    }
+
+    /**
+     * 거래처별 단가 일괄 적용. 근거: 발주처가 공급률을 거래처구분별 대표값으로 운영(자료요청서 1-2).
+     *
+     * <p>기본은 <b>기존 매핑을 건드리지 않는다</b>(overwrite=false). 예외 단가를 따로 넣어둔
+     * 거래처가 일괄 적용 한 번에 조용히 덮여 없어지면, 그 거래처 매출이 잘못된 금액으로 등록된다.
+     * 덮어쓸지는 담당자가 명시적으로 선택하게 하고, 결과에 건드리지 않은 건수를 돌려준다.
+     */
+    @Transactional
+    public PartnerPriceBulkResult bulkUpsertPartnerPrices(Long productId, PartnerPriceBulkRequest req) {
+        Product product = getOrThrow(productId);
+        int created = 0;
+        int updated = 0;
+        List<String> skipped = new ArrayList<>();
+
+        for (Long partnerId : req.partnerIds().stream().distinct().toList()) {
+            Partner partner = partnerRepository.findById(partnerId)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                            "거래처가 없습니다. id=" + partnerId));
+            var existing = partnerPriceRepository.findByProductIdAndPartnerId(productId, partnerId);
+            if (existing.isPresent()) {
+                if (!req.overwriteOrDefault()) {
+                    skipped.add(partner.getCode());
+                    continue;
+                }
+                existing.get().update(req.supplyRate(), req.visibleOrDefault());
+                partnerPriceRepository.save(existing.get());
+                updated++;
+            } else {
+                ProductPartnerPrice mapping = ProductPartnerPrice.create(product, partner, null, true);
+                mapping.update(req.supplyRate(), req.visibleOrDefault());
+                partnerPriceRepository.save(mapping);
+                created++;
+            }
+        }
+        return new PartnerPriceBulkResult(productId, product.getCode(), created, updated,
+                skipped.size(), skipped);
     }
 
     /** 도서×거래처 매핑 삭제(논리삭제 — 행은 남고 삭제자·시각이 기록된다). */

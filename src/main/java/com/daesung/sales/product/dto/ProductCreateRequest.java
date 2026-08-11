@@ -2,6 +2,8 @@ package com.daesung.sales.product.dto;
 
 import com.daesung.sales.product.entity.ContentType;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.Max;
+import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
@@ -47,6 +49,9 @@ public record ProductCreateRequest(
 
         @Schema(description = "상품구분(32p, 레거시 bookData.type 원시값)", example = "교재")
         String productType,
+
+        @Schema(description = "기본 공급률(%). 거래처별 매핑이 없을 때 적용되는 바탕값", example = "75")
+        @PositiveOrZero @Max(100) Integer supplyRate,
 
         @Schema(description = "수불부노출 여부(미지정 시 true)", example = "true")
         Boolean ledgerVisible,

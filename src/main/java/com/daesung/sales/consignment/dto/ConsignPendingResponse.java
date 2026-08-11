@@ -21,7 +21,16 @@ public record ConsignPendingResponse(
             @Schema(description = "총 출고수량") int totalQty,
             @Schema(description = "누적 정산수량") int settledQty,
             @Schema(description = "미결 잔여수량") int remainingQty,
-            @Schema(description = "상태(OPEN/PARTIAL)") ConsignmentStatus status
+            @Schema(description = "정산상태 코드(OPEN/PARTIAL/CLOSED)") ConsignmentStatus status,
+            @Schema(description = "정산상태명(미정산/부분정산/정산완료)", example = "부분정산") String statusName
     ) {
+        /** 코드에서 한글명을 채워 생성 — 화면이 매번 매핑표를 들고 있지 않게. */
+        public Line(Long consignmentOutId, String sourceOutNo, Long productId, String productCode,
+                    String productName, int totalQty, int settledQty, int remainingQty,
+                    ConsignmentStatus status) {
+            this(consignmentOutId, sourceOutNo, productId, productCode, productName,
+                    totalQty, settledQty, remainingQty, status,
+                    status == null ? null : status.label());
+        }
     }
 }

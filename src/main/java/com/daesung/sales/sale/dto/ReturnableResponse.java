@@ -7,6 +7,9 @@ import java.util.List;
 /**
  * 교재식 반품 가능내역 조회 응답. 거래처의 도서×정가×공급률 단위 누적 출고내역.
  *
+ * <p>반품가능수량의 바탕은 <b>확정매출(SALE) 수량</b>이다 — 출고수량이 아니다.
+ * 위탁출고는 정산 전까지 매출이 아니므로 미결분은 여기 잡히지 않는다(정산돼야 반품 대상이 된다).
+ *
  * <p>정가·공급률은 <b>원 출고건 값을 표시해 주기 위한 참고값</b>이며 반품 등록 시 수정할 수 있다
  * (발주처 확정 2026-08-05: "공급률은 원 출고건 값을 기준으로 표시하되 담당자가 필요 시 수정 가능").
  * 반품 범위 판정은 <b>도서 단위 합계</b>로 한다.
@@ -21,9 +24,12 @@ public record ReturnableResponse(Long partnerId, List<Row> rows) {
             String productName,
             Integer unitPrice,
             Integer supplyRate,
-            long shippedQty,     // 누적 판매출고
-            long returnedQty,    // 기(旣)반품
-            long returnableQty   // 반품가능 = 출고 − 기반품
+            @Schema(description = "누적 확정매출 수량(SALE). 위탁 미결분은 아직 매출이 아니라 포함되지 않는다")
+            long saleQty,
+            @Schema(description = "기(旣)반품 수량(RETURN)")
+            long returnedQty,
+            @Schema(description = "반품가능수량 = 확정매출 − 기반품")
+            long returnableQty
     ) {
     }
 }

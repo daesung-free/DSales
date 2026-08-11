@@ -125,7 +125,13 @@ public class SaleService {
                                 SalesCategory salesCategory, int unitPrice, int supplyRate) {
     }
 
-    /** 상품 조회 + 회계구분 룩업 + 정가·공급률 자동적용(미입력 시 도서 마스터 정가 / 거래처별 단가 매핑). */
+    /**
+     * 상품 조회 + 회계구분 룩업 + 정가·공급률 자동적용.
+     *
+     * <p>공급률 우선순위: <b>입력값 &gt; 거래처별 매핑(V19) &gt; 도서 기본 공급률(V34)</b>.
+     * 도서 기본값이 마지막 바탕인 이유는, 발주처가 공급률을 거래처구분별 대표값으로만 운영하기
+     * 때문이다(자료요청서 1-2). 바탕값이 없으면 등록을 하려고 전 거래처×전 도서 매핑을 깔아야 한다.
+     */
     private ResolvedItem resolve(SalesEntryRequest.Item item, Partner partner) {
         Product product = productRepository.findById(item.productId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
@@ -138,11 +144,13 @@ public class SaleService {
         if (supplyRate == null) {
             supplyRate = partnerPriceRepository
                     .findByProductIdAndPartnerId(product.getId(), partner.getId())
-                    .map(m -> m.getSupplyRate()).orElse(null);
+                    .map(m -> m.getSupplyRate())
+                    .orElseGet(product::getSupplyRate);
         }
         if (unitPrice == null || supplyRate == null) {
             throw new BusinessException(ErrorCode.INVALID_INPUT,
-                    "정가·공급률이 없고 거래처별 단가 매핑도 없습니다. 상품=" + product.getCode());
+                    "정가·공급률이 없고 거래처별 단가 매핑도, 도서 기본 공급률도 없습니다. 상품="
+                            + product.getCode());
         }
         return new ResolvedItem(item, product, salesCategory, unitPrice, supplyRate);
     }
@@ -282,7 +290,7 @@ public class SaleService {
         Map<Long, Long> repQty = new HashMap<>();
         for (ReturnableAgg a : saleRepository.returnableAgg(partnerId, productId)) {
             ReturnableResponse.Row prev = byProduct.get(a.getProductId());
-            long shipped = a.getSaleQty() + (prev == null ? 0 : prev.shippedQty());
+            long saleQty = a.getSaleQty() + (prev == null ? 0 : prev.saleQty());
             long returned = a.getReturnQty() + (prev == null ? 0 : prev.returnedQty());
             // 대표 정가·공급률: 출고수량이 가장 큰 건
             boolean takeRep = prev == null || a.getSaleQty() > repQty.getOrDefault(a.getProductId(), 0L);
@@ -293,7 +301,7 @@ public class SaleService {
             }
             byProduct.put(a.getProductId(), new ReturnableResponse.Row(
                     a.getProductId(), a.getProductCode(), a.getProductName(),
-                    unitPrice, supplyRate, shipped, returned, shipped - returned));
+                    unitPrice, supplyRate, saleQty, returned, saleQty - returned));
         }
         List<ReturnableResponse.Row> rows = byProduct.values().stream()
                 .filter(r -> r.returnableQty() > 0)

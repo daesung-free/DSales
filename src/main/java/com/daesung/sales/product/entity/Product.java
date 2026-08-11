@@ -68,6 +68,15 @@ public class Product extends BaseEntity {
     @Column(name = "product_type", length = 30)
     private String productType;
 
+    /**
+     * 기본 공급률(%). 근거: 정본 구분값정리 [6.도서관리-1.기본정보] "정가 / 공급률 = 판매가 계산 기준".
+     *
+     * <p>거래처별 매핑({@code product_partner_price})이 없을 때 쓰는 바탕값이다.
+     * 매출등록 자동적용 우선순위는 <b>입력값 &gt; 거래처별 매핑 &gt; 이 값</b>.
+     */
+    @Column(name = "supply_rate")
+    private Integer supplyRate;
+
     /** 수불부노출 여부(제품수불부 집계 포함). 기본 true. */
     @Column(name = "ledger_visible", nullable = false)
     private boolean ledgerVisible = true;
@@ -106,10 +115,11 @@ public class Product extends BaseEntity {
         return p;
     }
 
-    /** 32p 확장 필드(상품년도·상품구분) 설정 — 등록·수정 시 사용. */
-    public void applyExtra(Integer productYear, String productType) {
+    /** 32p 확장 필드(상품년도·상품구분·기본공급률) 설정 — 등록·수정 시 사용. */
+    public void applyExtra(Integer productYear, String productType, Integer supplyRate) {
         this.productYear = productYear;
         this.productType = productType;
+        this.supplyRate = supplyRate;
     }
 
     /** 수정(코드는 불변). */

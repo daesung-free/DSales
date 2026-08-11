@@ -372,7 +372,7 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
         // 반품가능 조회 → 도서×정가×공급률 라인, 반품가능 30
         JsonNode able = data(get("/sales/returnable?partnerId=" + partner)).path("rows");
         JsonNode line = rowByField(able, "productCode", "RB-BK");
-        assertThat(line.path("shippedQty").asLong()).isEqualTo(30);
+        assertThat(line.path("saleQty").asLong()).isEqualTo(30);
         assertThat(line.path("returnedQty").asLong()).isEqualTo(0);
         assertThat(line.path("returnableQty").asLong()).isEqualTo(30);
         assertThat(line.path("supplyRate").asInt()).isEqualTo(70);
@@ -743,5 +743,67 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
                         "unitPrice", 10000, "supplyRate", 100, "qty", 5, "tax", 5_000))));
         assertThat(bad.path("success").asBoolean()).as("면세+세액: %s", bad).isFalse();
         assertThat(bad.path("error").path("code").asText()).isEqualTo("INVALID_INPUT");
+    }
+
+    @Test
+    @DisplayName("도서 기본 공급률 — 거래처 매핑이 없으면 이 값이 쓰인다(입력 > 매핑 > 도서 기본)")
+    void 도서_기본공급률_우선순위() {
+        // ★다른 테스트와 겹치지 않는 달(11월)을 쓴다 — 6~7월은 매출액명세서·수익신고 등
+        //   기간 집계 검증이 쓰고 있어, 여기서 매출을 만들면 그쪽 기대값이 깨진다.
+        String sfx = "-SR" + (System.nanoTime() % 1_000_000L);
+        Long sup = createId("/masters/clients", Map.of("code", "SRS" + sfx, "name", "인쇄소", "type", "NORMAL"));
+        Long pt = createId("/masters/clients", Map.of("code", "SRP" + sfx, "name", "거래처", "type", "NORMAL"));
+        Long wh = createId("/masters/warehouses", Map.of("code", "SRW" + sfx, "name", "창고", "type", "MAIN"));
+        Long pr = createId("/masters/products", Map.of("code", "SRB" + sfx, "name", "도서",
+                "contentType", "SELF", "price", 10000, "supplyRate", 60, "catCode", "A2026SR"));
+        post("/stock/inbound", Map.of("processedDate", "2026-11-01", "supplierClientId", sup,
+                "destinationWarehouseId", wh,
+                "items", List.of(Map.of("productId", pr, "unitCost", 3000, "qty", 500))));
+
+        // 매핑도 입력도 없으면 도서 기본값 60%
+        JsonNode a = data(post("/sales/entries", Map.of("salesDate", "2026-11-10", "partnerId", pt,
+                "warehouseId", wh,
+                "items", List.of(Map.of("productId", pr, "shipmentType", "NORMAL_SHIP", "qty", 10)))));
+        assertThat(a.path("items").get(0).path("supplyAmount").asLong()).isEqualTo(60_000);
+
+        // 거래처별 매핑이 생기면 그게 이긴다
+        put("/masters/products/" + pr + "/partner-prices/" + pt, Map.of("supplyRate", 70));
+        JsonNode b = data(post("/sales/entries", Map.of("salesDate", "2026-11-10", "partnerId", pt,
+                "warehouseId", wh,
+                "items", List.of(Map.of("productId", pr, "shipmentType", "NORMAL_SHIP", "qty", 10)))));
+        assertThat(b.path("items").get(0).path("supplyAmount").asLong()).isEqualTo(70_000);
+
+        // 라인에 직접 넣으면 그게 최우선
+        JsonNode c = data(post("/sales/entries", Map.of("salesDate", "2026-11-10", "partnerId", pt,
+                "warehouseId", wh,
+                "items", List.of(Map.of("productId", pr, "shipmentType", "NORMAL_SHIP", "qty", 10,
+                        "supplyRate", 50)))));
+        assertThat(c.path("items").get(0).path("supplyAmount").asLong()).isEqualTo(50_000);
+    }
+
+    @Test
+    @DisplayName("거래처별 단가 일괄 적용 — 예외 단가는 기본적으로 덮지 않는다")
+    void 단가_일괄적용() {
+        String sfx = "-BK" + (System.nanoTime() % 1_000_000L);
+        Long pr = createId("/masters/products", Map.of("code", "BKB" + sfx, "name", "일괄도서",
+                "contentType", "SELF", "price", 10000));
+        Long p1 = createId("/masters/clients", Map.of("code", "BP1" + sfx, "name", "특약점1", "type", "NORMAL"));
+        Long p2 = createId("/masters/clients", Map.of("code", "BP2" + sfx, "name", "특약점2", "type", "NORMAL"));
+        put("/masters/products/" + pr + "/partner-prices/" + p2, Map.of("supplyRate", 55));   // 예외 단가
+
+        JsonNode r = data(put("/masters/products/" + pr + "/partner-prices",
+                Map.of("partnerIds", List.of(p1, p2), "supplyRate", 70)));
+        assertThat(r.path("created").asInt()).isEqualTo(1);
+        assertThat(r.path("skipped").asInt()).as("예외 단가를 가진 거래처는 건너뛴다").isEqualTo(1);
+        // 건너뛴 대상을 코드로 돌려줘야 담당자가 누락인지 의도인지 구분한다
+        assertThat(r.path("skippedPartnerCodes").get(0).asText()).isEqualTo("BP2" + sfx);
+        assertThat(data(get("/masters/products/" + pr + "/partner-prices/" + p2))
+                .path("supplyRate").asInt()).as("예외 단가 보존").isEqualTo(55);
+
+        JsonNode f = data(put("/masters/products/" + pr + "/partner-prices",
+                Map.of("partnerIds", List.of(p1, p2), "supplyRate", 70, "overwrite", true)));
+        assertThat(f.path("updated").asInt()).isEqualTo(2);
+        assertThat(data(get("/masters/products/" + pr + "/partner-prices/" + p2))
+                .path("supplyRate").asInt()).isEqualTo(70);
     }
 }
