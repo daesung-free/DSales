@@ -333,12 +333,43 @@ public class JdbcDsreGateway implements DsreGateway {
               LEFT JOIN tbl_hakwon_info  hak  ON hak.MGR_CD  = req.MGR_CD
               LEFT JOIN (SELECT REQ_CD, COUNT(CLS_NM) CLS_CNT
                            FROM tbl_request_dtl GROUP BY REQ_CD) cls ON cls.REQ_CD = req.REQ_CD
+            """;
+
+    // 기간·필터 조회 / 단건 조회. 앞부분(ORDER_SQL)을 공유해 컬럼 구성이 갈리지 않게 한다.
+    private static final String ORDER_LIST_SQL = ORDER_SQL + """
              WHERE req.REQ_DATE BETWEEN ? AND ?
                AND (? IS NULL OR req.STATE = ?)
                AND (? IS NULL OR req.CUST_CD = ?)
                AND (? IS NULL OR req.APPLY_GN = ?)
              ORDER BY req.REQ_DATE DESC, req.REQ_CD DESC
             """;
+
+    private static final String ORDER_BY_ID_SQL = ORDER_SQL + " WHERE req.REQ_CD = ?";
+
+    private static final org.springframework.jdbc.core.RowMapper<DsreOrderRow> ORDER_MAPPER = (rs, i) -> {
+        String code = trim(rs.getString("state"));
+        return new DsreOrderRow(
+                rs.getInt("req_cd"),
+                trim(rs.getString("req_date")),
+                code,
+                OrderState.labelOf(code),
+                trim(rs.getString("cust_cd")),
+                rs.getString("cust_nm"),
+                rs.getString("cust_fnm"),
+                rs.getString("city_nm"),
+                trim(rs.getString("mgr_cd")),
+                rs.getString("mgr_nm"),
+                rs.getString("prod_nm"),
+                rs.getString("dtl_nm"),
+                trim(rs.getString("grade")),
+                intOrNull(rs.getObject("inwon")),
+                intOrNull(rs.getObject("cls_cnt")),
+                procLabel(trim(rs.getString("proc_yn"))),
+                rs.getString("teacher"),
+                rs.getString("tel"),
+                rs.getString("address"),
+                rs.getString("bigo"));
+    };
 
     @Override
     public List<DsreOrderRow> findOrders(LocalDate from, LocalDate to,
@@ -347,33 +378,25 @@ public class JdbcDsreGateway implements DsreGateway {
         String cust = (custCode == null || custCode.isBlank()) ? null : custCode.trim();
         String applyGn = (mode == null) ? null : mode.applyGnValue();
 
-        return dsreJdbcTemplate.query(ORDER_SQL,
-                (rs, i) -> {
-                    String code = trim(rs.getString("state"));
-                    return new DsreOrderRow(
-                            rs.getInt("req_cd"),
-                            trim(rs.getString("req_date")),
-                            code,
-                            OrderState.labelOf(code),
-                            trim(rs.getString("cust_cd")),
-                            rs.getString("cust_nm"),
-                            rs.getString("cust_fnm"),
-                            rs.getString("city_nm"),
-                            trim(rs.getString("mgr_cd")),
-                            rs.getString("mgr_nm"),
-                            rs.getString("prod_nm"),
-                            rs.getString("dtl_nm"),
-                            trim(rs.getString("grade")),
-                            intOrNull(rs.getObject("inwon")),
-                            intOrNull(rs.getObject("cls_cnt")),
-                            procLabel(trim(rs.getString("proc_yn"))),
-                            rs.getString("teacher"),
-                            rs.getString("tel"),
-                            rs.getString("address"),
-                            rs.getString("bigo"));
-                },
+        return dsreJdbcTemplate.query(ORDER_LIST_SQL, ORDER_MAPPER,
                 from.format(YYYYMMDD), to.format(YYYYMMDD),
                 stateCode, stateCode, cust, cust, applyGn, applyGn);
+    }
+
+    @Override
+    public java.util.Optional<DsreOrderRow> findOrder(int reqCd) {
+        // 기간 조회와 같은 SQL을 쓰되 REQ_CD로만 좁힌다(컬럼 구성이 갈리지 않게).
+        List<DsreOrderRow> rows = dsreJdbcTemplate.query(ORDER_BY_ID_SQL, ORDER_MAPPER, reqCd);
+        return rows.stream().findFirst();
+    }
+
+    // 발송준비중 전환. STATE='S'(상품준비중)일 때만 바꾼다 — 재출력해도 D를 되돌리지 않는다.
+    private static final String READY_TO_SHIP_SQL =
+            "UPDATE tbl_request_info SET STATE='W' WHERE REQ_CD=? AND STATE='S'";
+
+    @Override
+    public int markReadyToShip(int reqCd) {
+        return dsreJdbcTemplate.update(READY_TO_SHIP_SQL, reqCd);
     }
 
     /**

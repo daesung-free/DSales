@@ -61,6 +61,9 @@ public class SecurityConfig {
                         // 물류단가 수정: 물류
                         .requestMatchers(HttpMethod.PUT, "/api/v1/logistics-costs/**").hasAnyRole("LOGISTICS", "ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/logistics-costs/**").hasAnyRole("LOGISTICS", "ADMIN")
+                        // 거래명세서 발급 → 발송준비중 전환: 물류(명세서를 출력하는 주체) + 관리자.
+                        // ★DSRE2 운영 DB의 STATE를 직접 바꾸는 유일한 경로라 역할을 좁게 잡는다.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/orders/**").hasAnyRole("LOGISTICS", "ADMIN")
                         // 마감/채권/세무: 재무 — 쓰기·조회 모두(민감 재무데이터라 VIEWER 제외). ★기본안, 발주처 조정 가능
                         .requestMatchers("/api/v1/closing/**").hasAnyRole("FINANCE", "ADMIN")
                         // 배치 수동 실행: 재무(담보만기 알림이 25p 재무팀 요구사항) + 관리자

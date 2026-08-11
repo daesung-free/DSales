@@ -7,6 +7,7 @@ import com.daesung.sales.dsre.gateway.DsreGateway;
 import com.daesung.sales.dsre.gateway.DsreOrderRow;
 import com.daesung.sales.dsre.gateway.LogisMode;
 import com.daesung.sales.dsre.gateway.OrderState;
+import com.daesung.sales.order.service.OrderService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -17,21 +18,27 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 주문 조회 · 진행상태 (읽기 전용). 실제 경로: /api/v1/orders.
+ * 주문 조회 · 진행상태. 실제 경로: /api/v1/orders.
  *
- * <p><b>상태는 DSRE2가 소유한다.</b> 발주처 확정(2026-08-11) "DSRE는 그대로 사용" 에 따라
- * 상태 전이(접수완료→상품검수→…→발송완료)는 DSRE2 데스크톱이 계속 수행하고,
- * 우리 매출프로그램은 조회만 한다. 그래서 이 컨트롤러에는 상태 변경 엔드포인트가 없다.
+ * <p><b>상태 원본은 DSRE2 {@code tbl_request_info.STATE}다.</b> 우리는 복사본을 두지 않고 그 값을
+ * 직접 읽고 쓴다 — 그래서 동기화 로직이 없고, 우리가 바꾸면 DSRE2 데스크톱에 즉시 보인다.
+ *
+ * <p>발주처 확정(2026-08-11) "DSRE는 그대로 사용"에 따라 전이는 대부분 DSRE2 데스크톱 소관이고,
+ * <b>우리가 바꾸는 건 거래명세서 발급(상품준비중 → 발송준비중) 하나뿐</b>이다.
+ * 그것만 예외인 이유는 명세서 출력이 원래부터 매출프로그램 기능이었고(레거시 리포트 21종,
+ * DSRE2엔 명세서 화면 없음), 발주처가 그 시점을 자동 전환으로 정했기 때문이다(3-2(가) 5번).
  *
  * <p>DSRE 연동이 꺼져 있으면(daesung.dsre.enabled=false) 이 화면 자체가 뜨지 않는다.
  */
 @Tag(name = "주문 · 진행상태",
-        description = "DSRE2 주문·진행상태 조회(읽기 전용). 상태 변경은 DSRE2 소관이라 제공하지 않는다.")
+        description = "DSRE2 주문·진행상태 조회 + 거래명세서 발급 전환. 나머지 상태 전이는 DSRE2 소관.")
 @RestController
 @RequestMapping("/orders")
 @ConditionalOnProperty(name = "daesung.dsre.enabled", havingValue = "true")
@@ -39,7 +46,24 @@ import org.springframework.web.bind.annotation.RestController;
 public class OrderController {
 
     private final DsreGateway dsreGateway;
+    private final OrderService orderService;
     private final ExcelExportUtil excel;
+
+    @Operation(summary = "거래명세서 발급 처리 → 발송준비중 전환",
+            description = """
+                    물류담당자가 거래명세서를 출력 처리한 시점에 호출한다.
+                    진행상태를 **상품준비중(S) → 발송준비중(W)** 으로 바꾼다(발주처 확정 3-2(가) 5번).
+
+                    · 상태 원본은 DSRE2라 여기서 바꾸면 DSRE2 데스크톱에도 즉시 반영된다(복사본 없음).
+                    · **상품준비중일 때만** 바뀐다. 이미 발송완료 등이면 되돌리지 않고
+                      `changed=false`로 응답한다 — 명세서 재출력은 실무에서 흔해 오류로 막지 않는다.
+                    · 되돌리기(발송준비중 → 상품준비중)는 DSRE2에서 수동으로 한다.
+                    · DSRE2엔 이력 테이블이 없어, 우리가 바꾼 건은 상태변경 이력에 남긴다.""")
+    @PostMapping("/{reqCd}/issue-statement")
+    public ApiResponse<OrderService.IssueResult> issueStatement(
+            @Parameter(description = "신청번호(REQ_CD)", example = "78331") @PathVariable int reqCd) {
+        return ApiResponse.success(orderService.issueStatement(reqCd));
+    }
 
     @Operation(summary = "주문·진행상태 조회",
             description = """

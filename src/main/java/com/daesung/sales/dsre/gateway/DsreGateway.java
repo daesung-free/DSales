@@ -65,4 +65,17 @@ public interface DsreGateway {
      */
     java.util.List<DsreOrderRow> findOrders(java.time.LocalDate from, java.time.LocalDate to,
                                             OrderState state, String custCode, LogisMode mode);
+
+    /** 주문 1건 조회(없으면 empty). 상태 전환 전 현재값 확인용. */
+    java.util.Optional<DsreOrderRow> findOrder(int reqCd);
+
+    /**
+     * 거래명세서 발급 → 발송준비중(W) 전환. <b>상품준비중(S)일 때만</b> 바뀐다.
+     *
+     * <p>조건부 UPDATE인 이유: 명세서를 재출력했다고 이미 발송완료(D)된 건이 W로 되돌아가면
+     * 상태가 거꾸로 간다. 조건에 안 맞으면 0을 반환하고 아무것도 바꾸지 않는다(재출력 안전).
+     *
+     * @return 실제로 바뀐 행 수(0 또는 1)
+     */
+    int markReadyToShip(int reqCd);
 }

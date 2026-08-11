@@ -15,5 +15,13 @@ public enum StatusEntityType {
     /** 학교 — 사용/미사용(DSRE 동기화 배치가 바꾼다) */
     SCHOOL,
     /** 계정 — 활성/비활성 */
-    APP_USER
+    APP_USER,
+    /**
+     * DSRE2 주문 — 진행상태. entityId = REQ_CD.
+     *
+     * <p>원본 상태는 DSRE2 {@code tbl_request_info.STATE}에 있고 <b>DSRE2에는 이력 테이블이 없다</b>
+     * (제자리 UPDATE라 이전 값이 사라진다). 우리가 전환시킨 건만이라도 여기 남겨,
+     * "누가 언제 명세서를 발급해서 발송준비중이 됐는지"를 소명할 수 있게 한다.
+     */
+    DSRE_ORDER
 }
