@@ -1,0 +1,127 @@
+package com.daesung.sales.logistics.controller;
+
+import com.daesung.sales.common.excel.ExcelExportUtil;
+import com.daesung.sales.common.excel.ExcelExportUtil.Col;
+import com.daesung.sales.common.response.ApiResponse;
+import com.daesung.sales.logistics.dto.ShippingUpdateRequest;
+import com.daesung.sales.logistics.dto.WorkOrderResponse;
+import com.daesung.sales.logistics.dto.WorkResultRow;
+import com.daesung.sales.logistics.service.ShipmentService;
+import com.daesung.sales.logistics.service.WorkService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import java.time.LocalDate;
+import java.util.List;
+import lombok.RequiredArgsConstructor;
+import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RestController;
+
+/**
+ * 물류/작업 — 작업요청서 · 작업결과. 실제 경로: /api/v1/logistics.
+ *
+ * <p>발송 건은 매출등록 시 자동으로 만들어진다(레거시와 동일). 물류는 여기서
+ * <b>작업지시를 출력하고, 박스 수·발송일을 채운다</b>. 작업결과는 그 진행을 모아 보는 조회 화면이다.
+ */
+@Tag(name = "물류 · 작업요청서/작업결과",
+        description = "발송 건별 작업지시(무엇을 몇 개)와 진행 현황(출력·박스·발송일)")
+@RestController
+@RequestMapping("/logistics")
+@RequiredArgsConstructor
+public class WorkController {
+
+    private final WorkService workService;
+    private final ShipmentService shipmentService;
+    private final ExcelExportUtil excel;
+
+    @Operation(summary = "작업요청서 조회",
+            description = """
+                    발송 건과 **그 안에 담을 도서 목록**을 함께 돌려준다(무엇을 몇 개 넣어라).
+
+                    · 발송 건은 **(거래일자 · 거래처 · 학교 · 분류)** 단위다.
+                      같은 날 같은 학교로 여러 품목을 등록해도 발송은 한 건이다 —
+                      물류는 품목이 아니라 상자 단위로 일한다.
+                    · `printed=false`로 **아직 지시가 안 나간 건만** 볼 수 있다(레거시 동일 필터).
+                    · 반품은 대상이 아니다(들어오는 물건이라 내보낼 작업이 없다).""")
+    @GetMapping("/work-orders")
+    public ApiResponse<List<WorkOrderResponse>> workOrders(
+            @Parameter(description = "거래일자 시작", required = true)
+            @RequestParam(name = "fromDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @Parameter(description = "거래일자 종료", required = true)
+            @RequestParam(name = "toDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @Parameter(description = "분류(매출구분). 미지정=전체") @RequestParam(required = false) String tradeClass,
+            @Parameter(description = "거래처 id. 미지정=전체") @RequestParam(required = false) Long partnerId,
+            @Parameter(description = "출력여부 true=출력분/false=미출력분/미지정=전체")
+            @RequestParam(required = false) Boolean printed) {
+        return ApiResponse.success(workService.workOrders(fromDate, toDate, tradeClass, partnerId, printed));
+    }
+
+    @Operation(summary = "작업요청서 출력 처리",
+            description = """
+                    작업지시를 출력한 것으로 표시한다 → 작업결과의 '출력' ○.
+
+                    **재출력해도 최초 시각을 덮지 않는다** — 이 기록의 의미는
+                    "언제 처음 작업지시가 나갔나"다. 이미 출력된 건이면 `false`를 돌려준다.""")
+    @PostMapping("/work-orders/{id}/print")
+    public ApiResponse<Boolean> markPrinted(@PathVariable Long id) {
+        return ApiResponse.success(shipmentService.markPrinted(id));
+    }
+
+    @Operation(summary = "발송정보 입력",
+            description = """
+                    박스 수·발송일·발송메모를 기록한다(레거시 작업요청서.vb:915와 같은 항목).
+                    **지정하지 않은 항목은 건드리지 않는다** — 박스 수만 고치려다 발송일이 지워지면 안 된다.""")
+    @PutMapping("/work-orders/{id}/shipping")
+    public ApiResponse<Void> updateShipping(@PathVariable Long id,
+                                            @Valid @RequestBody ShippingUpdateRequest req) {
+        shipmentService.updateShipping(id, req.boxCount(), req.sentDate(), req.sendMemo());
+        return ApiResponse.success(null);
+    }
+
+    @Operation(summary = "작업결과 조회",
+            description = """
+                    발송 건별 진행 현황. 상품군별 수량(교재·IC 등)·박스 수·발송일을 함께 본다.
+
+                    · '출력'·'완료'는 **날짜가 채워졌는지**로 판단한다(레거시에 상태 컬럼이 없다).
+                    · ⚠️'완료'는 레거시에도 값을 넣는 코드가 없어 **항상 false**다.
+                      임의로 만들면 화면 의미가 달라져, 발주처 확인 후 붙일 항목으로 남겨 두었다.""")
+    @GetMapping("/work-results")
+    public ApiResponse<List<WorkResultRow>> workResults(
+            @RequestParam(name = "fromDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam(name = "toDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @RequestParam(required = false) String tradeClass,
+            @RequestParam(required = false) Long partnerId,
+            @RequestParam(required = false) Boolean printed) {
+        return ApiResponse.success(workService.workResults(fromDate, toDate, tradeClass, partnerId, printed));
+    }
+
+    @Operation(summary = "작업결과 엑셀 다운로드")
+    @GetMapping("/work-results/export")
+    public ResponseEntity<byte[]> workResultsExport(
+            @RequestParam(name = "fromDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam(name = "toDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @RequestParam(required = false) String tradeClass,
+            @RequestParam(required = false) Long partnerId,
+            @RequestParam(required = false) Boolean printed) {
+        List<Col> cols = List.of(
+                new Col("분류", "tradeClass"), new Col("거래일자", "tradeDate"),
+                new Col("거래순번", "tradeSeq"),
+                new Col("거래처코드", "partnerCode"), new Col("거래처명", "partnerName"),
+                new Col("학교코드", "schoolCode"), new Col("학교명", "schoolName"),
+                new Col("출력", "printed"), new Col("완료", "completed"),
+                new Col("발송일", "sentDate"), new Col("수량", "totalQty"),
+                new Col("Box", "boxCount"), new Col("발송메모", "sendMemo"), new Col("비고", "memo"));
+        byte[] xlsx = excel.toXlsx("작업결과", cols,
+                workService.workResults(fromDate, toDate, tradeClass, partnerId, printed));
+        return excel.asDownload(xlsx, "작업결과.xlsx");
+    }
+}

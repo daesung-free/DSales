@@ -4,6 +4,8 @@ import com.daesung.sales.sale.dto.BookSalesAgg;
 import com.daesung.sales.sale.dto.CategorySalesAgg;
 import com.daesung.sales.sale.dto.PartnerProductSalesAgg;
 import com.daesung.sales.sale.dto.ReturnableAgg;
+import com.daesung.sales.sale.dto.ShipmentQtyAgg;
+import com.daesung.sales.sale.dto.WorkOrderLineAgg;
 import com.daesung.sales.sale.dto.SalesStatementAgg;
 import com.daesung.sales.sale.entity.Sale;
 import com.daesung.sales.salestype.entity.SalesCategory;
@@ -377,4 +379,44 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     List<Object[]> roundWorkStatus(@Param("fromDate") java.time.LocalDate fromDate,
                                    @Param("toDate") java.time.LocalDate toDate,
                                    @Param("catCode") String catCode);
+
+    /**
+     * 발송 단위(일자·거래처·학교)의 상품군별 수량. 작업결과 화면의 '교재'·'IC' 컬럼.
+     * 근거: 작업결과.vb — 레거시도 sendData에 salesData를 조인해 tradeClass별로 합산한다.
+     * 취소·반품은 제외한다(내보내는 작업이 아니다).
+     */
+    @Query("""
+            select s.salesDate as tradeDate, s.partner.id as partnerId,
+                   coalesce(s.schoolCode, '') as schoolCode,
+                   coalesce(p.salesDivision, '') as tradeClass,
+                   sum(s.qty) as qty
+              from Sale s join s.product p
+             where s.canceled = false
+               and s.salesCategory <> com.daesung.sales.salestype.entity.SalesCategory.RETURN
+               and s.salesDate between :from and :to
+             group by s.salesDate, s.partner.id, coalesce(s.schoolCode, ''), coalesce(p.salesDivision, '')
+            """)
+    List<ShipmentQtyAgg> shipmentQty(@Param("from") LocalDate from, @Param("to") LocalDate to);
+
+    /**
+     * 발송 단위의 도서별 상세. 작업요청서가 "무엇을 몇 개 포장할지" 지시하는 목록이다.
+     * 근거: 작업요청서.vb 조회 SQL(도서코드·도서명·수량·정가·공급률·금액 컬럼).
+     */
+    @Query("""
+            select s.salesDate as tradeDate, s.partner.id as partnerId,
+                   coalesce(s.schoolCode, '') as schoolCode,
+                   coalesce(p.salesDivision, '') as tradeClass,
+                   p.catCode as catCode, p.code as productCode, p.name as productName,
+                   s.bookRound as bookRound,
+                   s.unitPrice as unitPrice, s.supplyRate as supplyRate,
+                   sum(s.qty) as qty, sum(s.supplyAmount) as amount
+              from Sale s join s.product p
+             where s.canceled = false
+               and s.salesCategory <> com.daesung.sales.salestype.entity.SalesCategory.RETURN
+               and s.salesDate between :from and :to
+             group by s.salesDate, s.partner.id, coalesce(s.schoolCode, ''), coalesce(p.salesDivision, ''),
+                      p.catCode, p.code, p.name, s.bookRound, s.unitPrice, s.supplyRate
+             order by p.catCode, p.code
+            """)
+    List<WorkOrderLineAgg> workOrderLines(@Param("from") LocalDate from, @Param("to") LocalDate to);
 }

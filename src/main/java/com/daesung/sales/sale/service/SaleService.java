@@ -57,6 +57,7 @@ public class SaleService {
     private final PeriodLockService periodLockService;
     private final StatusHistoryService statusHistoryService;
     private final SequenceService sequenceService;
+    private final com.daesung.sales.logistics.service.ShipmentService shipmentService;
 
     /**
      * 수기 매출 등록(일반 매출) + 재고 반영을 한 트랜잭션으로. 품목마다 금액 산출 → 매출번호(I) 채번 →
@@ -112,6 +113,12 @@ public class SaleService {
                 TxnType txnType = (delta >= 0) ? TxnType.RETURN : TxnType.OUTBOUND;
                 stockBalance = inventoryService.applyShipment(product, warehouse, delta, txnType,
                         item.shipmentType(), req.salesDate(), salesNo, item.memo());
+            }
+
+            // 물류 작업 단위(발송 건) 확보 — 레거시도 매출등록 시점에 sendData를 만든다(UC_TabPages.vb:752).
+            // 반품은 들어오는 물건이라 내보낼 작업이 없다.
+            if (r.salesCategory() != SalesCategory.RETURN) {
+                shipmentService.ensureFor(sale);
             }
 
             lines.add(new SalesEntryResponse.Line(salesNo, product.getId(), product.getCode(),
