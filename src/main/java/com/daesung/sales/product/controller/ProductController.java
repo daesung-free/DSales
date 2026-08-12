@@ -8,6 +8,8 @@ import com.daesung.sales.product.dto.BomResponse;
 import com.daesung.sales.product.dto.PartnerPriceBulkRequest;
 import com.daesung.sales.product.dto.PartnerPriceBulkResult;
 import com.daesung.sales.product.dto.PartnerPriceRequest;
+import com.daesung.sales.product.dto.ProductFlagBulkRequest;
+import com.daesung.sales.product.dto.ProductFlagBulkResult;
 import com.daesung.sales.product.dto.PartnerPriceResponse;
 import com.daesung.sales.product.dto.ProductCreateRequest;
 import com.daesung.sales.product.dto.ProductResponse;
@@ -128,6 +130,22 @@ public class ProductController {
     public ApiResponse<PartnerPriceResponse> upsertPartnerPrice(
             @PathVariable Long id, @PathVariable Long partnerId, @Valid @RequestBody PartnerPriceRequest req) {
         return ApiResponse.success(productService.upsertPartnerPrice(id, partnerId, req));
+    }
+
+    @Operation(summary = "도서 Y/N 항목 일괄 변경",
+            description = """
+                    화면에서 고른 여러 도서의 Y/N 항목을 한 번에 바꾼다
+                    (발주처 요청: "각 열을 일괄로 처리할 수 있는 기능(전체선택 등)").
+
+                    · **지정한 항목만** 바뀐다. 안 보낸 항목은 그대로 둔다.
+                    · 요청 건수와 **실제로 바뀐 건수를 나눠** 돌려준다 —
+                      이미 같은 값이면 안 바뀌므로 "몇 건 적용"만으로는 무슨 일이 났는지 모른다.
+                    · 건별로 **변경이력에 남는다**. 잘못 눌렀을 때 되짚을 수 있어야 한다.
+                    · ⚠️재고관리를 끄면 그 도서는 매출을 넣어도 재고가 차감되지 않는다.""")
+    @PutMapping("/flags")
+    public ApiResponse<ProductFlagBulkResult> bulkUpdateFlags(
+            @Valid @RequestBody ProductFlagBulkRequest req) {
+        return ApiResponse.success(productService.bulkUpdateFlags(req));
     }
 
     @Operation(summary = "거래처별 단가 일괄 적용",

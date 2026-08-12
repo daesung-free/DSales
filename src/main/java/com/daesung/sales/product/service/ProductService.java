@@ -13,6 +13,8 @@ import com.daesung.sales.product.dto.BomResponse;
 import com.daesung.sales.product.dto.PartnerPriceBulkRequest;
 import com.daesung.sales.product.dto.PartnerPriceBulkResult;
 import com.daesung.sales.product.dto.PartnerPriceRequest;
+import com.daesung.sales.product.dto.ProductFlagBulkRequest;
+import com.daesung.sales.product.dto.ProductFlagBulkResult;
 import com.daesung.sales.product.dto.PartnerPriceResponse;
 import com.daesung.sales.product.dto.ProductCreateRequest;
 import com.daesung.sales.product.dto.ProductResponse;
@@ -196,6 +198,45 @@ public class ProductService {
         }
         return new PartnerPriceBulkResult(productId, product.getCode(), created, updated,
                 skipped.size(), skipped);
+    }
+
+    /**
+     * 도서 Y/N 항목 일괄 변경. 근거: 발주처 요청(1-3) "각 열을 일괄로 처리(전체선택 등)".
+     *
+     * <p>지정하지 않은 플래그는 건드리지 않는다. 그리고 <b>변경이력을 건별로 남긴다</b> —
+     * 한 번에 수백 건을 바꾸는 동작이라, 잘못 눌렀을 때 무엇이 바뀌었는지 되짚을 수 없으면
+     * 원상복구가 불가능하다(발주처가 변경이력을 요청한 이유가 바로 이런 경우다).
+     */
+    @Transactional
+    public ProductFlagBulkResult bulkUpdateFlags(ProductFlagBulkRequest req) {
+        if (req.hasNoFlag()) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "변경할 항목을 하나 이상 지정해야 합니다(Web게시·면세·수불부노출·사용여부·재고관리).");
+        }
+        int changed = 0;
+        int unchanged = 0;
+        List<Long> notFound = new ArrayList<>();
+
+        for (Long id : req.productIds().stream().distinct().toList()) {
+            var found = productRepository.findById(id);
+            if (found.isEmpty()) {
+                notFound.add(id);
+                continue;
+            }
+            Product p = found.get();
+            Map<String, String> before = p.auditSnapshot();
+            p.updateFlags(req.webVisible(), req.taxFree(), req.ledgerVisible(),
+                    req.useYn(), req.stockManaged());
+            Map<String, String> after = p.auditSnapshot();
+            if (before.equals(after)) {
+                unchanged++;
+                continue;
+            }
+            masterChangeLogService.recordDiff(MasterEntityType.PRODUCT, p.getId(), p.getCode(),
+                    before, after);
+            changed++;
+        }
+        return new ProductFlagBulkResult(req.productIds().size(), changed, unchanged, notFound);
     }
 
     /** 거래처별 단가 스냅샷(변경이력용). */

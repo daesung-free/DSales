@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.daesung.sales.support.IntegrationTestSupport;
 import com.fasterxml.jackson.databind.JsonNode;
+import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -14,6 +15,7 @@ import java.util.concurrent.Future;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpMethod;
 import org.junit.jupiter.api.TestInstance;
 
 /**
@@ -939,5 +941,67 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
         put("/masters/warehouses/" + id, Map.of("name", "플래그창고(수정)", "type", "MAIN"));
 
         assertThat(data(get("/masters/warehouses/" + id)).path("physicalStock").asBoolean()).isTrue();
+    }
+
+    @Test
+    @DisplayName("도서 Y/N 일괄 변경 — 지정한 항목만, 실제 변경 건수를 구분해 돌려준다")
+    void 도서플래그_일괄변경() {
+        String sfx = "-BF" + (System.nanoTime() % 1_000_000L);
+        List<Long> ids = new ArrayList<>();
+        for (int i = 1; i <= 3; i++) {
+            ids.add(createId("/masters/products", Map.of("code", "BF" + i + sfx,
+                    "name", "일괄도서" + i, "contentType", "SELF", "price", 10000)));
+        }
+
+        JsonNode r = data(put("/masters/products/flags",
+                Map.of("productIds", ids, "webVisible", true, "taxFree", true)));
+        assertThat(r.path("changed").asInt()).isEqualTo(3);
+
+        for (Long id : ids) {
+            JsonNode d = data(get("/masters/products/" + id));
+            assertThat(d.path("webVisible").asBoolean()).isTrue();
+            assertThat(d.path("taxFree").asBoolean()).isTrue();
+            // 지정하지 않은 항목은 건드리지 않는다
+            assertThat(d.path("ledgerVisible").asBoolean()).as("수불부노출 유지").isTrue();
+            assertThat(d.path("stockManaged").asBoolean()).as("재고관리 유지").isTrue();
+        }
+
+        // 같은 요청을 또 보내면 바뀐 건 없다 — "3건 적용"으로 뭉뚱그리면 무슨 일이 났는지 모른다.
+        JsonNode again = data(put("/masters/products/flags",
+                Map.of("productIds", ids, "webVisible", true, "taxFree", true)));
+        assertThat(again.path("changed").asInt()).isZero();
+        assertThat(again.path("unchanged").asInt()).isEqualTo(3);
+
+        // 없는 id는 건너뛰고 알려 준다(전체를 실패시키지 않는다)
+        List<Long> withGhost = new ArrayList<>(ids);
+        withGhost.add(999_999_999L);
+        JsonNode ghost = data(put("/masters/products/flags",
+                Map.of("productIds", withGhost, "ledgerVisible", false)));
+        assertThat(ghost.path("notFoundIds").get(0).asLong()).isEqualTo(999_999_999L);
+        assertThat(ghost.path("changed").asInt()).isEqualTo(3);
+
+        // 일괄 변경도 건별로 이력에 남아야 되짚을 수 있다
+        JsonNode hist = data(get("/audit/master-changes?entityType=PRODUCT&size=100")).path("content");
+        long count = 0;
+        for (JsonNode h : hist) {
+            if (h.path("entityCode").asText().endsWith(sfx)
+                    && "ledgerVisible".equals(h.path("field").asText())) {
+                count++;
+            }
+        }
+        assertThat(count).as("수불부노출 일괄 변경 3건이 이력에 남는다").isEqualTo(3);
+    }
+
+    @Test
+    @DisplayName("일괄 변경 — 바꿀 항목을 하나도 안 주면 거부한다")
+    void 도서플래그_항목없음() {
+        // 전 건을 훑고 아무것도 안 하는 요청이라, 조용히 성공시키면 담당자가 적용됐다고 오해한다.
+        String sfx = "-BN" + (System.nanoTime() % 1_000_000L);
+        Long id = createId("/masters/products", Map.of("code", "BN" + sfx,
+                "name", "무항목", "contentType", "SELF", "price", 1000));
+
+        assertThat(exchangeRaw(HttpMethod.PUT, "/masters/products/flags",
+                Map.of("productIds", List.of(id)), token(), null).getStatusCode().value())
+                .isEqualTo(400);
     }
 }

@@ -181,6 +181,19 @@ public class Product extends BaseEntity {
         return m;
     }
 
+    /**
+     * Y/N 항목만 골라서 설정(일괄 변경용). null인 항목은 건드리지 않는다.
+     * 근거: 발주처 요청(1-3) "각 열을 일괄로 처리(전체선택 등)".
+     */
+    public void updateFlags(Boolean webVisible, Boolean taxFree, Boolean ledgerVisible,
+                            Boolean useYn, Boolean stockManaged) {
+        this.webVisible = keep(webVisible, this.webVisible);
+        this.taxFree = keep(taxFree, this.taxFree);
+        this.ledgerVisible = keep(ledgerVisible, this.ledgerVisible);
+        this.useYn = keep(useYn, this.useYn);
+        this.stockManaged = keep(stockManaged, this.stockManaged);
+    }
+
     /** 요청에 값이 없으면(null) 기존 값을 그대로 둔다. */
     private static boolean keep(Boolean incoming, boolean current) {
         return (incoming == null) ? current : incoming;
