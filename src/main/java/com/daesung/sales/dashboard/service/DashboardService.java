@@ -3,11 +3,14 @@ package com.daesung.sales.dashboard.service;
 import com.daesung.sales.dashboard.dto.DashboardResponse;
 import com.daesung.sales.dashboard.dto.TargetRequest;
 import com.daesung.sales.dashboard.dto.TargetResponse;
+import com.daesung.sales.dashboard.entity.DashboardSnapshot;
 import com.daesung.sales.dashboard.entity.SalesTarget;
 import com.daesung.sales.dashboard.entity.TargetEntryType;
 import com.daesung.sales.dashboard.entity.TargetScope;
+import com.daesung.sales.dashboard.repository.DashboardSnapshotRepository;
 import com.daesung.sales.dashboard.repository.SalesTargetRepository;
 import com.daesung.sales.sale.repository.SaleRepository;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -23,6 +26,7 @@ public class DashboardService {
 
     private final SalesTargetRepository targetRepository;
     private final SaleRepository saleRepository;
+    private final DashboardSnapshotRepository snapshotRepository;
 
     /** 매출목표 등록/수정(같은 연·월·대상·종류면 금액 갱신). */
     @Transactional
@@ -82,8 +86,8 @@ public class DashboardService {
             }
         }
 
-        Map<Integer, Long> actual = monthlyMap(year, pid);
-        Map<Integer, Long> prev = monthlyMap(year - 1, pid);
+        Map<Integer, Long> actual = monthlyMap(year, sc, pid);
+        Map<Integer, Long> prev = monthlyMap(year - 1, sc, pid);
 
         List<DashboardResponse.MonthCell> months = new ArrayList<>();
         long tTarget = 0;
@@ -107,7 +111,7 @@ public class DashboardService {
 
         DashboardResponse.YearSummary summary = new DashboardResponse.YearSummary(
                 yearTarget, tActual, pct(tActual, yearTarget), yearPrev, growth(tActual, yearPrev));
-        return new DashboardResponse(year, sc, key, pid, months, summary);
+        return new DashboardResponse(year, sc, key, pid, computedAt(year, sc), months, summary);
     }
 
     /** 저장된 확정 실적(ACTUAL) 합. 이관하지 않은 과거연도의 전년비를 살리는 용도. */
@@ -118,12 +122,43 @@ public class DashboardService {
                 .sum();
     }
 
-    private Map<Integer, Long> monthlyMap(int year, Long productId) {
+    /**
+     * 월별 순매출. <b>스냅샷이 있으면 그것을, 없으면 실시간 계산</b>한다.
+     *
+     * <p>발주처 확정(3-2 아)대로 새벽 배치가 미리 계산해 두지만, 배치가 안 돌았거나 실패한 날
+     * 화면이 통째로 비면 "느린 것"보다 나쁘다. 그래서 폴백을 둔다.
+     * 대신 {@link #computedAt}로 언제 기준 숫자인지 화면에 드러낸다.
+     */
+    private Map<Integer, Long> monthlyMap(int year, TargetScope scope, Long productId) {
+        if (scope == TargetScope.COMPANY) {
+            List<DashboardSnapshot> snaps =
+                    snapshotRepository.findByYearAndScope(year, TargetScope.COMPANY, null);
+            if (!snaps.isEmpty()) {
+                Map<Integer, Long> map = new HashMap<>();
+                snaps.forEach(s -> map.put(s.getMonth(), s.getNetSales()));
+                return map;
+            }
+        }
+        return realtimeMonthlyMap(year, productId);
+    }
+
+    private Map<Integer, Long> realtimeMonthlyMap(int year, Long productId) {
         Map<Integer, Long> map = new HashMap<>();
         for (Object[] r : saleRepository.monthlyNetSales(year, productId)) {
             map.put(((Number) r[0]).intValue(), ((Number) r[1]).longValue());
         }
         return map;
+    }
+
+    /** 스냅샷 기준시각(가장 최근). 스냅샷을 안 썼으면 null — 화면이 "실시간"임을 알 수 있다. */
+    private LocalDateTime computedAt(int year, TargetScope scope) {
+        if (scope != TargetScope.COMPANY) {
+            return null;
+        }
+        return snapshotRepository.findByYearAndScope(year, TargetScope.COMPANY, null).stream()
+                .map(DashboardSnapshot::getComputedAt)
+                .max(LocalDateTime::compareTo)
+                .orElse(null);
     }
 
     /** 달성률 = 실적/목표 ×100(소수1). 목표 0이면 null. */

@@ -230,4 +230,37 @@ class ReceivableDashboardIntegrationTest extends IntegrationTestSupport {
         }
         assertThat(statuses).containsExactly("EXPIRED", "EXPIRED", "IMMINENT");
     }
+
+    @Test
+    @DisplayName("대시보드 스냅샷 — 배치 전엔 실시간, 배치 후엔 스냅샷 기준시각이 붙는다")
+    void 대시보드_스냅샷() {
+        // 발주처 확정(3-2 아) "하루 1회 갱신". 다만 배치가 안 돈 날 화면이 비면 안 되므로
+        // 스냅샷이 없으면 실시간으로 계산하고, computedAt으로 어느 쪽인지 드러낸다.
+        String sfx = "-DS" + (System.nanoTime() % 1_000_000L);
+        Long sup = createId("/masters/clients", Map.of("code", "DSS" + sfx, "name", "인쇄", "type", "NORMAL"));
+        Long pt = createId("/masters/clients", Map.of("code", "DSP" + sfx, "name", "스냅처", "type", "NORMAL"));
+        Long wh = createId("/masters/warehouses", Map.of("code", "DSW" + sfx, "name", "스냅창고", "type", "MAIN"));
+        Long pr = createId("/masters/products", Map.of("code", "DSB" + sfx, "name", "스냅도서",
+                "contentType", "SELF", "price", 10000, "supplyRate", 100));
+        post("/stock/inbound", Map.of("processedDate", "2029-03-01", "supplierClientId", sup,
+                "destinationWarehouseId", wh,
+                "items", List.of(Map.of("productId", pr, "unitCost", 3000, "qty", 500))));
+        post("/sales/entries", Map.of("salesDate", "2029-03-10", "partnerId", pt, "warehouseId", wh,
+                "items", List.of(Map.of("productId", pr, "shipmentType", "NORMAL_SHIP", "qty", 100))));
+
+        // 배치를 2029 기준으로 돌린다
+        JsonNode run = data(post("/batch/jobs/dashboard-snapshot/run?baseDate=2029-12-31", null));
+        assertThat(run.path("status").asText()).isEqualTo("SUCCESS");
+
+        JsonNode d = data(get("/dashboard/sales?year=2029"));
+        assertThat(d.hasNonNull("computedAt")).as("스냅샷을 썼으면 기준시각이 있다").isTrue();
+        assertThat(d.path("summary").path("totalActual").asLong()).isEqualTo(1_000_000);
+
+        // 같은 날 다시 돌려도 행이 늘지 않고 값만 갱신된다(지웠다 넣지 않는다).
+        post("/sales/entries", Map.of("salesDate", "2029-03-11", "partnerId", pt, "warehouseId", wh,
+                "items", List.of(Map.of("productId", pr, "shipmentType", "NORMAL_SHIP", "qty", 50))));
+        post("/batch/jobs/dashboard-snapshot/run?baseDate=2029-12-31", null);
+        assertThat(data(get("/dashboard/sales?year=2029")).path("summary").path("totalActual").asLong())
+                .as("재실행하면 새 매출이 반영된다").isEqualTo(1_500_000);
+    }
 }

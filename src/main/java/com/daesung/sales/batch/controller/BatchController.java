@@ -28,6 +28,7 @@ public class BatchController {
 
     private final CollateralExpiryBatch collateralExpiryBatch;
     private final BatchJobRunRepository runRepository;
+    private final com.daesung.sales.batch.service.DashboardSnapshotBatch dashboardSnapshotBatch;
 
     @Operation(summary = "담보만기 알림 배치 수동 실행",
             description = """
@@ -41,6 +42,22 @@ public class BatchController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate baseDate) {
         LocalDate base = (baseDate == null) ? LocalDate.now() : baseDate;
         return ApiResponse.success(BatchRunResponse.from(collateralExpiryBatch.run(base)));
+    }
+
+    @Operation(summary = "대시보드 스냅샷 배치 수동 실행",
+            description = """
+                    올해·작년의 월별 순매출을 다시 계산해 스냅샷에 저장한다.
+                    평소에는 매일 04시 자동 실행되며(발주처 확정 3-2 아 "하루 1회 갱신"),
+                    이 API는 방금 넣은 매출을 바로 반영하고 싶을 때나 검수 시연용이다.
+
+                    · 같은 날 몇 번 돌려도 **행이 늘지 않고 값만 갱신**된다.
+                    · 작년까지 계산하는 이유는 대시보드가 전년 동월 대비를 함께 보여주기 때문이다.""")
+    @PostMapping("/jobs/dashboard-snapshot/run")
+    public ApiResponse<BatchRunResponse> runDashboardSnapshot(
+            @Parameter(description = "기준일(미지정 시 오늘)")
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate baseDate) {
+        LocalDate base = (baseDate == null) ? LocalDate.now() : baseDate;
+        return ApiResponse.success(BatchRunResponse.from(dashboardSnapshotBatch.run(base)));
     }
 
     @Operation(summary = "배치 실행 이력 조회",

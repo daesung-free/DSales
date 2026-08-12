@@ -9,6 +9,8 @@ public record DashboardResponse(
         @Schema(description = "대상 축") com.daesung.sales.dashboard.entity.TargetScope scope,
         @Schema(description = "사업부문명(scope=DIVISION일 때)") String scopeKey,
         @Schema(description = "상품 id(scope=PRODUCT일 때)") Long productId,
+        @Schema(description = "실적 기준시각 — 새벽 배치가 계산한 시각. null이면 조회 시점 실시간 계산")
+        java.time.LocalDateTime computedAt,
         @Schema(description = "월별 목표/실적") List<MonthCell> months,
         @Schema(description = "연간 합계") YearSummary summary
 ) {
