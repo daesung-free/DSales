@@ -6,7 +6,9 @@ import java.util.List;
 /** 매출 대시보드: 목표 대비 실적(월별 + 연간 합계). 근거: 대시보드 화면(19·20p). */
 public record DashboardResponse(
         @Schema(description = "연도") int year,
-        @Schema(description = "상품 id(전사면 null)") Long productId,
+        @Schema(description = "대상 축") com.daesung.sales.dashboard.entity.TargetScope scope,
+        @Schema(description = "사업부문명(scope=DIVISION일 때)") String scopeKey,
+        @Schema(description = "상품 id(scope=PRODUCT일 때)") Long productId,
         @Schema(description = "월별 목표/실적") List<MonthCell> months,
         @Schema(description = "연간 합계") YearSummary summary
 ) {
@@ -21,10 +23,10 @@ public record DashboardResponse(
     }
 
     public record YearSummary(
-            @Schema(description = "연간 목표 합") long totalTarget,
+            @Schema(description = "연간 목표(연간 목표가 등록돼 있으면 그 값, 없으면 월 목표 합)") long totalTarget,
             @Schema(description = "연간 실적 합") long totalActual,
             @Schema(description = "연간 달성률 %") Double achievementPct,
-            @Schema(description = "전년 연간 실적") long prevTotalActual,
+            @Schema(description = "전년 연간 실적(그 해 매출이 없으면 저장된 확정 실적)") long prevTotalActual,
             @Schema(description = "전년比 성장률 %") Double growthPct
     ) {
     }

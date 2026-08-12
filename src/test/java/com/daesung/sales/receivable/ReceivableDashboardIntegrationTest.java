@@ -143,4 +143,46 @@ class ReceivableDashboardIntegrationTest extends IntegrationTestSupport {
                 "items", List.of(Map.of("productId", productId, "unitCost", 3000, "qty", 100))));
         assertThat(r.path("success").asBoolean()).as("입고: %s", r).isTrue();
     }
+
+    @Test
+    @DisplayName("매출목표 — 연간 목표와 사업부문 축(발주처가 준 데이터 형태 그대로)")
+    void 연간_사업부문_목표() {
+        // 발주처 회신(자료요청서 1-6)은 월이 아니라 '연간', 대상은 상품이 아니라 '사업부문'으로 왔다.
+        // 우리 양식이 월 단위 예시였던 탓에 구조가 월 필수였고, 그래서 한 줄도 못 넣던 것을 고쳤다.
+        assertThat(post("/dashboard/targets", Map.of(
+                "year", 2031, "scope", "DIVISION", "scopeKey", "더프리미엄",
+                "targetAmount", 9_454_430_300L)).path("success").asBoolean()).isTrue();
+        // 전년 실적: 레거시를 이관하지 않아 2030 매출이 DB에 없다 → 받은 실적값을 저장해 전년비를 살린다
+        post("/dashboard/targets", Map.of(
+                "year", 2030, "scope", "DIVISION", "scopeKey", "더프리미엄",
+                "entryType", "ACTUAL", "targetAmount", 8_794_691_150L));
+
+        JsonNode d = data(get("/dashboard/sales?year=2031&scope=DIVISION&scopeKey=더프리미엄"));
+        assertThat(d.path("summary").path("totalTarget").asLong())
+                .as("연간 목표가 연간 요약에 잡힌다").isEqualTo(9_454_430_300L);
+        assertThat(d.path("summary").path("prevTotalActual").asLong())
+                .as("전년 매출이 없으면 저장된 확정 실적으로 채운다").isEqualTo(8_794_691_150L);
+        // ★연간 금액을 12로 나눠 월에 뿌리지 않는다 — 있지도 않은 월 목표를 만들어내면 달성률이 거짓이 된다
+        for (JsonNode m : d.path("months")) {
+            assertThat(m.path("target").asLong()).as("%s월 셀", m.path("month")).isZero();
+        }
+    }
+
+    @Test
+    @DisplayName("같은 연·대상·종류를 다시 등록하면 행이 늘지 않고 금액만 갱신된다")
+    void 목표_중복등록() {
+        post("/dashboard/targets", Map.of("year", 2032, "scope", "DIVISION",
+                "scopeKey", "학원 컨텐츠", "targetAmount", 100));
+        post("/dashboard/targets", Map.of("year", 2032, "scope", "DIVISION",
+                "scopeKey", "학원 컨텐츠", "targetAmount", 200));
+
+        JsonNode list = data(get("/dashboard/targets?year=2032"));
+        assertThat(list).hasSize(1);
+        assertThat(list.get(0).path("amount").asLong()).isEqualTo(200);
+
+        // 목표와 실적은 같은 연·대상이어도 별개 행이다(나란히 비교해야 하므로)
+        post("/dashboard/targets", Map.of("year", 2032, "scope", "DIVISION",
+                "scopeKey", "학원 컨텐츠", "entryType", "ACTUAL", "targetAmount", 300));
+        assertThat(data(get("/dashboard/targets?year=2032"))).hasSize(2);
+    }
 }
