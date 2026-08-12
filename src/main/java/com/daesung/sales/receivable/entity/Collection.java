@@ -35,6 +35,14 @@ public class Collection extends BaseEntity {
     @Column(name = "coll_date", nullable = false)
     private LocalDate collDate;
 
+    /**
+     * 기장일자(회계 기표일). 근거: 레거시 AmtData.writeDate — 수금등록 그리드에서 수금일자와
+     * 나란히 보여 준다. 돈이 들어온 날과 장부에 올린 날이 다를 수 있어 재무팀이 둘을 나눠 본다.
+     * 수금일자로 자동 채우지 않는다(같다고 단정하면 따로 둘 이유가 없다).
+     */
+    @Column(name = "write_date")
+    private LocalDate writeDate;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "partner_id", nullable = false)
     private Partner partner;
@@ -61,12 +69,14 @@ public class Collection extends BaseEntity {
     @Column(length = 1000)
     private String memo;
 
-    public static Collection create(String collectionNo, LocalDate collDate, Partner partner,
+    public static Collection create(String collectionNo, LocalDate collDate, LocalDate writeDate,
+                                    Partner partner,
                                     CollectionType collType, long collAmt, String promissoryNo,
                                     LocalDate promissoryDue, String bankName, String branchName, String memo) {
         Collection c = new Collection();
         c.collectionNo = collectionNo;
         c.collDate = collDate;
+        c.writeDate = writeDate;
         c.partner = partner;
         c.collType = collType;
         c.collAmt = collAmt;

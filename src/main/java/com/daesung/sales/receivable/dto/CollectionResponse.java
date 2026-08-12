@@ -10,6 +10,7 @@ public record CollectionResponse(
         @Schema(description = "수금 id") Long id,
         @Schema(description = "수금번호") String collectionNo,
         @Schema(description = "수금일자") LocalDate collDate,
+        @Schema(description = "기장일자(회계 기표일)") LocalDate writeDate,
         @Schema(description = "거래처 id") Long partnerId,
         @Schema(description = "거래처명") String partnerName,
         @Schema(description = "수금유형") CollectionType collType,
@@ -22,7 +23,7 @@ public record CollectionResponse(
 ) {
     public static CollectionResponse from(Collection c) {
         return new CollectionResponse(
-                c.getId(), c.getCollectionNo(), c.getCollDate(),
+                c.getId(), c.getCollectionNo(), c.getCollDate(), c.getWriteDate(),
                 c.getPartner().getId(), c.getPartner().getName(),
                 c.getCollType(), c.getCollAmt(),
                 c.getPromissoryNo(), c.getPromissoryDue(), c.getBankName(), c.getBranchName(), c.getMemo());

@@ -12,6 +12,10 @@ public record CollectionRequest(
         @Schema(description = "수금일자", example = "2026-06-20", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotNull LocalDate collDate,
 
+        @Schema(description = "기장일자(회계 기표일). 수금일자와 다를 수 있다. 미입력 가능",
+                example = "2026-06-30")
+        LocalDate writeDate,
+
         @Schema(description = "거래처 id", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotNull Long partnerId,
 

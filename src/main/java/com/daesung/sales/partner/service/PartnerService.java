@@ -11,6 +11,7 @@ import com.daesung.sales.partner.entity.Partner;
 import com.daesung.sales.partner.repository.PartnerRepository;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
+import java.util.Comparator;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -27,7 +28,10 @@ public class PartnerService {
 
     /**
      * 담보 만기 알림: 기준일 대비 담보 만기일이 withinDays 이내(또는 이미 만료)인 거래처.
-     * 만기일 오름차순, 상태(EXPIRED/IMMINENT) + 남은 일수 포함.
+     *
+     * <p>정렬은 <b>만료(EXPIRED) 먼저, 그 다음 임박(IMMINENT)</b>이고 각 묶음 안에서는 만기일 순이다.
+     * 근거: 발주처 확정(자료요청서 3-2(바)) — "만기 경과 건은 빨간색 표시 후 <b>별도 목록으로 쏘팅</b>".
+     * 만기일 순으로만 두면 이미 지난 건이 목록 위쪽에 섞여, 아직 시간이 있는 건과 구분이 안 된다.
      */
     public CollateralExpiryResponse collateralExpiry(LocalDate asOf, int withinDays) {
         LocalDate reference = (asOf != null) ? asOf : LocalDate.now();
@@ -40,6 +44,10 @@ public class PartnerService {
                             return new CollateralExpiryResponse.Row(p.getId(), p.getCode(), p.getName(),
                                     p.getAssureExpiry(), p.getAssureAmount(), days, status);
                         })
+                        // 만료분을 앞으로(경과일이 큰 순), 그 뒤에 임박분(만기일 가까운 순).
+                        .sorted(Comparator
+                                .comparing((CollateralExpiryResponse.Row r) -> !"EXPIRED".equals(r.status()))
+                                .thenComparing(CollateralExpiryResponse.Row::assureExpiry))
                         .toList();
         return new CollateralExpiryResponse(reference, withinDays, rows);
     }

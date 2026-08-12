@@ -63,7 +63,7 @@ public class ReceivableService {
                         "거래처가 없습니다. id=" + req.partnerId()));
         String collNo = "C-" + req.collDate().format(YYYYMMDD) + "-" + sequenceService.next(SequenceService.SEQ_COLLECTION);
         Collection c = collectionRepository.save(Collection.create(
-                collNo, req.collDate(), partner, req.collType(), req.collAmt(),
+                collNo, req.collDate(), req.writeDate(), partner, req.collType(), req.collAmt(),
                 req.promissoryNo(), req.promissoryDue(), req.bankName(), req.branchName(), req.memo()));
         return CollectionResponse.from(c);
     }

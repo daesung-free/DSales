@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.daesung.sales.support.IntegrationTestSupport;
 import com.fasterxml.jackson.databind.JsonNode;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeAll;
@@ -184,5 +185,49 @@ class ReceivableDashboardIntegrationTest extends IntegrationTestSupport {
         post("/dashboard/targets", Map.of("year", 2032, "scope", "DIVISION",
                 "scopeKey", "학원 컨텐츠", "entryType", "ACTUAL", "targetAmount", 300));
         assertThat(data(get("/dashboard/targets?year=2032"))).hasSize(2);
+    }
+
+    @Test
+    @DisplayName("수금 기장일자 — 수금일자와 별개로 저장되고, 미입력이면 비어 있다")
+    void 수금_기장일자() {
+        // 레거시 AmtData.writeDate — 돈이 들어온 날과 장부에 기표한 날이 달라 재무팀이 둘을 나눠 본다.
+        String sfx = "-WD" + (System.nanoTime() % 1_000_000L);
+        Long p = createId("/masters/clients", Map.of("code", "WD" + sfx, "name", "수금처", "type", "NORMAL"));
+
+        JsonNode a = data(post("/closing/collections", Map.of(
+                "collDate", "2026-06-25", "writeDate", "2026-06-30",
+                "partnerId", p, "collType", "CASH", "collAmt", 500_000)));
+        assertThat(a.path("collDate").asText()).isEqualTo("2026-06-25");
+        assertThat(a.path("writeDate").asText()).as("수금일자로 덮이지 않는다").isEqualTo("2026-06-30");
+
+        // 미입력이면 수금일자로 자동으로 채우지 않는다 — 같다고 단정하면 따로 둘 이유가 없다.
+        JsonNode b = data(post("/closing/collections", Map.of(
+                "collDate", "2026-06-26", "partnerId", p, "collType", "CASH", "collAmt", 100_000)));
+        assertThat(b.hasNonNull("writeDate")).isFalse();
+    }
+
+    @Test
+    @DisplayName("담보만기 — 만료 건이 임박 건보다 앞에 모인다")
+    void 담보만기_정렬() {
+        // 발주처 확정(3-2 바): "만기 경과 건은 빨간색 표시 후 별도 목록으로 쏘팅".
+        // 만기일 순으로만 두면 이미 지난 건과 아직 시간이 있는 건이 섞인다.
+        String sfx = "-CE" + (System.nanoTime() % 1_000_000L);
+        record Seed(String code, String expiry) { }
+        for (Seed sd : List.of(new Seed("CE1", "2026-07-01"), new Seed("CE2", "2026-08-20"),
+                new Seed("CE3", "2026-06-01"))) {
+            Long id = createId("/masters/clients",
+                    Map.of("code", sd.code() + sfx, "name", sd.code(), "type", "NORMAL"));
+            put("/masters/clients/" + id, Map.of("name", sd.code(), "type", "NORMAL",
+                    "assureAmount", 1_000_000, "assureExpiry", sd.expiry()));
+        }
+
+        List<String> statuses = new ArrayList<>();
+        for (JsonNode r : data(get("/masters/clients/collateral-expiry?asOf=2026-08-12&withinDays=30"))
+                .path("rows")) {
+            if (r.path("code").asText().endsWith(sfx)) {
+                statuses.add(r.path("status").asText());
+            }
+        }
+        assertThat(statuses).containsExactly("EXPIRED", "EXPIRED", "IMMINENT");
     }
 }
