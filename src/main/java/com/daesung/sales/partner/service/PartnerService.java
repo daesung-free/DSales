@@ -1,5 +1,7 @@
 package com.daesung.sales.partner.service;
 
+import com.daesung.sales.audit.entity.MasterEntityType;
+import com.daesung.sales.audit.service.MasterChangeLogService;
 import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.common.response.PageResponse;
@@ -12,6 +14,7 @@ import com.daesung.sales.partner.repository.PartnerRepository;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
+import java.util.Map;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -25,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class PartnerService {
 
     private final PartnerRepository partnerRepository;
+    private final MasterChangeLogService masterChangeLogService;
 
     /**
      * 담보 만기 알림: 기준일 대비 담보 만기일이 withinDays 이내(또는 이미 만료)인 거래처.
@@ -79,15 +83,24 @@ public class PartnerService {
         return PartnerResponse.from(partnerRepository.save(partner));
     }
 
+    /**
+     * 거래처 수정. 바뀐 필드는 <b>변경이력에 남는다</b>(발주처 확정 3-1 라).
+     *
+     * <p>스냅샷은 반드시 <b>수정 전에</b> 뜬다 — JPA 영속 엔티티라 값을 바꾼 뒤 뜨면
+     * before와 after가 같은 것을 가리켜 변경이 전혀 잡히지 않는다.
+     */
     @Transactional
     public PartnerResponse update(Long id, PartnerUpdateRequest req) {
         Partner partner = getOrThrow(id);
+        Map<String, String> before = partner.auditSnapshot();
         partner.update(req.name(), req.cityName(), req.name1(), req.region(), req.clientCategory(), req.type());
         partner.updateCredit(req.assureAmount(), req.assureExpiry(), req.assureNote());
         partner.updateTaxInfo(req.bizNo(), req.bossName(), req.addr1(), req.addr2(),
                 req.bizStatus(), req.bizItem(), req.email1(), req.email2());
         partner.updateContact(req.bossId(), req.tel1(), req.tel2(), req.cellPhone(), req.fax(),
                 req.zip(), req.zone2(), req.startDate(), req.endDate());
+        masterChangeLogService.recordDiff(MasterEntityType.PARTNER, partner.getId(), partner.getCode(),
+                before, partner.auditSnapshot());
         return PartnerResponse.from(partner);
     }
 

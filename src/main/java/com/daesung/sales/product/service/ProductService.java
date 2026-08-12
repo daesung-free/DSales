@@ -1,6 +1,8 @@
 package com.daesung.sales.product.service;
 
 import com.daesung.sales.common.audit.CurrentAuditor;
+import com.daesung.sales.audit.entity.MasterEntityType;
+import com.daesung.sales.audit.service.MasterChangeLogService;
 import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.common.response.PageResponse;
@@ -24,6 +26,7 @@ import com.daesung.sales.product.repository.ProductRepository;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -36,6 +39,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class ProductService {
 
     private final ProductRepository productRepository;
+    private final MasterChangeLogService masterChangeLogService;
     private final BomItemRepository bomItemRepository;
     private final ProductPartnerPriceRepository partnerPriceRepository;
     private final PartnerRepository partnerRepository;
@@ -68,14 +72,18 @@ public class ProductService {
         return ProductResponse.from(productRepository.save(product));
     }
 
+    /** 도서 수정. 바뀐 필드는 변경이력에 남는다(발주처 확정 3-1 라). 스냅샷은 수정 전에 뜬다. */
     @Transactional
     public ProductResponse update(Long id, ProductUpdateRequest req) {
         Product product = getOrThrow(id);
+        Map<String, String> before = product.auditSnapshot();
         product.update(req.name(), req.contentType(), req.set(),
                 req.price(), req.taxFree(), req.grade(),
                 req.catCode(), req.catName(), req.useYn(),
                 req.salesDivision(), req.ledgerVisible(), req.webVisible(), req.stockManaged());
         product.applyExtra(req.productYear(), req.productType(), req.supplyRate());
+        masterChangeLogService.recordDiff(MasterEntityType.PRODUCT, product.getId(), product.getCode(),
+                before, product.auditSnapshot());
         return ProductResponse.from(product);
     }
 
@@ -141,8 +149,15 @@ public class ProductService {
         ProductPartnerPrice mapping = partnerPriceRepository
                 .findByProductIdAndPartnerId(productId, partnerId)
                 .orElseGet(() -> ProductPartnerPrice.create(product, partner, null, true));
+        // 기존 매핑이 있을 때만 '변경'이다. 신규 생성은 created_by/created_at이 이미 답한다.
+        Map<String, String> before = (mapping.getId() == null) ? null : priceSnapshot(mapping);
         mapping.update(req.supplyRate(), req.visibleOrDefault());
-        return PartnerPriceResponse.from(partnerPriceRepository.save(mapping));
+        ProductPartnerPrice saved = partnerPriceRepository.save(mapping);
+        if (before != null) {
+            masterChangeLogService.recordDiff(MasterEntityType.PARTNER_PRICE, saved.getId(),
+                    product.getCode() + "/" + partner.getCode(), before, priceSnapshot(saved));
+        }
+        return PartnerPriceResponse.from(saved);
     }
 
     /**
@@ -181,6 +196,14 @@ public class ProductService {
         }
         return new PartnerPriceBulkResult(productId, product.getCode(), created, updated,
                 skipped.size(), skipped);
+    }
+
+    /** 거래처별 단가 스냅샷(변경이력용). */
+    private static Map<String, String> priceSnapshot(ProductPartnerPrice m) {
+        Map<String, String> s = new java.util.LinkedHashMap<>();
+        s.put("supplyRate|공급률", (m.getSupplyRate() == null) ? null : String.valueOf(m.getSupplyRate()));
+        s.put("visible|노출여부", String.valueOf(m.isVisible()));
+        return s;
     }
 
     /** 도서×거래처 매핑 삭제(논리삭제 — 행은 남고 삭제자·시각이 기록된다). */

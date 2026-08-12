@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.daesung.sales.support.IntegrationTestSupport;
 import com.fasterxml.jackson.databind.JsonNode;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CountDownLatch;
@@ -830,5 +831,71 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
                 "bossId", "900202-2345678"));
         assertThat(data(get("/masters/clients/" + id)).path("bossId").asText())
                 .isEqualTo("900202-2******");
+    }
+
+    @Test
+    @DisplayName("기초정보 변경이력 — 바뀐 필드만, 이전→이후 값이 남는다")
+    void 기초정보_변경이력() {
+        String sfx = "-CH" + (System.nanoTime() % 1_000_000L);
+        Long p = createId("/masters/clients", Map.of("code", "CH" + sfx, "name", "이력거래처",
+                "type", "NORMAL", "tel1", "02-111-1111", "bossId", "800101-1234567"));
+
+        // 거래처명·연락처만 바꾼다(나머지는 그대로 보낸다).
+        Map<String, Object> body = new HashMap<>();
+        body.put("name", "이력거래처(변경)");
+        body.put("type", "NORMAL");
+        body.put("tel1", "02-222-2222");
+        body.put("bossId", "800101-1234567");
+        put("/masters/clients/" + p, body);
+
+        JsonNode rows = data(get("/audit/master-changes?entityType=PARTNER&entityId=" + p)).path("content");
+        Map<String, String> changed = new HashMap<>();
+        for (JsonNode r : rows) {
+            changed.put(r.path("field").asText(), r.path("oldValue").asText() + ">" + r.path("newValue").asText());
+        }
+        assertThat(changed).containsKeys("name", "tel1");
+        assertThat(changed.get("name")).isEqualTo("이력거래처>이력거래처(변경)");
+        assertThat(changed.get("tel1")).isEqualTo("02-111-1111>02-222-2222");
+        // 안 바뀐 항목은 이력에 남지 않는다 — 남기면 실제 변경이 묻힌다.
+        assertThat(changed).doesNotContainKey("bizNo");
+        // ★사업자주민번호는 이력에도 마스킹되어야 한다(이력 조회로 원본이 새면 마스킹이 무의미).
+        for (JsonNode r : rows) {
+            assertThat(r.path("oldValue").asText()).doesNotContain("800101-1234567");
+            assertThat(r.path("newValue").asText()).doesNotContain("800101-1234567");
+        }
+    }
+
+    @Test
+    @DisplayName("변경이력 — 값이 그대로면 저장해도 이력이 생기지 않는다")
+    void 변경없으면_이력없음() {
+        String sfx = "-CN" + (System.nanoTime() % 1_000_000L);
+        Long p = createId("/masters/clients", Map.of("code", "CN" + sfx, "name", "무변경", "type", "NORMAL"));
+        put("/masters/clients/" + p, Map.of("name", "무변경", "type", "NORMAL"));
+
+        assertThat(data(get("/audit/master-changes?entityType=PARTNER&entityId=" + p))
+                .path("totalElements").asInt()).isZero();
+    }
+
+    @Test
+    @DisplayName("변경이력 — 거래처별 단가 변경도 남는다(신규 생성은 대상 아님)")
+    void 단가_변경이력() {
+        String sfx = "-CP" + (System.nanoTime() % 1_000_000L);
+        Long pt = createId("/masters/clients", Map.of("code", "CP" + sfx, "name", "단가처", "type", "NORMAL"));
+        Long pr = createId("/masters/products", Map.of("code", "CPB" + sfx, "name", "단가도서",
+                "contentType", "SELF", "price", 10000));
+
+        put("/masters/products/" + pr + "/partner-prices/" + pt, Map.of("supplyRate", 70));  // 신규
+        put("/masters/products/" + pr + "/partner-prices/" + pt, Map.of("supplyRate", 65));  // 변경
+
+        JsonNode rows = data(get("/audit/master-changes?entityType=PARTNER_PRICE")).path("content");
+        boolean found = false;
+        for (JsonNode r : rows) {
+            if (r.path("entityCode").asText().contains("CPB" + sfx)) {
+                assertThat(r.path("oldValue").asText()).isEqualTo("70");
+                assertThat(r.path("newValue").asText()).isEqualTo("65");
+                found = true;
+            }
+        }
+        assertThat(found).as("신규 생성은 이력 대상이 아니고, 변경만 1건 남는다").isTrue();
     }
 }

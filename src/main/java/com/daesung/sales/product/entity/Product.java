@@ -151,4 +151,30 @@ public class Product extends BaseEntity {
     public void markAsSet() {
         this.set = true;
     }
+
+    /** 변경이력용 스냅샷(필드명|한글라벨 → 값). 근거: 발주처 확정 3-1(라). */
+    public java.util.Map<String, String> auditSnapshot() {
+        java.util.Map<String, String> m = new java.util.LinkedHashMap<>();
+        m.put("name|도서명", name);
+        m.put("contentType|콘텐츠구분", (contentType == null) ? null : contentType.name());
+        m.put("set|세트여부", String.valueOf(set));
+        m.put("price|정가", str(price));
+        m.put("supplyRate|기본공급률", str(supplyRate));
+        m.put("taxFree|면세여부", String.valueOf(taxFree));
+        m.put("grade|학년", grade);
+        m.put("catCode|분류코드", catCode);
+        m.put("catName|분류명", catName);
+        m.put("useYn|사용여부", String.valueOf(useYn));
+        m.put("salesDivision|매출구분", salesDivision);
+        m.put("productYear|상품년도", str(productYear));
+        m.put("productType|상품구분", productType);
+        m.put("ledgerVisible|수불부노출", String.valueOf(ledgerVisible));
+        m.put("webVisible|Web게시", String.valueOf(webVisible));
+        m.put("stockManaged|재고관리", String.valueOf(stockManaged));
+        return m;
+    }
+
+    private static String str(Object v) {
+        return (v == null) ? null : String.valueOf(v);
+    }
 }

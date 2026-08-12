@@ -198,4 +198,45 @@ public class Partner extends BaseEntity {
         this.email1 = email1;
         this.email2 = email2;
     }
+
+    /**
+     * 변경이력용 스냅샷(필드명|한글라벨 → 값). 근거: 발주처 확정 3-1(라) 기초정보 변경이력.
+     *
+     * <p>★사업자주민번호는 <b>마스킹해서</b> 담는다 — 이력 테이블에 원본이 쌓이면
+     * 응답을 마스킹한 의미가 없어진다(이력 조회로 그대로 새어나간다).
+     */
+    public java.util.Map<String, String> auditSnapshot() {
+        java.util.Map<String, String> m = new java.util.LinkedHashMap<>();
+        m.put("name|거래처명", name);
+        m.put("name1|신고명", name1);
+        m.put("cityName|도시명", cityName);
+        m.put("region|지역", region);
+        m.put("zone2|관할지역", zone2);
+        m.put("clientCategory|거래처구분", clientCategory);
+        m.put("type|유형", (type == null) ? null : type.name());
+        m.put("bizNo|사업자번호", bizNo);
+        m.put("bossName|사업자명", bossName);
+        m.put("bossId|사업자주민번호", com.daesung.sales.common.mask.Masks.residentNo(bossId));
+        m.put("bizStatus|업종", bizStatus);
+        m.put("bizItem|업태", bizItem);
+        m.put("tel1|연락처1", tel1);
+        m.put("tel2|연락처2", tel2);
+        m.put("cellPhone|휴대폰", cellPhone);
+        m.put("fax|팩스", fax);
+        m.put("email1|이메일1", email1);
+        m.put("email2|이메일2", email2);
+        m.put("zip|우편번호", zip);
+        m.put("addr1|기본주소", addr1);
+        m.put("addr2|상세주소", addr2);
+        m.put("startDate|등록일", str(startDate));
+        m.put("endDate|만료일", str(endDate));
+        m.put("assureAmount|담보금액", str(assureAmount));
+        m.put("assureExpiry|담보만기", str(assureExpiry));
+        m.put("assureNote|담보내용", assureNote);
+        return m;
+    }
+
+    private static String str(Object v) {
+        return (v == null) ? null : String.valueOf(v);
+    }
 }
