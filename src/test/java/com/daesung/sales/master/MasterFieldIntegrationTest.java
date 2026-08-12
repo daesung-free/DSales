@@ -898,4 +898,46 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
         }
         assertThat(found).as("신규 생성은 이력 대상이 아니고, 변경만 1건 남는다").isTrue();
     }
+
+    @Test
+    @DisplayName("일부 필드만 보낸 PUT이 Y/N 플래그를 조용히 끄지 않는다")
+    void 부분수정_플래그_보존() {
+        // 실제로 있었던 결함: 요청 DTO가 primitive boolean이라 JSON에서 빠지면 false가 됐다.
+        // 그래서 이름만 바꾸는 PUT이 사용여부·수불부노출·재고관리를 전부 꺼버렸다.
+        // 특히 재고관리가 꺼지면 매출을 넣어도 재고가 차감되지 않는데 오류조차 나지 않는다.
+        String sfx = "-FX" + (System.nanoTime() % 1_000_000L);
+        Long id = createId("/masters/products", Map.of("code", "FX" + sfx, "name", "플래그도서",
+                "contentType", "SELF", "price", 10000));
+
+        put("/masters/products/" + id, Map.of("name", "플래그도서(수정)",
+                "contentType", "SELF", "price", 12000));
+
+        JsonNode d = data(get("/masters/products/" + id));
+        assertThat(d.path("useYn").asBoolean()).as("사용여부 유지").isTrue();
+        assertThat(d.path("ledgerVisible").asBoolean()).as("수불부노출 유지").isTrue();
+        assertThat(d.path("stockManaged").asBoolean()).as("재고관리 유지 — 꺼지면 재고가 안 깎인다").isTrue();
+        assertThat(d.path("price").asInt()).as("보낸 값은 반영").isEqualTo(12000);
+
+        // 의도적으로 false를 보내면 꺼져야 한다(유지 로직이 수정 자체를 막으면 안 된다).
+        Map<String, Object> off = new HashMap<>();
+        off.put("name", "플래그도서(수정)");
+        off.put("contentType", "SELF");
+        off.put("price", 12000);
+        off.put("stockManaged", false);
+        put("/masters/products/" + id, off);
+        assertThat(data(get("/masters/products/" + id)).path("stockManaged").asBoolean()).isFalse();
+    }
+
+    @Test
+    @DisplayName("창고 실물재고여부도 부분수정에 꺼지지 않는다")
+    void 부분수정_창고플래그_보존() {
+        // 물류창고가 조용히 가상창고가 되면 제품수불부 실재고 집계에서 통째로 빠진다.
+        String sfx = "-FW" + (System.nanoTime() % 1_000_000L);
+        Long id = createId("/masters/warehouses", Map.of("code", "FW" + sfx,
+                "name", "플래그창고", "type", "MAIN"));
+
+        put("/masters/warehouses/" + id, Map.of("name", "플래그창고(수정)", "type", "MAIN"));
+
+        assertThat(data(get("/masters/warehouses/" + id)).path("physicalStock").asBoolean()).isTrue();
+    }
 }

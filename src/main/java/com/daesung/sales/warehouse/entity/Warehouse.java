@@ -59,10 +59,15 @@ public class Warehouse extends BaseEntity {
     }
 
     /** 수정(코드는 불변). */
-    public void update(String name, WarehouseType type, boolean physicalStock, Partner ownerClient) {
+    /**
+     * 수정. 실물재고여부는 <b>null이면 기존 값을 유지</b>한다 —
+     * primitive였을 때 요청에서 빠지면 false가 되어, 물류창고가 조용히 가상창고로 바뀌었다.
+     * 그러면 제품수불부 실재고 집계에서 통째로 빠진다(Product의 같은 문제와 함께 수정, 2026-08-12).
+     */
+    public void update(String name, WarehouseType type, Boolean physicalStock, Partner ownerClient) {
         this.name = name;
         this.type = type;
-        this.physicalStock = physicalStock;
+        this.physicalStock = (physicalStock == null) ? this.physicalStock : physicalStock;
         this.ownerClient = ownerClient;
     }
 }

@@ -8,6 +8,13 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
 
 /** 상품 수정 요청 DTO. 코드(code)는 불변이라 제외. */
+/*
+ * ★Boolean(래퍼)인 이유 — primitive였을 때 실제로 데이터가 소실됐다.
+ *   JSON에서 필드가 빠지면 primitive는 false가 되어 "안 보냄"과 "false로 설정"을 구분할 수 없다.
+ *   그래서 일부 필드만 담아 PUT하면 나머지 플래그가 조용히 전부 꺼졌다 —
+ *   특히 stockManaged=false 는 매출을 넣어도 재고가 안 깎이는데 오류도 나지 않는다.
+ *   지금은 null = "그대로 두기"로 처리한다(기초정보 변경이력 도입 중 발견, 2026-08-12).
+ */
 public record ProductUpdateRequest(
 
         @Schema(description = "상품명", example = "2026 D.ARCHIVE 국어 세트", requiredMode = Schema.RequiredMode.REQUIRED)
@@ -17,13 +24,13 @@ public record ProductUpdateRequest(
         @NotNull ContentType contentType,
 
         @Schema(description = "세트 여부", example = "true")
-        boolean set,
+        Boolean set,
 
         @Schema(description = "정가(원)", example = "20000")
         Integer price,
 
         @Schema(description = "면세 여부", example = "false")
-        boolean taxFree,
+        Boolean taxFree,
 
         @Schema(description = "학년", example = "고3")
         String grade,
@@ -36,7 +43,7 @@ public record ProductUpdateRequest(
         String catName,
 
         @Schema(description = "사용 여부", example = "true")
-        boolean useYn,
+        Boolean useYn,
 
         @Schema(description = "매출구분(매출액정리·순매출조회 집계기준)", example = "정상")
         String salesDivision,
@@ -51,12 +58,12 @@ public record ProductUpdateRequest(
         @PositiveOrZero @Max(100) Integer supplyRate,
 
         @Schema(description = "수불부노출 여부", example = "true")
-        boolean ledgerVisible,
+        Boolean ledgerVisible,
 
         @Schema(description = "Web게시 여부", example = "false")
-        boolean webVisible,
+        Boolean webVisible,
 
         @Schema(description = "재고관리 여부(false=모의고사 등 인원기반, 매출 시 재고 미차감)", example = "true")
-        boolean stockManaged
+        Boolean stockManaged
 ) {
 }

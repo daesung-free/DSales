@@ -123,23 +123,30 @@ public class Product extends BaseEntity {
     }
 
     /** 수정(코드는 불변). */
-    public void update(String name, ContentType contentType, boolean set, Integer price,
-                       boolean taxFree, String grade, String catCode, String catName, boolean useYn,
-                       String salesDivision, boolean ledgerVisible, boolean webVisible,
-                       boolean stockManaged) {
+    /**
+     * 수정(코드는 불변).
+     *
+     * <p>★Y/N 플래그는 <b>null이면 기존 값을 유지</b>한다. 예전엔 primitive라 요청에서 빠지면
+     * false가 되어, 일부 필드만 보낸 PUT이 사용여부·수불부노출·Web게시·재고관리를 조용히 껐다.
+     * 그중 재고관리가 꺼지면 매출을 넣어도 재고가 차감되지 않는데 오류조차 나지 않는다.
+     */
+    public void update(String name, ContentType contentType, Boolean set, Integer price,
+                       Boolean taxFree, String grade, String catCode, String catName, Boolean useYn,
+                       String salesDivision, Boolean ledgerVisible, Boolean webVisible,
+                       Boolean stockManaged) {
         this.name = name;
         this.contentType = contentType;
-        this.set = set;
+        this.set = keep(set, this.set);
         this.price = price;
-        this.taxFree = taxFree;
+        this.taxFree = keep(taxFree, this.taxFree);
         this.grade = grade;
         this.catCode = catCode;
         this.catName = catName;
-        this.useYn = useYn;
+        this.useYn = keep(useYn, this.useYn);
         this.salesDivision = salesDivision;
-        this.ledgerVisible = ledgerVisible;
-        this.webVisible = webVisible;
-        this.stockManaged = stockManaged;
+        this.ledgerVisible = keep(ledgerVisible, this.ledgerVisible);
+        this.webVisible = keep(webVisible, this.webVisible);
+        this.stockManaged = keep(stockManaged, this.stockManaged);
     }
 
     /** 논리삭제(비활성화). */
@@ -172,6 +179,11 @@ public class Product extends BaseEntity {
         m.put("webVisible|Web게시", String.valueOf(webVisible));
         m.put("stockManaged|재고관리", String.valueOf(stockManaged));
         return m;
+    }
+
+    /** 요청에 값이 없으면(null) 기존 값을 그대로 둔다. */
+    private static boolean keep(Boolean incoming, boolean current) {
+        return (incoming == null) ? current : incoming;
     }
 
     private static String str(Object v) {
