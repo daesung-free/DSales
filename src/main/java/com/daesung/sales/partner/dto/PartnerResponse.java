@@ -1,5 +1,6 @@
 package com.daesung.sales.partner.dto;
 
+import com.daesung.sales.common.mask.Masks;
 import com.daesung.sales.partner.entity.Partner;
 import com.daesung.sales.partner.entity.PartnerType;
 import io.swagger.v3.oas.annotations.media.Schema;
@@ -21,7 +22,8 @@ public record PartnerResponse(
         PartnerType type,
         @Schema(description = "사업자번호") String bizNo,
         @Schema(description = "사업자명(대표자)") String bossName,
-        @Schema(description = "사업자주민번호") String bossId,
+        @Schema(description = "사업자주민번호 — **마스킹되어 나간다**(800101-1******). 원본은 조회 경로로 제공하지 않는다")
+        String bossId,
         @Schema(description = "업종") String bizStatus,
         @Schema(description = "업태") String bizItem,
         @Schema(description = "연락처1") String tel1,
@@ -40,10 +42,16 @@ public record PartnerResponse(
         @Schema(description = "담보만기") LocalDate assureExpiry,
         @Schema(description = "담보내용") String assureNote
 ) {
+    /**
+     * 엔티티 → 응답. 사업자주민번호는 <b>여기서 마스킹</b>한다(DB-73).
+     *
+     * <p>이 한 곳을 거쳐 JSON 응답과 거래처 엑셀이 모두 나가므로, 화면이 아니라 여기서 막아야
+     * 엑셀 다운로드·API 직접 호출로 원본이 새지 않는다.
+     */
     public static PartnerResponse from(Partner p) {
         return new PartnerResponse(p.getId(), p.getCode(), p.getName(), p.getCityName(), p.getName1(),
                 p.getRegion(), p.getZone2(), p.getClientCategory(), p.getType(),
-                p.getBizNo(), p.getBossName(), p.getBossId(), p.getBizStatus(), p.getBizItem(),
+                p.getBizNo(), p.getBossName(), Masks.residentNo(p.getBossId()), p.getBizStatus(), p.getBizItem(),
                 p.getTel1(), p.getTel2(), p.getCellPhone(), p.getFax(), p.getEmail1(), p.getEmail2(),
                 p.getZip(), p.getAddr1(), p.getAddr2(),
                 p.getStartDate(), p.getEndDate(), p.isExpired(),

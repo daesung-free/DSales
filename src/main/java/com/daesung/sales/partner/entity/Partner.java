@@ -164,10 +164,18 @@ public class Partner extends BaseEntity {
         this.assureNote = assureNote;
     }
 
-    /** 연락처·거래기간 설정(30p 거래처관리). */
+    /**
+     * 연락처·거래기간 설정(30p 거래처관리).
+     *
+     * <p>★사업자주민번호는 <b>마스킹된 값이 오면 무시</b>한다. 조회 응답이 마스킹돼 나가므로
+     * 화면이 그 값을 그대로 담아 저장하면 원본이 {@code 800101-1******} 로 파괴된다.
+     * 실제로 바꾸려면 마스킹되지 않은 전체 값을 보내야 한다.
+     */
     public void updateContact(String bossId, String tel1, String tel2, String cellPhone, String fax,
                               String zip, String zone2, LocalDate startDate, LocalDate endDate) {
-        this.bossId = bossId;
+        if (!com.daesung.sales.common.mask.Masks.isMasked(bossId)) {
+            this.bossId = bossId;
+        }
         this.tel1 = tel1;
         this.tel2 = tel2;
         this.cellPhone = cellPhone;

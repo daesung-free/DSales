@@ -683,7 +683,8 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
         long id = createId("/masters/clients", body);
 
         JsonNode d = data(get("/masters/clients/" + id));
-        assertThat(d.path("bossId").asText()).isEqualTo("800101-1234567");
+        // 사업자주민번호는 마스킹되어 나간다(DB-73) — 입력한 원본이 그대로 돌아오지 않는 게 정상.
+        assertThat(d.path("bossId").asText()).isEqualTo("800101-1******");
         assertThat(d.path("tel1").asText()).isEqualTo("02-123-4567");
         assertThat(d.path("cellPhone").asText()).isEqualTo("010-1234-5678");
         assertThat(d.path("fax").asText()).isEqualTo("02-123-4569");
@@ -805,5 +806,29 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
         assertThat(f.path("updated").asInt()).isEqualTo(2);
         assertThat(data(get("/masters/products/" + pr + "/partner-prices/" + p2))
                 .path("supplyRate").asInt()).isEqualTo(70);
+    }
+
+    @Test
+    @DisplayName("사업자주민번호 — 조회·엑셀은 마스킹, DB 원본은 보존(DB-73)")
+    void 사업자주민번호_마스킹() {
+        String sfx = "-MK" + (System.nanoTime() % 1_000_000L);
+        Long id = createId("/masters/clients", Map.of("code", "MK" + sfx, "name", "마스킹거래처",
+                "type", "NORMAL", "bossId", "800101-1234567"));
+
+        assertThat(data(get("/masters/clients/" + id)).path("bossId").asText())
+                .as("조회 응답은 마스킹").isEqualTo("800101-1******");
+
+        // ★마스킹된 값을 그대로 되보내도 원본이 파괴되지 않아야 한다.
+        //   화면이 조회값을 폼에 담아 저장하는 흔한 흐름이라, 막지 않으면 원본이 사라진다.
+        put("/masters/clients/" + id, Map.of("name", "마스킹거래처", "type", "NORMAL",
+                "bossId", "800101-1******"));
+        assertThat(data(get("/masters/clients/" + id)).path("bossId").asText())
+                .as("여전히 원본 기준 마스킹(파괴 안 됨)").isEqualTo("800101-1******");
+
+        // 진짜 값으로는 바뀐다
+        put("/masters/clients/" + id, Map.of("name", "마스킹거래처", "type", "NORMAL",
+                "bossId", "900202-2345678"));
+        assertThat(data(get("/masters/clients/" + id)).path("bossId").asText())
+                .isEqualTo("900202-2******");
     }
 }
