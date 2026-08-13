@@ -10,6 +10,7 @@ import com.daesung.sales.sale.dto.NetSalesResponse;
 import com.daesung.sales.sale.dto.ReturnInboundRequest;
 import com.daesung.sales.sale.dto.ReturnableResponse;
 import com.daesung.sales.sale.dto.RoundWorkStatusRow;
+import com.daesung.sales.sale.dto.AttendanceResponse;
 import com.daesung.sales.sale.dto.SaleResponse;
 import com.daesung.sales.sale.dto.SalesEntryRequest;
 import com.daesung.sales.sale.dto.SalesEntryResponse;
@@ -55,6 +56,7 @@ public class SaleController {
 
     private final SaleService saleService;
     private final SaleReportService saleReportService;
+    private final com.daesung.sales.sale.service.AttendanceService attendanceService;
     private final SalesUploadService salesUploadService;
     private final ExcelExportUtil excel;
 
@@ -377,5 +379,53 @@ public class SaleController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @Parameter(description = "분류코드(선택)") @RequestParam(required = false) String catCode) {
         return ApiResponse.success(saleReportService.roundWorkStatus(fromDate, toDate, catCode));
+    }
+
+    @Operation(summary = "응시현황(연도별)",
+            description = """
+                    거래처별 **월별 수량·매출 크로스탭**(1월[수량]·1월[매출] … 12월 + 합계).
+
+                    ⚠️이름과 달리 '시험 신청·응시율' 표가 아니다 — 레거시 응시현황.vb 실물이
+                    이 구성이고, 신청·응시율 같은 항목은 레거시 어디에도 없다.
+
+                    · 행은 **거래처 → 지역구분 소계 → 총계** 3단이다(레거시 rollup과 같다).
+                    · 반품은 음수로 반영되고 취소는 제외된다(레거시가 반품을 음수로 저장해
+                      SUM만으로 순수량이 나오던 것과 값이 같아진다).
+                    · 학년·상품구분 필터는 레거시와 같은 축이다(도서의 학년/상품구분).
+
+                    발주처 회신(2-2): 레거시 화면이 "2022년까지만 조회 가능"으로 막혀 있고
+                    전산담당자가 부재라, 매출 데이터로 다시 만들어 달라는 요청이었다.""")
+    @GetMapping("/attendance-yearly")
+    public ApiResponse<AttendanceResponse> attendanceYearly(
+            @Parameter(description = "조회 연도", example = "2026") @RequestParam int year,
+            @Parameter(description = "학년 필터(도서 학년). 미지정=전체", example = "3")
+            @RequestParam(required = false) String grade,
+            @Parameter(description = "상품구분 필터. 미지정=전체", example = "교재")
+            @RequestParam(required = false) String productType) {
+        return ApiResponse.success(attendanceService.yearly(year, grade, productType));
+    }
+
+    @Operation(summary = "응시현황(연도별) 엑셀 다운로드")
+    @GetMapping("/attendance-yearly/export")
+    public org.springframework.http.ResponseEntity<byte[]> attendanceYearlyExport(
+            @RequestParam int year,
+            @RequestParam(required = false) String grade,
+            @RequestParam(required = false) String productType) {
+        var cols = new java.util.ArrayList<com.daesung.sales.common.excel.ExcelExportUtil.Col>();
+        cols.add(new com.daesung.sales.common.excel.ExcelExportUtil.Col("구분", "rowType"));
+        cols.add(new com.daesung.sales.common.excel.ExcelExportUtil.Col("지역구분", "regionGroup"));
+        cols.add(new com.daesung.sales.common.excel.ExcelExportUtil.Col("특약점코드", "partnerCode"));
+        cols.add(new com.daesung.sales.common.excel.ExcelExportUtil.Col("특약점명", "partnerName"));
+        cols.add(new com.daesung.sales.common.excel.ExcelExportUtil.Col("지역", "cityName"));
+        for (int m = 1; m <= 12; m++) {
+            cols.add(new com.daesung.sales.common.excel.ExcelExportUtil.Col(
+                    m + "월[수량]", "monthlyQty[" + (m - 1) + "]"));
+            cols.add(new com.daesung.sales.common.excel.ExcelExportUtil.Col(
+                    m + "월[매출]", "monthlyAmount[" + (m - 1) + "]"));
+        }
+        cols.add(new com.daesung.sales.common.excel.ExcelExportUtil.Col("합계[수량]", "totalQty"));
+        cols.add(new com.daesung.sales.common.excel.ExcelExportUtil.Col("합계[매출]", "totalAmount"));
+        byte[] xlsx = excel.toXlsx("응시현황", cols, attendanceService.yearly(year, grade, productType).rows());
+        return excel.asDownload(xlsx, "응시현황_연도별.xlsx");
     }
 }

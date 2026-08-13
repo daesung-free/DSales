@@ -44,6 +44,29 @@ public class ExcelExportUtil {
     }
 
     /**
+     * 필드 값 추출. 평범한 키 외에 <b>{@code 이름[인덱스]}</b> 표기를 지원한다.
+     *
+     * <p>월별 크로스탭(1월[수량] … 12월[수량])처럼 값이 리스트로 오는 리포트가 있는데,
+     * 평면 키 조회만 하면 그 칸이 통째로 빈다(실제로 응시현황에서 빈 채로 나왔다).
+     */
+    private static Object resolve(Map<String, Object> row, String field) {
+        int open = field.indexOf('[');
+        if (open < 0 || !field.endsWith("]")) {
+            return row.get(field);
+        }
+        Object base = row.get(field.substring(0, open));
+        if (!(base instanceof List<?> list)) {
+            return null;
+        }
+        try {
+            int idx = Integer.parseInt(field.substring(open + 1, field.length() - 1));
+            return (idx >= 0 && idx < list.size()) ? list.get(idx) : null;
+        } catch (NumberFormatException e) {
+            return null;
+        }
+    }
+
+    /**
      * 컬럼 스펙 지정 xlsx(드라이브 재무파일 형식 대응). 헤더=한글, 값=행의 field 추출.
      * 근거: '엑셀 형식은 드라이브 파일 참고'(재무팀).
      */
@@ -54,7 +77,7 @@ public class ExcelExportUtil {
         }
         List<String> headers = cols.stream().map(Col::header).toList();
         return write(sheetName, headers, maps.stream()
-                .map(m -> cols.stream().map(c -> m.get(c.field())).toList())
+                .map(m -> cols.stream().map(c -> resolve(m, c.field())).toList())
                 .toList());
     }
 

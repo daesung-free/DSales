@@ -1,5 +1,6 @@
 package com.daesung.sales.sale.repository;
 
+import com.daesung.sales.sale.dto.AttendanceAgg;
 import com.daesung.sales.sale.dto.BookSalesAgg;
 import com.daesung.sales.sale.dto.CategorySalesAgg;
 import com.daesung.sales.sale.dto.PartnerProductSalesAgg;
@@ -419,4 +420,34 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
              order by p.catCode, p.code
             """)
     List<WorkOrderLineAgg> workOrderLines(@Param("from") LocalDate from, @Param("to") LocalDate to);
+
+    /**
+     * 응시현황(연도별) 원자료 — 거래처×월 수량·금액. 근거: 레거시 응시현황.vb:330~.
+     *
+     * <p>레거시는 {@code salesData}를 학교(schCode)로 묶어 월별 bookCnt/totalAmt를 만들고
+     * 거래처로 rollup한다. 반품은 레거시가 <b>음수로 저장</b>해 SUM만으로 순수량이 나오는데,
+     * 우리는 RETURN을 양수+구분으로 저장하므로 <b>여기서 부호를 뒤집어</b> 같은 값이 되게 한다.
+     * 취소 건은 양쪽 모두 제외한다.
+     *
+     * <p>필터(학년·상품구분)는 레거시 queryWhere와 같은 축이다(bookData.grade / bookData.type).
+     */
+    @Query("""
+            select p.id as partnerId, p.code as partnerCode, p.name as partnerName,
+                   p.cityName as cityName,
+                   month(s.salesDate) as month,
+                   sum(case when s.salesCategory = com.daesung.sales.salestype.entity.SalesCategory.RETURN
+                            then -s.qty else s.qty end) as qty,
+                   sum(case when s.salesCategory = com.daesung.sales.salestype.entity.SalesCategory.RETURN
+                            then -s.totalAmount else s.totalAmount end) as amount
+              from Sale s join s.partner p join s.product b
+             where s.canceled = false
+               and year(s.salesDate) = :year
+               and (:grade is null or b.grade = :grade)
+               and (:productType is null or b.productType = :productType)
+             group by p.id, p.code, p.name, p.cityName, month(s.salesDate)
+             order by p.code, month(s.salesDate)
+            """)
+    List<AttendanceAgg> attendanceYearly(@Param("year") int year,
+                                         @Param("grade") String grade,
+                                         @Param("productType") String productType);
 }
