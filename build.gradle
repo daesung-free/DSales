@@ -4,6 +4,8 @@ plugins {
 	id 'io.spring.dependency-management' version '1.1.7'
 	// 정적분석(P0-07 / 검수 S-7 "정적분석 SQLi 0건"). SpotBugs + FindSecBugs 보안 룰.
 	id 'com.github.spotbugs' version '6.0.26'
+	// 테스트 커버리지 측정. 검증 '건수'만으로는 "코드의 얼마를 덮었나"에 답할 수 없다.
+	id 'jacoco'
 }
 
 group = 'com.daesung'
@@ -114,6 +116,33 @@ tasks.named('test') {
 	def apiVer = System.getenv('DOCKER_API_VERSION') ?: '1.44'
 	environment 'DOCKER_API_VERSION', apiVer
 	systemProperty 'api.version', apiVer          // docker-java Properties 키
+}
+
+// ── 테스트 커버리지 ────────────────────────────────────────────────────────
+// 측정 대상에서 빼는 것들: 실행 코드가 아니거나(설정·DTO·엔티티 접근자),
+// 테스트 환경에서 아예 꺼져 있어(DSRE 연동) 0으로 잡히면 수치를 왜곡하는 구간.
+// ‼️제외는 "안 덮은 것을 숨기는 용도"가 아니라 "분모를 정직하게 만드는 용도"다 —
+//   서비스·컨트롤러·리포지토리 같은 실제 로직은 하나도 빼지 않는다.
+jacoco {
+	toolVersion = '0.8.12'
+}
+
+def coverageExcludes = [
+		'com/daesung/sales/**/dto/**',        // 값 객체(record) — 접근자뿐
+		'com/daesung/sales/config/**',        // 스프링 설정
+		'com/daesung/sales/**/entity/**Q*',   // QueryDSL 생성 클래스
+		'com/daesung/sales/SalesApplication*'
+]
+
+tasks.named('jacocoTestReport') {
+	dependsOn tasks.named('test')
+	reports {
+		xml.required = true
+		html.required = true
+	}
+	classDirectories.setFrom(files(classDirectories.files.collect {
+		fileTree(dir: it, exclude: coverageExcludes)
+	}))
 }
 
 clean {
