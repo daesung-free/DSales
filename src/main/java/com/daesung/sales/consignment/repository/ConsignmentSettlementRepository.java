@@ -27,7 +27,10 @@ public interface ConsignmentSettlementRepository extends JpaRepository<Consignme
               LEFT JOIN sales s ON s.sales_no = cs.sales_ref_no
             WHERE DATE(cs.settled_at) BETWEEN :fromDate AND :toDate
               AND (s.canceled = FALSE OR s.canceled IS NULL)
+              AND (:partnerId IS NULL OR co.partner_id = :partnerId)
             ORDER BY cs.settled_at, cs.id
             """, nativeQuery = true)
-    List<Object[]> settlementStatement(@Param("fromDate") LocalDate fromDate, @Param("toDate") LocalDate toDate);
+    List<Object[]> settlementStatement(@Param("fromDate") LocalDate fromDate,
+                                       @Param("toDate") LocalDate toDate,
+                                       @Param("partnerId") Long partnerId);
 }

@@ -20,8 +20,10 @@ import com.daesung.sales.consignment.entity.ConsignmentSettlement;
 import com.daesung.sales.consignment.repository.ConsignmentOutRepository;
 import com.daesung.sales.consignment.repository.ConsignmentSettlementRepository;
 import com.daesung.sales.inventory.entity.InventoryTxn;
+import com.daesung.sales.inventory.entity.TxnType;
 import com.daesung.sales.inventory.service.InventoryService;
 import com.daesung.sales.partner.entity.Partner;
+import com.daesung.sales.salestype.entity.ShipmentType;
 import com.daesung.sales.partner.repository.PartnerRepository;
 import com.daesung.sales.product.entity.Product;
 import com.daesung.sales.product.repository.ProductRepository;
@@ -179,18 +181,40 @@ public class ConsignmentService {
                         s.unitPrice(), s.supplyRate(), settleQty,
                         supplyAmount, tax, totalAmount, co.getSourceOutNo(), settlement, s.memo()));
                 co.settle(settleQty);
+
+                // ★정산분은 위탁창고에서도 뺀다.
+                //   근거: 정본 31p — "실물재고여부 N인 창고(위탁창고)는 실재고 합계에서 제외하고
+                //   **별도 미결수량으로만 집계**". 즉 위탁창고 잔량 = 미결 잔여수량이어야 한다.
+                //   정산은 "거래처가 팔았다"는 뜻이라 그 물량은 더 이상 우리 것이 아니다.
+                //   빼지 않으면 미결이 0인데 위탁창고에는 그대로 남아 두 숫자가 어긋나고,
+                //   위탁창고 잔량이 영구 누적돼 숫자 자체가 의미를 잃는다(반품은 이미 빼고 있어 비대칭이기도 했다).
+                if (product.isStockManaged()) {
+                    // ★applyShipment의 원자적 UPDATE가 영속성 컨텍스트를 비운다.
+                    //   미결 변경(co.settle)을 먼저 flush하고, 이후 co를 다시 읽어야
+                    //   뒤따르는 반품 처리에서 detached 프록시를 만지지 않는다.
+                    Warehouse consignWh = consignWarehouseOf(co);
+                    consignmentOutRepository.saveAndFlush(co);
+                    inventoryService.applyShipment(product, consignWh, -settleQty,
+                            TxnType.OUTBOUND, ShipmentType.CONSIGN_SHIP,
+                            req.salesDate(), salesNo, "위탁 정산분 출고");
+                    co = consignmentOutRepository.findById(s.consignmentOutId()).orElseThrow();
+                }
             }
 
             // (2) 반품분 → 매출 무관, 미결 축소 + 실물재고 복귀(위탁창고 → 물류창고)
-            int mainBalance = 0;
-            int consignBalance = 0;
             if (returnQty > 0) {
-                var moved = returnUnsoldStock(co, returnQty, req.salesDate());
-                mainBalance = moved.mainBalance();
-                consignBalance = moved.consignBalance();
+                returnUnsoldStock(co, returnQty, req.salesDate());
                 // ★moveStock이 영속성 컨텍스트를 비우므로 이후 co를 다시 읽는다.
                 co = consignmentOutRepository.findById(s.consignmentOutId()).orElseThrow();
             }
+
+            // 잔량은 정산·반품 어느 쪽으로 줄었든 항상 현재값을 담는다.
+            // (반품이 있을 때만 채우면, 정산만 한 줄은 잔량이 0으로 보여 화면이 오해한다)
+            Long productId = co.getProduct().getId();
+            int mainBalance = inventoryService.balanceOf(productId,
+                    co.getOriginTxn().getWarehouse().getId());
+            int consignBalance = inventoryService.balanceOf(productId,
+                    consignWarehouseOf(co).getId());
 
             if (!beforeStatus.equals(co.getStatus().name())) {
                 statusHistoryService.record(StatusEntityType.CONSIGNMENT_OUT, co.getId(), "status",
@@ -211,20 +235,28 @@ public class ConsignmentService {
     }
 
     /**
+     * 이 미결의 위탁창고(자동이고 도착다리)를 찾는다.
+     * 원 자동이고: origin_txn=출발다리(물류창고), 도착다리는 sourceTxn=origin_txn으로 역추적.
+     */
+    private Warehouse consignWarehouseOf(ConsignmentOut co) {
+        InventoryTxn outLeg = co.getOriginTxn();
+        if (outLeg == null) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "원본 자동이고 정보가 없습니다: " + co.getSourceOutNo());
+        }
+        return inventoryTxnRepository.findBySourceTxnId(outLeg.getId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_INPUT,
+                        "위탁창고 도착다리를 찾을 수 없습니다: " + co.getSourceOutNo()))
+                .getWarehouse();
+    }
+
+    /**
      * 미정산분 반품 처리 — 위탁창고→물류창고 역-자동이고 + 미결 축소.
      * 정산(settle)과 단독 반품(returnConsignment) 양쪽에서 쓰는 공통 경로다.
      */
     private MovedBalance returnUnsoldStock(ConsignmentOut co, int returnQty, LocalDate processedDate) {
-        InventoryTxn outLeg = co.getOriginTxn();
-        if (outLeg == null) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT,
-                    "원본 자동이고 정보가 없어 반품할 수 없습니다: " + co.getSourceOutNo());
-        }
-        Warehouse mainWh = outLeg.getWarehouse();  // 물류창고(출발)
-        Warehouse consignWh = inventoryTxnRepository.findBySourceTxnId(outLeg.getId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_INPUT,
-                        "위탁창고 도착다리를 찾을 수 없습니다: " + co.getSourceOutNo()))
-                .getWarehouse();
+        Warehouse mainWh = co.getOriginTxn().getWarehouse();   // 물류창고(출발)
+        Warehouse consignWh = consignWarehouseOf(co);           // 위탁창고(도착) — 정산과 같은 경로
 
         // ★moveStock의 원자적 UPDATE(clearAutomatically)가 컨텍스트를 비우므로,
         //   필요한 값을 먼저 뽑고 co 변경을 flush한 뒤 이고 실행.
@@ -281,13 +313,14 @@ public class ConsignmentService {
      * 위탁 회계기준 '정산 시점 매출'(재무팀 확정) 기준. 기간 미지정 시 올해 1/1~오늘.
      */
     @Transactional(readOnly = true)
-    public SettlementStatementResponse settlementStatement(LocalDate fromDate, LocalDate toDate) {
+    public SettlementStatementResponse settlementStatement(LocalDate fromDate, LocalDate toDate,
+                                                          Long partnerId) {
         LocalDate from = (fromDate != null) ? fromDate : LocalDate.now().withDayOfYear(1);
         LocalDate to = (toDate != null) ? toDate : LocalDate.now();
 
         List<SettlementStatementResponse.Row> rows = new ArrayList<>();
         long cnt = 0, tQty = 0, tSupply = 0, tTax = 0, tTotal = 0;
-        for (Object[] r : settlementRepository.settlementStatement(from, to)) {
+        for (Object[] r : settlementRepository.settlementStatement(from, to, partnerId)) {
             LocalDate settledDate = ((java.sql.Date) r[0]).toLocalDate();
             long settleQty = num(r[5]), supply = num(r[7]), tax = num(r[8]), total = num(r[9]);
             rows.add(new SettlementStatementResponse.Row(

@@ -218,6 +218,12 @@ class ConsignSettlementScenarioTest extends IntegrationTestSupport {
 
         // 반품분은 물류창고로 돌아온다(500 − 100 출고 + 20 반품 = 420)
         assertThat(line.path("mainBalance").asInt()).isEqualTo(420);
+        // ★불변식: 위탁창고 잔량 == 미결 잔여수량
+        //   근거: 정본 31p "실물재고여부 N인 창고(위탁창고)는 실재고 합계에서 제외하고
+        //   **별도 미결수량으로만 집계**". 정산분을 위탁창고에서 빼지 않으면 미결은 0인데
+        //   위탁창고에는 80이 남아 두 숫자가 어긋나고, 잔량이 영구 누적된다.
+        assertThat(line.path("consignBalance").asInt())
+                .as("위탁창고 잔량은 미결 잔여와 같아야 한다").isEqualTo(0);
 
         // ★매출 장부에는 정산분 80만 잡혀야 한다. 반품 20이 섞이면 매출이 부풀려진다.
         long soldQty = 0;
@@ -270,5 +276,47 @@ class ConsignSettlementScenarioTest extends IntegrationTestSupport {
                 .path("items").get(0);
         assertThat(only.path("remainingQty").asInt()).isEqualTo(40);
         assertThat(only.hasNonNull("salesNo")).as("반품만이면 매출번호가 없다").isFalse();
+    }
+
+    @Test
+    @DisplayName("불변식 — 정산·반품 어느 쪽으로 줄어도 위탁창고 잔량 == 미결 잔여")
+    void 위탁창고_미결_일치() {
+        String sfx = "-CI" + (System.nanoTime() % 1_000_000L);
+        Long sup = createId("/masters/clients", Map.of("code", "CIS" + sfx, "name", "인쇄", "type", "NORMAL"));
+        Long pt = createId("/masters/clients", Map.of("code", "CIP" + sfx, "name", "위탁처", "type", "NORMAL"));
+        Long mw = createId("/masters/warehouses", Map.of("code", "CIM" + sfx, "name", "물류", "type", "MAIN"));
+        Long cw = createId("/masters/warehouses", Map.of("code", "CIC" + sfx, "name", "위탁",
+                "type", "CONSIGN", "ownerClientId", pt));
+        Long bk = createId("/masters/products", Map.of("code", "CIB" + sfx, "name", "도서",
+                "contentType", "SELF", "price", 10000, "supplyRate", 75));
+        post("/stock/inbound", Map.of("processedDate", "2035-01-01", "supplierClientId", sup,
+                "destinationWarehouseId", mw,
+                "items", List.of(Map.of("productId", bk, "unitCost", 3000, "qty", 300))));
+        post("/consignment/out", Map.of("processedDate", "2035-01-01", "partnerId", pt,
+                "fromWarehouseId", mw, "toWarehouseId", cw,
+                "items", List.of(Map.of("productId", bk, "qty", 100))));
+        long outId = data(get("/consignment/pending?partnerId=" + pt))
+                .path("items").get(0).path("consignmentOutId").asLong();
+
+        // 정산만 30 → 잔여 70, 위탁창고도 70이어야 한다
+        JsonNode a = data(post("/consignment/settle", Map.of("salesDate", "2035-02-01",
+                "settlements", List.of(Map.of("consignmentOutId", outId, "settleQty", 30,
+                        "unitPrice", 10000, "supplyRate", 75))))).path("items").get(0);
+        assertThat(a.path("remainingQty").asInt()).isEqualTo(70);
+        assertThat(a.path("consignBalance").asInt()).as("정산만 해도 위탁창고가 줄어야 한다").isEqualTo(70);
+
+        // 반품만 20 → 잔여 50, 위탁창고 50
+        JsonNode b = data(post("/consignment/settle", Map.of("salesDate", "2035-02-01",
+                "settlements", List.of(Map.of("consignmentOutId", outId, "returnQty", 20)))))
+                .path("items").get(0);
+        assertThat(b.path("remainingQty").asInt()).isEqualTo(50);
+        assertThat(b.path("consignBalance").asInt()).isEqualTo(50);
+
+        // 별도 반품 API(단독 경로)로 줄여도 같은 규칙이어야 한다
+        JsonNode c = data(post("/consignment/return", Map.of("processedDate", "2035-02-01",
+                "items", List.of(Map.of("consignmentOutId", outId, "returnQty", 50)))))
+                .path("items").get(0);
+        assertThat(c.path("remainingQty").asInt()).isZero();
+        assertThat(c.path("consignBalance").asInt()).as("두 입구에서 규칙이 갈리면 안 된다").isZero();
     }
 }

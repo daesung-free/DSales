@@ -92,15 +92,17 @@ public class ConsignmentController {
             @Parameter(description = "시작일(yyyy-MM-dd)") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
             @Parameter(description = "종료일(yyyy-MM-dd)") @RequestParam(required = false)
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate) {
-        return ApiResponse.success(consignmentService.settlementStatement(fromDate, toDate));
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @Parameter(description = "거래처 id(미지정=전체)") @RequestParam(required = false) Long partnerId) {
+        return ApiResponse.success(consignmentService.settlementStatement(fromDate, toDate, partnerId));
     }
 
     @Operation(summary = "정산내역서 엑셀 다운로드", description = "위탁정산 이력 + 매출금액 + 미결현황 xlsx.")
     @GetMapping("/settlement-statement/export")
     public ResponseEntity<byte[]> settlementStatementExport(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
-            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate) {
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @RequestParam(required = false) Long partnerId) {
         List<Col> cols = List.of(
                 new Col("정산일", "settledDate"), new Col("거래처명", "partnerName"),
                 new Col("도서코드", "productCode"), new Col("도서명", "productName"),
@@ -109,7 +111,7 @@ public class ConsignmentController {
                 new Col("총출고", "totalQty"), new Col("기정산", "settledQtyCum"),
                 new Col("미결잔여", "remainingQty"), new Col("상태", "status"));
         byte[] xlsx = excel.toXlsx("정산내역서", cols,
-                consignmentService.settlementStatement(fromDate, toDate).rows());
+                consignmentService.settlementStatement(fromDate, toDate, partnerId).rows());
         return excel.asDownload(xlsx, "정산내역서.xlsx");
     }
 }
