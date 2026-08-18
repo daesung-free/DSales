@@ -155,18 +155,36 @@ public class JdbcDsreGateway implements DsreGateway {
     private static final String WOL_NORMAL = "SELECT MAT_CD, CNT, REPLACE(REG_DATE,'-','') SDATE FROM tbl_wol_dtl_b";
 
     // ── 물류단가 관리(DSRE2 tbl_logis_cost write-back) ─────────────────────────────
+    // 상품명·시행명을 함께 뽑는다(정본 10.물류비용등록 목록 컬럼).
+    // LEFT JOIN인 이유: dtl_cd=0(회수단가 특수행)은 시행이 없어 INNER면 행이 사라진다.
     private static final String RATE_LIST_SQL = """
-            SELECT DTL_CD, PAPER, OMR, ETC, LABEL, BASIC, TRADE, PACKTYPE, bSpare
-            FROM tbl_logis_cost ORDER BY DTL_CD
+            SELECT lc.DTL_CD, lc.PAPER, lc.OMR, lc.ETC, lc.LABEL, lc.BASIC, lc.TRADE,
+                   lc.PACKTYPE, lc.bSpare, lc.INPUTDATE,
+                   pi.PROD_NM, pd.DTL_NM
+              FROM tbl_logis_cost lc
+              LEFT JOIN tbl_product_dtl  pd ON pd.DTL_CD  = lc.DTL_CD
+              LEFT JOIN tbl_product_info pi ON pi.PROD_CD = pd.PROD_CD
+             ORDER BY lc.DTL_CD
             """;
 
     @Override
     public List<LogisCostRate> listLogisCosts() {
         return dsreJdbcTemplate.query(RATE_LIST_SQL,
                 (rs, i) -> new LogisCostRate(
-                        rs.getInt("DTL_CD"), rs.getInt("PAPER"), rs.getInt("OMR"), rs.getInt("ETC"),
+                        rs.getInt("DTL_CD"),
+                        rs.getString("PROD_NM"), rs.getString("DTL_NM"),
+                        rs.getInt("PAPER"), rs.getInt("OMR"), rs.getInt("ETC"),
                         rs.getInt("LABEL"), rs.getInt("BASIC"), rs.getInt("TRADE"),
-                        rs.getInt("PACKTYPE"), rs.getString("bSpare")));
+                        rs.getInt("PACKTYPE"), rs.getString("bSpare"),
+                        rs.getTimestamp("INPUTDATE") == null
+                                ? null : rs.getTimestamp("INPUTDATE").toLocalDateTime()));
+    }
+
+    @Override
+    public java.util.Optional<LogisCostRate> findLogisCost(int dtlCd) {
+        // 목록을 재사용한다 — 조인·매핑이 한 곳에만 있어야 두 경로의 결과가 갈리지 않는다.
+        // 단가 행은 시행 수만큼이라 전량을 훑어도 부담이 없다.
+        return listLogisCosts().stream().filter(r -> r.dtlCd() == dtlCd).findFirst();
     }
 
     @Override

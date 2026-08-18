@@ -5,6 +5,9 @@ import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.common.response.ApiResponse;
 import com.daesung.sales.dsre.gateway.DsreGateway;
 import com.daesung.sales.dsre.gateway.LogisCostRate;
+import com.daesung.sales.logistics.dto.LogisCostBulkRequest;
+import com.daesung.sales.logistics.dto.LogisCostBulkResult;
+import com.daesung.sales.logistics.service.LogisCostBulkService;
 import com.daesung.sales.dsre.gateway.LogisMode;
 import com.daesung.sales.dsre.gateway.OutboundLogisCost;
 import com.daesung.sales.dsre.gateway.PeriodLogisCost;
@@ -40,6 +43,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class LogisticsController {
 
     private final DsreGateway dsreGateway;
+    private final LogisCostBulkService logisCostBulkService;
 
     @Operation(summary = "출고 물류비 계산(신청 단위)",
             description = "DSRE2에서 자재수량×단가 집계 + 인원함수 호출로 출고 물류비 산출. "
@@ -85,10 +89,34 @@ public class LogisticsController {
     // ── 물류단가 관리(기초관리 · DSRE2 tbl_logis_cost write-back) — 근거: 레거시 물류비용등록.vb ──
 
     @Operation(summary = "물류단가 목록",
-            description = "DSRE2 tbl_logis_cost 전체 단가(시행코드별). dtl_cd=0은 회수단가.")
+            description = """
+                    시행코드별 단가에 **상품명·시행명·변경일**을 함께 돌려준다
+                    (정본 구분값정리 10.물류비용등록 목록 컬럼).
+
+                    코드만 보여주면 값이 같은 행이 여러 개라 담당자가 어느 줄을 고쳐야 할지 알 수 없다.
+                    이 단가가 물류 작업비 계산의 유일한 소스라, 잘못된 줄을 고치면 정산 금액이 틀어진다.
+
+                    dtl_cd=0은 회수단가 특수행이라 상품명·시행명이 비어 있다.""")
     @GetMapping("/rates")
     public ApiResponse<List<LogisCostRate>> listRates() {
         return ApiResponse.success(dsreGateway.listLogisCosts());
+    }
+
+    @Operation(summary = "물류단가 일괄 수정",
+            description = """
+                    체크한 여러 시행의 단가를 한 번에 바꾼다(정본 "선택 항목 일괄 수정").
+
+                    · **입력한 항목만 반영**하고 비운 칸은 기존 값을 유지한다 —
+                      빈 칸이 0으로 덮이면 그 시행의 물류비가 통째로 0원이 된다.
+                    · ⚠️**작업구분이 다른 행을 함께 선택하면 거부**한다(400).
+                      작업구분마다 단가 구성이 달라(반별봉투는 기본작업비·출고비가 0) 한 번에 덮으면 틀어진다.
+                      레거시엔 이 검증이 없었고, 정본이 신규로 요구한 항목이다.
+                    · 한 건이라도 검증에 걸리면 **아무것도 바꾸지 않는다** —
+                      중간까지 반영된 채 실패하면 어디까지 바뀌었는지 알 수 없다.""")
+    @PutMapping("/rates")
+    public ApiResponse<LogisCostBulkResult> bulkUpdateRates(
+            @Valid @RequestBody LogisCostBulkRequest req) {
+        return ApiResponse.success(logisCostBulkService.bulkUpdate(req));
     }
 
     @Operation(summary = "물류단가 등록/수정",

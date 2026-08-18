@@ -35,6 +35,9 @@ public interface DsreGateway {
     void upsertLogisCost(int dtlCd, int paper, int omr, int etc, int label,
                          int basic, int trade, int packtype, String bSpare);
 
+    /** 물류단가 단건 조회(없으면 empty). 일괄 수정 시 "입력한 항목만 반영"하려면 기존 값이 필요하다. */
+    java.util.Optional<LogisCostRate> findLogisCost(int dtlCd);
+
     /** 물류단가 삭제(dtl_cd). 삭제 행수 반환. */
     int deleteLogisCost(int dtlCd);
 
