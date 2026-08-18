@@ -54,6 +54,10 @@ public class DashboardService {
     /**
      * 목표 대비 실적 대시보드(월별 + 연간). 실적=순매출(매출−반품), 전년 동기 대비.
      *
+     * <p>월 셀에는 당월값과 <b>누적값(1월~해당월)</b>을 함께 담는다(요구 20p 매출 상세 대시보드).
+     * 연간 목표만 등록된 경우 월 목표가 0이므로 누적목표도 0이다 —
+     * 연간 금액을 12로 나눠 뿌리지 않는다는 원칙과 같은 이유다.
+     *
      * <p>연간 목표만 등록된 경우(발주처는 연 1회 연간으로 준다) 월 셀 목표는 비고
      * <b>연간 요약에만</b> 그 값이 잡힌다 — 연간 금액을 12로 나눠 월에 뿌리면 있지도 않은
      * 월 목표를 만들어내는 셈이라, 달성률이 실제와 다르게 보인다.
@@ -97,11 +101,13 @@ public class DashboardService {
             long target = monthTargets.getOrDefault(m, 0L);
             long act = actual.getOrDefault(m, 0L);
             long pv = prev.getOrDefault(m, 0L);
-            months.add(new DashboardResponse.MonthCell(m, target, act,
-                    pct(act, target), pv, growth(act, pv)));
+            // 누적은 1월부터 해당 월까지의 합이다. 합계 변수를 먼저 더한 뒤 담아야
+            // '해당 월 포함' 누적이 된다(먼저 담으면 전월까지가 되어 한 달씩 밀린다).
             tTarget += target;
             tActual += act;
             tPrev += pv;
+            months.add(new DashboardResponse.MonthCell(m, target, tTarget, act, tActual,
+                    pct(act, target), pv, growth(act, pv)));
         }
 
         // 연간 목표가 등록돼 있으면 월 합계보다 그 값이 우선이다(월별을 안 넣고 연간만 넣는 운영).

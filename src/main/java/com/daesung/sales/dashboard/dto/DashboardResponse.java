@@ -16,8 +16,10 @@ public record DashboardResponse(
 ) {
     public record MonthCell(
             @Schema(description = "월(1~12)") int month,
-            @Schema(description = "목표금액") long target,
-            @Schema(description = "실적(순매출)") long actual,
+            @Schema(description = "당월 목표금액") long target,
+            @Schema(description = "누적 목표금액(1월~해당월 합)") long cumulativeTarget,
+            @Schema(description = "당월 실적(순매출)") long actual,
+            @Schema(description = "누적 실적(1월~해당월 합)") long cumulativeActual,
             @Schema(description = "달성률 %(실적/목표), 목표 0이면 null") Double achievementPct,
             @Schema(description = "전년 동월 실적") long prevActual,
             @Schema(description = "전년比 성장률 %((실적−전년)/전년), 전년 0이면 null") Double growthPct

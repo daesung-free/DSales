@@ -263,4 +263,47 @@ class ReceivableDashboardIntegrationTest extends IntegrationTestSupport {
         assertThat(data(get("/dashboard/sales?year=2029")).path("summary").path("totalActual").asLong())
                 .as("재실행하면 새 매출이 반영된다").isEqualTo(1_500_000);
     }
+
+    @Test
+    @DisplayName("대시보드 누적목표·누적실적 — 1월부터 해당월까지의 합")
+    void 대시보드_누적() {
+        // 요구 20p 매출 상세 대시보드: 당월목표/누적목표/당월실적/누적실적/달성률/성장률
+        int year = 2037;
+        for (int m = 1; m <= 3; m++) {
+            post("/dashboard/targets", Map.of("year", year, "month", m,
+                    "scope", "COMPANY", "targetAmount", m * 1_000_000));
+        }
+        String sfx = "-AC" + (System.nanoTime() % 1_000_000L);
+        Long sup = createId("/masters/clients", Map.of("code", "ACS" + sfx, "name", "인쇄", "type", "NORMAL"));
+        Long pt = createId("/masters/clients", Map.of("code", "ACP" + sfx, "name", "누적처", "type", "NORMAL"));
+        Long wh = createId("/masters/warehouses", Map.of("code", "ACW" + sfx, "name", "창고", "type", "MAIN"));
+        Long pr = createId("/masters/products", Map.of("code", "ACB" + sfx, "name", "도서",
+                "contentType", "SELF", "price", 10000, "supplyRate", 100));
+        post("/stock/inbound", Map.of("processedDate", year + "-01-01", "supplierClientId", sup,
+                "destinationWarehouseId", wh,
+                "items", List.of(Map.of("productId", pr, "unitCost", 3000, "qty", 900))));
+        for (int m = 1; m <= 3; m++) {
+            post("/sales/entries", Map.of("salesDate", String.format("%d-%02d-10", year, m),
+                    "partnerId", pt, "warehouseId", wh,
+                    "items", List.of(Map.of("productId", pr, "shipmentType", "NORMAL_SHIP",
+                            "qty", m * 10))));
+        }
+
+        JsonNode months = data(get("/dashboard/sales?year=" + year)).path("months");
+
+        // ★'해당 월 포함' 누적이어야 한다. 더하는 순서를 잘못 잡으면 한 달씩 밀린다.
+        assertThat(months.get(0).path("cumulativeTarget").asLong()).isEqualTo(1_000_000);
+        assertThat(months.get(2).path("cumulativeTarget").asLong()).as("1+2+3월").isEqualTo(6_000_000);
+        assertThat(months.get(0).path("cumulativeActual").asLong()).isEqualTo(100_000);
+        assertThat(months.get(2).path("cumulativeActual").asLong()).as("1+2+3월").isEqualTo(600_000);
+
+        // 매출이 없는 달은 누적이 유지된다(0으로 떨어지지 않는다).
+        assertThat(months.get(3).path("actual").asLong()).isZero();
+        assertThat(months.get(3).path("cumulativeActual").asLong()).isEqualTo(600_000);
+
+        // 12월 누적 == 연간 합계
+        assertThat(months.get(11).path("cumulativeActual").asLong())
+                .isEqualTo(data(get("/dashboard/sales?year=" + year)).path("summary")
+                        .path("totalActual").asLong());
+    }
 }
