@@ -130,46 +130,116 @@ public class ConsignmentService {
         List<ConsignSettleResponse.Line> lines = new ArrayList<>();
 
         for (ConsignSettleRequest.Settlement s : req.settlements()) {
+            int settleQty = s.settleQtyOrZero();
+            int returnQty = s.returnQtyOrZero();
+            if (settleQty == 0 && returnQty == 0) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT,
+                        "정산수량 또는 반품수량 중 하나는 입력해야 합니다. 미결 id=" + s.consignmentOutId());
+            }
+
             // 비관적 락으로 로드 — 동시 정산이 같은 미결 행에서 read-modify-write 경합해도
             // 직렬화되어 lost update·초과정산이 발생하지 않는다(이슈#97).
             ConsignmentOut co = consignmentOutRepository.findByIdForUpdate(s.consignmentOutId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                             "미결(위탁출고)이 없습니다. id=" + s.consignmentOutId()));
 
-            // 초과정산 방지(엔티티 settle에서도 재검증). 잔여 == 0(CLOSED)이면 정산 불가.
-            if (s.settleQty() > co.getRemainingQty()) {
+            // ★정산과 반품을 '합쳐서' 잔여와 비교한다. 따로 검사하면 각각은 통과해도
+            //   두 값의 합이 잔여를 넘어 미결이 음수가 된다(같은 줄에서 동시에 입력되므로).
+            if (settleQty + returnQty > co.getRemainingQty()) {
                 throw new BusinessException(ErrorCode.OVER_SETTLEMENT,
-                        "정산 수량이 미결 잔여를 초과했습니다: 잔여 " + co.getRemainingQty()
-                                + ", 요청 " + s.settleQty() + " (미결 " + co.getSourceOutNo() + ")");
+                        "정산+반품 수량이 미결 잔여를 초과했습니다: 잔여 " + co.getRemainingQty()
+                                + ", 정산 " + settleQty + " + 반품 " + returnQty
+                                + " (미결 " + co.getSourceOutNo() + ")");
             }
 
-            Product product = co.getProduct();
-            Amounts amt = Amounts.of(s.unitPrice(), s.supplyRate(), s.settleQty(), product.isTaxFree(), s.tax());
-            long supplyAmount = amt.supplyAmount();
-            long tax = amt.tax();
-            long totalAmount = amt.totalAmount();
-            String salesNo = "I-" + datePart + "-" + sequenceService.next(SequenceService.SEQ_INVOICE);
-
-            // 정산 이력 → 매출 라인(정산 링크) → 미결 차감
-            ConsignmentSettlement settlement = settlementRepository.save(
-                    ConsignmentSettlement.create(co, s.settleQty(), salesNo, LocalDateTime.now()));
-            saleRepository.save(Sale.createConsign(
-                    salesNo, req.salesDate(), co.getPartner(), product,
-                    s.unitPrice(), s.supplyRate(), s.settleQty(),
-                    supplyAmount, tax, totalAmount, co.getSourceOutNo(), settlement, s.memo()));
             String beforeStatus = co.getStatus().name();   // ★바꾸기 전에 읽는다
-            co.settle(s.settleQty());
+            String salesNo = null;
+            long supplyAmount = 0;
+            long tax = 0;
+            long totalAmount = 0;
+
+            // (1) 정산분 → 매출 확정
+            if (settleQty > 0) {
+                if (s.unitPrice() == null || s.supplyRate() == null) {
+                    throw new BusinessException(ErrorCode.INVALID_INPUT,
+                            "정산수량을 입력하면 정가·공급률이 필요합니다. 미결 id=" + s.consignmentOutId());
+                }
+                Product product = co.getProduct();
+                Amounts amt = Amounts.of(s.unitPrice(), s.supplyRate(), settleQty,
+                        product.isTaxFree(), s.tax());
+                supplyAmount = amt.supplyAmount();
+                tax = amt.tax();
+                totalAmount = amt.totalAmount();
+                salesNo = "I-" + datePart + "-" + sequenceService.next(SequenceService.SEQ_INVOICE);
+
+                ConsignmentSettlement settlement = settlementRepository.save(
+                        ConsignmentSettlement.create(co, settleQty, salesNo, LocalDateTime.now()));
+                saleRepository.save(Sale.createConsign(
+                        salesNo, req.salesDate(), co.getPartner(), product,
+                        s.unitPrice(), s.supplyRate(), settleQty,
+                        supplyAmount, tax, totalAmount, co.getSourceOutNo(), settlement, s.memo()));
+                co.settle(settleQty);
+            }
+
+            // (2) 반품분 → 매출 무관, 미결 축소 + 실물재고 복귀(위탁창고 → 물류창고)
+            int mainBalance = 0;
+            int consignBalance = 0;
+            if (returnQty > 0) {
+                var moved = returnUnsoldStock(co, returnQty, req.salesDate());
+                mainBalance = moved.mainBalance();
+                consignBalance = moved.consignBalance();
+                // ★moveStock이 영속성 컨텍스트를 비우므로 이후 co를 다시 읽는다.
+                co = consignmentOutRepository.findById(s.consignmentOutId()).orElseThrow();
+            }
+
             if (!beforeStatus.equals(co.getStatus().name())) {
                 statusHistoryService.record(StatusEntityType.CONSIGNMENT_OUT, co.getId(), "status",
                         beforeStatus, co.getStatus().name(),
-                        "정산 " + s.settleQty() + "건(" + co.getSourceOutNo() + ")");
+                        "정산 " + settleQty + " · 반품 " + returnQty + "(" + co.getSourceOutNo() + ")");
             }
 
             lines.add(new ConsignSettleResponse.Line(
-                    salesNo, co.getId(), co.getSourceOutNo(), s.settleQty(),
-                    co.getRemainingQty(), co.getStatus(), supplyAmount, tax, totalAmount));
+                    salesNo, co.getId(), co.getSourceOutNo(), settleQty, returnQty,
+                    co.getRemainingQty(), co.getStatus(), supplyAmount, tax, totalAmount,
+                    mainBalance, consignBalance));
         }
         return new ConsignSettleResponse(lines);
+    }
+
+    /** 반품 이동 결과(물류창고·위탁창고 잔량). */
+    private record MovedBalance(int mainBalance, int consignBalance) {
+    }
+
+    /**
+     * 미정산분 반품 처리 — 위탁창고→물류창고 역-자동이고 + 미결 축소.
+     * 정산(settle)과 단독 반품(returnConsignment) 양쪽에서 쓰는 공통 경로다.
+     */
+    private MovedBalance returnUnsoldStock(ConsignmentOut co, int returnQty, LocalDate processedDate) {
+        InventoryTxn outLeg = co.getOriginTxn();
+        if (outLeg == null) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "원본 자동이고 정보가 없어 반품할 수 없습니다: " + co.getSourceOutNo());
+        }
+        Warehouse mainWh = outLeg.getWarehouse();  // 물류창고(출발)
+        Warehouse consignWh = inventoryTxnRepository.findBySourceTxnId(outLeg.getId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_INPUT,
+                        "위탁창고 도착다리를 찾을 수 없습니다: " + co.getSourceOutNo()))
+                .getWarehouse();
+
+        // ★moveStock의 원자적 UPDATE(clearAutomatically)가 컨텍스트를 비우므로,
+        //   필요한 값을 먼저 뽑고 co 변경을 flush한 뒤 이고 실행.
+        Product product = co.getProduct();
+        Long productId = product.getId();
+
+        co.returnUnsold(returnQty);
+        consignmentOutRepository.saveAndFlush(co);   // 컨텍스트 clear 전에 미결 축소 반영
+
+        inventoryService.moveStock(product, consignWh, mainWh, returnQty,
+                processedDate, "위탁 반품 역-자동이고");   // 여기서 컨텍스트 clear
+
+        return new MovedBalance(
+                inventoryService.balanceOf(productId, mainWh.getId()),
+                inventoryService.balanceOf(productId, consignWh.getId()));
     }
 
     /**
@@ -184,39 +254,24 @@ public class ConsignmentService {
             ConsignmentOut co = consignmentOutRepository.findByIdForUpdate(item.consignmentOutId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                             "미결(위탁출고)이 없습니다. id=" + item.consignmentOutId()));
-
-            // 원 자동이고: origin_txn=출발다리(물류창고). 도착다리(위탁창고)는 sourceTxn=origin_txn으로 조회.
-            InventoryTxn outLeg = co.getOriginTxn();
-            if (outLeg == null) {
-                throw new BusinessException(ErrorCode.INVALID_INPUT,
-                        "원본 자동이고 정보가 없어 반품할 수 없습니다: " + co.getSourceOutNo());
+            if (item.returnQty() > co.getRemainingQty()) {
+                throw new BusinessException(ErrorCode.OVER_SETTLEMENT,
+                        "반품 수량이 미결 잔여를 초과했습니다: 잔여 " + co.getRemainingQty()
+                                + ", 요청 " + item.returnQty() + " (미결 " + co.getSourceOutNo() + ")");
             }
-            Warehouse mainWh = outLeg.getWarehouse();  // 물류창고(출발)
-            Warehouse consignWh = inventoryTxnRepository.findBySourceTxnId(outLeg.getId())
-                    .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_INPUT,
-                            "위탁창고 도착다리를 찾을 수 없습니다: " + co.getSourceOutNo()))
-                    .getWarehouse();
 
-            // ★moveStock의 원자적 UPDATE(clearAutomatically)가 컨텍스트를 비우므로,
-            //   필요한 값을 먼저 뽑고 co 변경을 flush한 뒤 이고 실행.
-            Product product = co.getProduct();
-            Long productId = product.getId();
-            String productCode = product.getCode();
             String sourceOutNo = co.getSourceOutNo();
             Long coId = co.getId();
+            String productCode = co.getProduct().getCode();
 
-            co.returnUnsold(item.returnQty());
-            consignmentOutRepository.saveAndFlush(co);   // 컨텍스트 clear 전에 미결 축소 반영
-            int remainingAfter = co.getRemainingQty();
-            var statusAfter = co.getStatus();
-
-            inventoryService.moveStock(product, consignWh, mainWh, item.returnQty(),
-                    req.processedDate(), "위탁 반품 역-자동이고");   // 여기서 컨텍스트 clear
+            // 정산 화면(반품수량 칸)과 같은 경로를 쓴다 — 두 곳에서 규칙이 갈리면 안 된다.
+            MovedBalance moved = returnUnsoldStock(co, item.returnQty(), req.processedDate());
+            ConsignmentOut after = consignmentOutRepository.findById(coId).orElseThrow();
 
             lines.add(new ConsignReturnResponse.Line(
-                    coId, sourceOutNo, productCode, item.returnQty(), remainingAfter, statusAfter,
-                    inventoryService.balanceOf(productId, mainWh.getId()),
-                    inventoryService.balanceOf(productId, consignWh.getId())));
+                    coId, sourceOutNo, productCode, item.returnQty(),
+                    after.getRemainingQty(), after.getStatus(),
+                    moved.mainBalance(), moved.consignBalance()));
         }
         return new ConsignReturnResponse(lines);
     }

@@ -9,6 +9,7 @@ import java.util.Map;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpMethod;
 import org.junit.jupiter.api.TestInstance;
 
 /**
@@ -175,5 +176,99 @@ class ConsignSettlementScenarioTest extends IntegrationTestSupport {
             }
         }
         return null;
+    }
+
+    @Test
+    @DisplayName("한 줄에서 정산+반품 동시 처리 — 정산분만 매출, 반품분은 재고 복귀")
+    void 정산_반품_동시처리() {
+        // 발주처 확정(확인요청서 v1 2번 No.4 · 이슈#43, 2026-07-29):
+        // "위탁출고내역 그리드에 '반품수량' 칼럼 추가. 정산수량은 매출 확정,
+        //  반품수량은 매출 영향 없이 미결 잔여만 차감되고 실물재고가 증가"
+        // 회신 예시 그대로 검증한다 — 100부 출고 → 80 정산 + 20 반품.
+        String sfx = "-RQ" + (System.nanoTime() % 1_000_000L);
+        Long sup = createId("/masters/clients", Map.of("code", "RQS" + sfx, "name", "인쇄", "type", "NORMAL"));
+        Long pt = createId("/masters/clients", Map.of("code", "RQP" + sfx, "name", "위탁처", "type", "NORMAL"));
+        Long mw = createId("/masters/warehouses", Map.of("code", "RQM" + sfx, "name", "물류", "type", "MAIN"));
+        Long cw = createId("/masters/warehouses", Map.of("code", "RQC" + sfx, "name", "위탁",
+                "type", "CONSIGN", "ownerClientId", pt));
+        Long bk = createId("/masters/products", Map.of("code", "RQB" + sfx, "name", "디파인수학",
+                "contentType", "SELF", "price", 20000, "supplyRate", 75));
+        post("/stock/inbound", Map.of("processedDate", "2034-08-01", "supplierClientId", sup,
+                "destinationWarehouseId", mw,
+                "items", List.of(Map.of("productId", bk, "unitCost", 5000, "qty", 500))));
+        post("/consignment/out", Map.of("processedDate", "2034-08-01", "partnerId", pt,
+                "fromWarehouseId", mw, "toWarehouseId", cw,
+                "items", List.of(Map.of("productId", bk, "qty", 100))));
+        long outId = data(get("/consignment/pending?partnerId=" + pt))
+                .path("items").get(0).path("consignmentOutId").asLong();
+
+        JsonNode line = data(post("/consignment/settle", Map.of(
+                "salesDate", "2034-09-01",
+                "settlements", List.of(Map.of("consignmentOutId", outId,
+                        "settleQty", 80, "returnQty", 20,
+                        "unitPrice", 20000, "supplyRate", 75)))))
+                .path("items").get(0);
+
+        assertThat(line.path("settleQty").asInt()).isEqualTo(80);
+        assertThat(line.path("returnQty").asInt()).isEqualTo(20);
+        assertThat(line.path("remainingQty").asInt()).as("80+20=100 전량 소진").isZero();
+        assertThat(line.path("status").asText()).isEqualTo("CLOSED");
+        // 매출은 정산분만 — 80 × 20,000 × 75%
+        assertThat(line.path("supplyAmount").asLong()).isEqualTo(1_200_000);
+
+        // 반품분은 물류창고로 돌아온다(500 − 100 출고 + 20 반품 = 420)
+        assertThat(line.path("mainBalance").asInt()).isEqualTo(420);
+
+        // ★매출 장부에는 정산분 80만 잡혀야 한다. 반품 20이 섞이면 매출이 부풀려진다.
+        long soldQty = 0;
+        for (JsonNode s : data(get("/sales?fromDate=2034-09-01&toDate=2034-09-30&partnerId=" + pt))
+                .path("content")) {
+            soldQty += s.path("qty").asLong();
+        }
+        assertThat(soldQty).as("반품 20은 매출이 아니다").isEqualTo(80);
+    }
+
+    @Test
+    @DisplayName("정산+반품 합계가 미결 잔여를 넘으면 거부 — 각각은 잔여 이내여도")
+    void 정산_반품_합계초과() {
+        // 따로 검사하면 30·30 각각은 잔여 50 이내라 통과하고, 합이 60이 되어 미결이 음수가 된다.
+        String sfx = "-RO" + (System.nanoTime() % 1_000_000L);
+        Long sup = createId("/masters/clients", Map.of("code", "ROS" + sfx, "name", "인쇄", "type", "NORMAL"));
+        Long pt = createId("/masters/clients", Map.of("code", "ROP" + sfx, "name", "위탁처", "type", "NORMAL"));
+        Long mw = createId("/masters/warehouses", Map.of("code", "ROM" + sfx, "name", "물류", "type", "MAIN"));
+        Long cw = createId("/masters/warehouses", Map.of("code", "ROC" + sfx, "name", "위탁",
+                "type", "CONSIGN", "ownerClientId", pt));
+        Long bk = createId("/masters/products", Map.of("code", "ROB" + sfx, "name", "도서",
+                "contentType", "SELF", "price", 10000, "supplyRate", 75));
+        post("/stock/inbound", Map.of("processedDate", "2034-08-01", "supplierClientId", sup,
+                "destinationWarehouseId", mw,
+                "items", List.of(Map.of("productId", bk, "unitCost", 3000, "qty", 200))));
+        post("/consignment/out", Map.of("processedDate", "2034-08-01", "partnerId", pt,
+                "fromWarehouseId", mw, "toWarehouseId", cw,
+                "items", List.of(Map.of("productId", bk, "qty", 50))));
+        long outId = data(get("/consignment/pending?partnerId=" + pt))
+                .path("items").get(0).path("consignmentOutId").asLong();
+
+        assertThat(exchangeRaw(HttpMethod.POST, "/consignment/settle", Map.of(
+                "salesDate", "2034-09-01",
+                "settlements", List.of(Map.of("consignmentOutId", outId,
+                        "settleQty", 30, "returnQty", 30,
+                        "unitPrice", 10000, "supplyRate", 75))), token(), null)
+                .getStatusCode().value()).as("30+30 > 잔여 50").isEqualTo(409);
+
+        // 아무것도 입력 안 하면 400 — 전 건을 훑고 아무 일도 안 하는 요청이다.
+        assertThat(exchangeRaw(HttpMethod.POST, "/consignment/settle", Map.of(
+                "salesDate", "2034-09-01",
+                "settlements", List.of(Map.of("consignmentOutId", outId,
+                        "unitPrice", 10000, "supplyRate", 75))), token(), null)
+                .getStatusCode().value()).isEqualTo(400);
+
+        // 반품만 입력하면 정가·공급률 없이도 처리된다(매출을 만들지 않으므로 금액이 필요 없다).
+        JsonNode only = data(post("/consignment/settle", Map.of(
+                "salesDate", "2034-09-01",
+                "settlements", List.of(Map.of("consignmentOutId", outId, "returnQty", 10)))))
+                .path("items").get(0);
+        assertThat(only.path("remainingQty").asInt()).isEqualTo(40);
+        assertThat(only.hasNonNull("salesNo")).as("반품만이면 매출번호가 없다").isFalse();
     }
 }
