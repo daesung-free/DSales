@@ -64,6 +64,21 @@ public class Warehouse extends BaseEntity {
      * primitive였을 때 요청에서 빠지면 false가 되어, 물류창고가 조용히 가상창고로 바뀌었다.
      * 그러면 제품수불부 실재고 집계에서 통째로 빠진다(Product의 같은 문제와 함께 수정, 2026-08-12).
      */
+    /** 사용여부(31p). false면 목록에서 숨긴다 — 삭제하면 과거 재고 이벤트가 가리키는 창고가 사라진다. */
+    @Column(name = "use_yn", nullable = false)
+    private boolean useYn = true;
+
+    @Column(length = 500)
+    private String memo;
+
+    /** 사용여부·비고 설정(31p). null이면 기존 값 유지. */
+    public void applyExtra(Boolean useYn, String memo) {
+        this.useYn = (useYn == null) ? this.useYn : useYn;
+        if (memo != null) {
+            this.memo = memo;
+        }
+    }
+
     public void update(String name, WarehouseType type, Boolean physicalStock, Partner ownerClient) {
         this.name = name;
         this.type = type;

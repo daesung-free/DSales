@@ -17,6 +17,16 @@ public record WarehouseUpdateRequest(
         @Schema(description = "실물재고여부", example = "true")
         Boolean physicalStock,
 
+        @Schema(description = "사용여부(31p). 미지정 시 true — false면 목록에서 숨김", example = "true")
+
+        Boolean useYn,
+
+        
+
+        @Schema(description = "비고(31p)")
+
+        String memo,
+
         @Schema(description = "소속거래처 id(위탁창고 1:1, 없으면 미지정)", example = "5")
         Long ownerClientId
 ) {

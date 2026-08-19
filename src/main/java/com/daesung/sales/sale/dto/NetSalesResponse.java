@@ -25,6 +25,8 @@ public record NetSalesResponse(
             @Schema(description = "매출액") long saleAmount,
             @Schema(description = "무상액(교사용·증정)") long freeAmount,
             @Schema(description = "반품수량") long returnQty,
+            @Schema(description = "반품률 %(반품수량/매출수량). 매출수량 0이면 null", example = "3.5")
+            Double returnRate,
             @Schema(description = "반품액") long returnAmount,
             @Schema(description = "순매출수량(매출−반품)") long netQty,
             @Schema(description = "순매출액(매출−반품)") long netAmount,

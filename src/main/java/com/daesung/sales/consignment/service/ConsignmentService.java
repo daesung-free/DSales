@@ -176,10 +176,13 @@ public class ConsignmentService {
 
                 ConsignmentSettlement settlement = settlementRepository.save(
                         ConsignmentSettlement.create(co, settleQty, salesNo, LocalDateTime.now()));
-                saleRepository.save(Sale.createConsign(
+                Sale consignSale = Sale.createConsign(
                         salesNo, req.salesDate(), co.getPartner(), product,
                         s.unitPrice(), s.supplyRate(), settleQty,
-                        supplyAmount, tax, totalAmount, co.getSourceOutNo(), settlement, s.memo()));
+                        supplyAmount, tax, totalAmount, co.getSourceOutNo(), settlement, s.memo());
+                // 위탁정산 매출은 위탁창고에서 나간다(7p 재고위치).
+                consignSale.applyWarehouse(consignWarehouseOf(co));
+                saleRepository.save(consignSale);
                 co.settle(settleQty);
 
                 // ★정산분은 위탁창고에서도 뺀다.

@@ -115,7 +115,7 @@ public class SaleReportService {
                 tPurch += purchase;
             }
             rows.add(new NetSalesResponse.Row(pid, (String) r[1], (String) r[2], ct,
-                    saleQty, saleAmt, freeAmt, retQty, retAmt, netQty, netAmt,
+                    saleQty, saleAmt, freeAmt, retQty, returnRate(retQty, saleQty), retAmt, netQty, netAmt,
                     unitCost, purchase, profit, margin));
             tSaleQ += saleQty; tSaleA += saleAmt; tFreeA += freeAmt; tRetQ += retQty; tRetA += retAmt;
         }
@@ -125,9 +125,14 @@ public class SaleReportService {
         Long totalProfit = anyExternal ? (tNetAmt - tPurch) : null;
         Double totalMargin = (anyExternal && tNetAmt != 0) ? Math.round((double) totalProfit / tNetAmt * 100 * 10) / 10.0 : null;
         NetSalesResponse.Row total = new NetSalesResponse.Row(null, "합계", null, null,
-                tSaleQ, tSaleA, tFreeA, tRetQ, tRetA, tSaleQ - tRetQ, tNetAmt,
+                tSaleQ, tSaleA, tFreeA, tRetQ, returnRate(tRetQ, tSaleQ), tRetA, tSaleQ - tRetQ, tNetAmt,
                 null, totalPurchase, totalProfit, totalMargin);
         return new NetSalesResponse(from, to, filter, rows, total);
+    }
+
+    /** 반품률 %(반품/매출). 매출이 0이면 나눌 수 없어 null — 0%로 두면 "반품 없음"으로 오해된다. */
+    private static Double returnRate(long returnQty, long saleQty) {
+        return (saleQty == 0) ? null : Math.round((double) returnQty / saleQty * 100 * 10) / 10.0;
     }
 
     private static long num(Object o) {

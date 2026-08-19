@@ -6,6 +6,7 @@ import com.daesung.sales.partner.entity.Partner;
 import com.daesung.sales.product.entity.Product;
 import com.daesung.sales.salestype.entity.SalesCategory;
 import com.daesung.sales.salestype.entity.ShipmentType;
+import com.daesung.sales.warehouse.entity.Warehouse;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EnumType;
@@ -50,6 +51,17 @@ public class Sale extends BaseEntity {
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "product_id", nullable = false)
     private Product product;
+
+    /**
+     * 출고 창고(7p 재고위치 · 27p 출고창고).
+     *
+     * <p>지금까지 매출등록에서 창고를 받아 재고만 차감하고 버렸다 — 나중에 "이 매출이 어느 창고에서
+     * 나갔나"를 되짚을 수 없었다. 위탁정산 매출은 위탁창고에서 나간다.
+     * 이 컬럼이 생기기 전 데이터는 알 수 없어 null이다.
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "warehouse_id")
+    private Warehouse warehouse;
 
     /** 매출유형(독립 축): 일반/위탁매출. */
     @Enumerated(EnumType.STRING)
@@ -209,6 +221,11 @@ public class Sale extends BaseEntity {
 
     /** 매출 업로드 세부(학교·회차) 설정. */
     /** 포장구분 지정(물류 작업현황 집계용). */
+    /** 출고 창고 지정(매출등록·위탁정산에서 호출). */
+    public void applyWarehouse(Warehouse warehouse) {
+        this.warehouse = warehouse;
+    }
+
     public void applyPackType(PackType packType) {
         this.packType = packType;
     }

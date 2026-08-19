@@ -1004,4 +1004,50 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
                 Map.of("productIds", List.of(id)), token(), null).getStatusCode().value())
                 .isEqualTo(400);
     }
+
+    @Test
+    @DisplayName("요구 누락 필드 — 매출 창고·창고 사용여부/비고·반품률·물류작업비여부")
+    void 요구누락필드_보강() {
+        String sfx = "-GP" + (System.nanoTime() % 1_000_000L);
+        Long sup = createId("/masters/clients", Map.of("code", "GPS" + sfx, "name", "인쇄", "type", "NORMAL"));
+        Long pt = createId("/masters/clients", Map.of("code", "GPP" + sfx, "name", "검증처", "type", "NORMAL"));
+        Long wh = createId("/masters/warehouses", Map.of("code", "GPW" + sfx,
+                "name", "본사물류창고", "type", "MAIN", "memo", "본사 1층"));
+        Long pr = createId("/masters/products", Map.of("code", "GPB" + sfx, "name", "도서",
+                "contentType", "SELF", "price", 10000, "supplyRate", 75));
+
+        // 31p 창고 — 사용여부 기본 true, 비고 저장
+        JsonNode w = data(get("/masters/warehouses/" + wh));
+        assertThat(w.path("useYn").asBoolean()).isTrue();
+        assertThat(w.path("memo").asText()).isEqualTo("본사 1층");
+        // 사용여부만 끄면 비고는 유지된다(부분수정 원칙)
+        put("/masters/warehouses/" + wh, Map.of("name", "본사물류창고", "type", "MAIN", "useYn", false));
+        JsonNode w2 = data(get("/masters/warehouses/" + wh));
+        assertThat(w2.path("useYn").asBoolean()).isFalse();
+        assertThat(w2.path("memo").asText()).isEqualTo("본사 1층");
+
+        // 8p 물류작업비여부
+        post("/stock/inbound", Map.of("processedDate", "2038-01-01", "supplierClientId", sup,
+                "destinationWarehouseId", wh, "logisCostTarget", true,
+                "items", List.of(Map.of("productId", pr, "unitCost", 3000, "qty", 200))));
+
+        post("/sales/entries", Map.of("salesDate", "2038-02-10", "partnerId", pt, "warehouseId", wh,
+                "items", List.of(
+                        Map.of("productId", pr, "shipmentType", "NORMAL_SHIP", "qty", 100),
+                        Map.of("productId", pr, "shipmentType", "RETURN", "qty", 5))));
+
+        // 7p 매출에 출고 창고가 남는다 — 지금까지는 재고만 차감하고 버려서 되짚을 수 없었다
+        for (JsonNode r : data(get("/sales?fromDate=2038-01-01&toDate=2038-12-31&partnerId=" + pt))
+                .path("content")) {
+            assertThat(r.path("warehouseName").asText()).isEqualTo("본사물류창고");
+        }
+
+        // 16p 반품률
+        for (JsonNode r : data(get("/sales/net-summary?fromDate=2038-01-01&toDate=2038-12-31"))
+                .path("rows")) {
+            if (r.path("productName").asText().equals("도서") && r.path("saleQty").asLong() == 100) {
+                assertThat(r.path("returnRate").asDouble()).as("5/100").isEqualTo(5.0);
+            }
+        }
+    }
 }

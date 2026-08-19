@@ -43,6 +43,7 @@ public class WarehouseService {
         });
         Warehouse warehouse = Warehouse.create(req.code(), req.name(), req.type(),
                 req.physicalStockOrDefault(), resolveOwner(req.ownerClientId()));
+        warehouse.applyExtra(req.useYn(), req.memo());
         return WarehouseResponse.from(warehouseRepository.save(warehouse));
     }
 
@@ -50,6 +51,7 @@ public class WarehouseService {
     public WarehouseResponse update(Long id, WarehouseUpdateRequest req) {
         Warehouse warehouse = getOrThrow(id);
         warehouse.update(req.name(), req.type(), req.physicalStock(), resolveOwner(req.ownerClientId()));
+        warehouse.applyExtra(req.useYn(), req.memo());
         return WarehouseResponse.from(warehouse);
     }
 

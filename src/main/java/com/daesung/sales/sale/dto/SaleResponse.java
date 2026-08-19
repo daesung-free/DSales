@@ -1,6 +1,7 @@
 package com.daesung.sales.sale.dto;
 
 import com.daesung.sales.sale.entity.Sale;
+import io.swagger.v3.oas.annotations.media.Schema;
 import com.daesung.sales.sale.entity.SalesType;
 import com.daesung.sales.salestype.entity.SalesCategory;
 import com.daesung.sales.salestype.entity.ShipmentType;
@@ -37,6 +38,8 @@ public record SaleResponse(
         Long tax,
         Long totalAmount,
         boolean canceled,
+        @Schema(description = "출고 창고 id") Long warehouseId,
+        @Schema(description = "출고 창고명(7p 재고위치). 이 컬럼 도입 전 매출은 비어 있다") String warehouseName,
         String memo
 ) {
     public static SaleResponse from(Sale s) {
@@ -51,6 +54,9 @@ public record SaleResponse(
                 s.getSalesType(), s.getShipmentType(), s.getSalesCategory(),
                 s.getUnitPrice(), s.getSupplyRate(), s.getQty(),
                 s.getSupplyAmount(), s.getTax(), s.getTotalAmount(),
-                s.isCanceled(), s.getMemo());
+                s.isCanceled(),
+                (s.getWarehouse() == null) ? null : s.getWarehouse().getId(),
+                (s.getWarehouse() == null) ? null : s.getWarehouse().getName(),
+                s.getMemo());
     }
 }

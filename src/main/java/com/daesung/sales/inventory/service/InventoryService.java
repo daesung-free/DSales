@@ -69,8 +69,10 @@ public class InventoryService {
                     .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                             "상품이 없습니다. id=" + item.productId()));
 
-            inventoryTxnRepository.save(InventoryTxn.inbound(product, warehouse, item.qty(),
-                    item.unitCost(), req.inboundType(), req.processedDate(), supplier, item.memo()));
+            InventoryTxn txn = InventoryTxn.inbound(product, warehouse, item.qty(),
+                    item.unitCost(), req.inboundType(), req.processedDate(), supplier, item.memo());
+            txn.applyLogisCostTarget(Boolean.TRUE.equals(req.logisCostTarget()));   // 물류작업비 대상(8p)
+            inventoryTxnRepository.save(txn);
             int currentQty = applyDelta(product, warehouse, item.qty());
 
             lines.add(new InboundResponse.Line(

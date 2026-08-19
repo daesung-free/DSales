@@ -114,10 +114,19 @@ public class InventoryTxn extends BaseEntity {
 
     /** BOM 조립/해체 한 다리. txnType=BOM_ASSEMBLE|BOM_DISASSEMBLE, qty는 부호 포함. */
     /** 세트 조립 작업비(자동계산). 조립 이벤트에만 값이 있다. 계산 시점에 확정해 저장한다. */
+    /** 물류작업비 대상 여부(8p 입고/대체등록). 입고 이벤트에서 사용. */
+    @Column(name = "logis_cost_target", nullable = false)
+    private boolean logisCostTarget;
+
     @Column(name = "work_cost")
     private Long workCost;
 
     /** 조립 작업비 기록. 단가표·BOM이 나중에 바뀌어도 이미 끝난 작업 비용은 변하지 않는다. */
+    /** 물류작업비 대상 표시(입고 시). */
+    public void applyLogisCostTarget(boolean target) {
+        this.logisCostTarget = target;
+    }
+
     public void applyWorkCost(long workCost) {
         this.workCost = workCost;
     }

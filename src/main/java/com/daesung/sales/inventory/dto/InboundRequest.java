@@ -25,6 +25,10 @@ public record InboundRequest(
                 example = "NORMAL")
         InboundType inboundType,
 
+        @Schema(description = "물류작업비 대상 여부(8p). 이 입고분을 물류 작업비 청구 대상으로 볼지",
+                example = "false")
+        Boolean logisCostTarget,
+
         @Schema(description = "입고 품목 목록", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotEmpty @Valid List<InboundItem> items
 ) {

@@ -101,6 +101,7 @@ public class SaleService {
                     SalesType.NORMAL_SALES, item.shipmentType(), r.salesCategory(),
                     r.unitPrice(), r.supplyRate(), item.qty(),
                     supplyAmount, tax, totalAmount, item.procType(), item.memo());
+            sale.applyWarehouse(warehouse);   // 출고 창고(7p 재고위치 · 27p 출고창고)
             sale.applyUploadDetail(item.schoolCode(), item.schoolName(), item.round());   // 학교·회차(12p)
             sale.applyPackType(item.packType());   // 포장구분(회차별 작업현황 집계축)
             saleRepository.save(sale);
