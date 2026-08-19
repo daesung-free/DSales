@@ -4,7 +4,10 @@ import com.daesung.sales.logistics.dto.WorkOrderResponse;
 import com.daesung.sales.logistics.dto.WorkResultRow;
 import com.daesung.sales.logistics.entity.Shipment;
 import com.daesung.sales.logistics.repository.ShipmentRepository;
+import com.daesung.sales.common.audit.CurrentAuditor;
 import com.daesung.sales.sale.dto.ShipmentQtyAgg;
+import com.daesung.sales.sale.dto.ShipmentWarehouseAgg;
+import com.daesung.sales.warehouse.entity.WarehouseType;
 import com.daesung.sales.sale.dto.WorkOrderLineAgg;
 import com.daesung.sales.sale.repository.SaleRepository;
 import java.time.LocalDate;
@@ -30,6 +33,7 @@ public class WorkService {
 
     private final ShipmentRepository shipmentRepository;
     private final SaleRepository saleRepository;
+    private final CurrentAuditor currentAuditor;
 
     /** 발송 건을 찾기 위한 키. 학교·분류가 null일 수 있어 빈 문자열로 정규화해 맞춘다. */
     private static String key(LocalDate date, Long partnerId, String schoolCode, String tradeClass) {
@@ -43,7 +47,21 @@ public class WorkService {
      * <p>'출력'·'완료'는 레거시처럼 <b>날짜가 채워졌는지</b>로 판단한다. 별도 상태 컬럼이 없다.
      */
     public List<WorkResultRow> workResults(LocalDate from, LocalDate to, String tradeClass,
-                                           Long partnerId, Boolean printed) {
+                                           Long partnerId, Boolean printed, WarehouseType warehouseType) {
+        // ★역할별 기본값(발주처 확정 3-2 나): "물류에서 실제 발송하는 상품은 모두 본사물류창고이므로
+        //   출고창고는 본사물류창고만 디폴트, 본사 출고담당(관리자)은 전체/본사물류/위탁 선택 가능".
+        //   물류는 요청에 무엇을 넣든 본사물류창고로 강제한다 — 프론트도 필터를 관리자 전용으로 만들었고,
+        //   두 층의 규칙이 갈리면 화면과 데이터가 어긋난다.
+        WarehouseType effectiveType = currentAuditor.hasRole("ADMIN")
+                ? warehouseType : WarehouseType.MAIN;
+        // 발송 단위별 창고(여러 창고에서 나갔을 수 있다)
+        Map<String, List<ShipmentWarehouseAgg>> whByKey = new LinkedHashMap<>();
+        for (ShipmentWarehouseAgg a : saleRepository.shipmentWarehouses(from, to)) {
+            whByKey.computeIfAbsent(
+                    key(a.getTradeDate(), a.getPartnerId(), a.getSchoolCode(), a.getTradeClass()),
+                    k -> new ArrayList<>()).add(a);
+        }
+
         Map<String, Map<String, Long>> qtyByKey = new LinkedHashMap<>();
         for (ShipmentQtyAgg a : saleRepository.shipmentQty(from, to)) {
             qtyByKey.computeIfAbsent(
@@ -54,14 +72,25 @@ public class WorkService {
 
         List<WorkResultRow> rows = new ArrayList<>();
         for (Shipment s : shipmentRepository.search(from, to, tradeClass, partnerId, printed)) {
-            Map<String, Long> q = qtyByKey.getOrDefault(
-                    key(s.getTradeDate(), s.getPartner().getId(), s.getSchoolCode(), s.getTradeClass()),
-                    Map.of());
+            String k = key(s.getTradeDate(), s.getPartner().getId(), s.getSchoolCode(), s.getTradeClass());
+            List<ShipmentWarehouseAgg> whs = whByKey.getOrDefault(k, List.of());
+
+            // 창고 필터. 창고가 기록되지 않은 발송(V40 이전 매출)은 필터를 걸면 판단할 수 없어 제외한다 —
+            // 남겨두면 "본사물류창고만" 골랐는데 창고 불명 건이 섞여 나온다.
+            if (effectiveType != null
+                    && whs.stream().noneMatch(w -> w.getWarehouseType() == effectiveType)) {
+                continue;
+            }
+
+            Map<String, Long> q = qtyByKey.getOrDefault(k, Map.of());
             long total = q.values().stream().mapToLong(Long::longValue).sum();
+            String whNames = whs.stream().map(ShipmentWarehouseAgg::getWarehouseName)
+                    .distinct().collect(java.util.stream.Collectors.joining(", "));
             rows.add(new WorkResultRow(s.getId(), s.getTradeClass(), s.getTradeDate(), s.getTradeSeq(),
                     s.getPartner().getCode(), s.getPartner().getName(),
                     s.getSchoolCode(), s.getSchoolName(),
                     s.getPrintedAt() != null, s.getCompletedAt() != null, s.getSentDate(),
+                    whNames.isEmpty() ? null : whNames,
                     q, total, s.getBoxCount(), s.getSendMemo(), s.getMemo()));
         }
         return rows;

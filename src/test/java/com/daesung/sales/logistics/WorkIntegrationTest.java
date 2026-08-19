@@ -10,6 +10,7 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
+import org.springframework.http.HttpMethod;
 
 /**
  * 물류 작업요청서·작업결과 회귀 고정. 레거시 sendData 흐름을 그대로 옮긴 부분이라
@@ -123,5 +124,37 @@ class WorkIntegrationTest extends IntegrationTestSupport {
         }
         assertThat(textbookQty).isEqualTo(50);
         assertThat(examQty).isEqualTo(20);
+    }
+
+    @Test
+    @DisplayName("출고창고 — 물류는 본사물류창고 고정, 관리자만 선택 가능")
+    void 출고창고_역할별필터() throws Exception {
+        // 발주처 확정(3-2 나): "물류에서 실제 발송하는 상품은 모두 본사물류창고이므로
+        // 출고창고는 본사물류창고만 디폴트, 본사 출고담당(관리자)은 전체/본사물류/위탁 선택 가능".
+        String q = RANGE + "&partnerId=" + partner;
+
+        // 관리자: 전체·MAIN 모두 보이고 창고명이 실려 온다
+        assertThat(data(get("/logistics/work-results" + q))).isNotEmpty();
+        JsonNode main = data(get("/logistics/work-results" + q + "&warehouseType=MAIN"));
+        assertThat(main).isNotEmpty();
+        assertThat(main.get(0).path("warehouseName").asText()).isEqualTo("물류");
+
+        // 물류 계정: CONSIGN을 요청해도 본사물류창고로 강제된다.
+        // 프론트도 필터를 관리자 전용으로 만들었다 — 두 층의 규칙이 갈리면 화면과 데이터가 어긋난다.
+        String user = "wlg" + SFX.replace("-", "");
+        post("/auth/users", Map.of("username", user, "password", "Test1234!",
+                "name", user, "role", "LOGISTICS"));
+        String token = om.readTree(exchangeRaw(HttpMethod.POST, "/auth/login",
+                        Map.of("username", user, "password", "Test1234!"), null, null).getBody())
+                .path("data").path("accessToken").asText();
+
+        JsonNode forced = om.readTree(exchangeRaw(HttpMethod.GET,
+                        "/logistics/work-results" + q + "&warehouseType=CONSIGN", null, token, null)
+                        .getBody()).path("data");
+        assertThat(forced).as("물류도 결과를 본다(빈 화면이 아니다)").isNotEmpty();
+        for (JsonNode r : forced) {
+            assertThat(r.path("warehouseName").asText())
+                    .as("CONSIGN을 요청해도 본사물류창고로 강제").isEqualTo("물류");
+        }
     }
 }

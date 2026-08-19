@@ -23,4 +23,20 @@ public class CurrentAuditor {
         }
         return auth.getName();
     }
+
+    /**
+     * 현재 사용자가 해당 역할인지. 화면 안에서 <b>역할에 따라 동작이 달라지는</b> 경우에 쓴다
+     * (예: 작업결과 출고창고 필터 — 물류는 본사물류창고 고정, 관리자만 선택 가능).
+     *
+     * <p>경로 단위 접근 제어는 SecurityConfig가 담당한다. 이건 접근이 허용된 뒤
+     * <b>같은 응답 안에서</b> 보이는 범위를 가르는 용도다.
+     */
+    public boolean hasRole(String role) {
+        Authentication auth = SecurityContextHolder.getContext().getAuthentication();
+        if (auth == null || !auth.isAuthenticated()) {
+            return false;
+        }
+        return auth.getAuthorities().stream()
+                .anyMatch(a -> ("ROLE_" + role).equals(a.getAuthority()));
+    }
 }

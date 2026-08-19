@@ -6,6 +6,7 @@ import com.daesung.sales.sale.dto.CategorySalesAgg;
 import com.daesung.sales.sale.dto.PartnerProductSalesAgg;
 import com.daesung.sales.sale.dto.ReturnableAgg;
 import com.daesung.sales.sale.dto.ShipmentQtyAgg;
+import com.daesung.sales.sale.dto.ShipmentWarehouseAgg;
 import com.daesung.sales.sale.dto.WorkOrderLineAgg;
 import com.daesung.sales.sale.dto.SalesStatementAgg;
 import com.daesung.sales.sale.entity.Sale;
@@ -450,4 +451,23 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     List<AttendanceAgg> attendanceYearly(@Param("year") int year,
                                          @Param("grade") String grade,
                                          @Param("productType") String productType);
+
+    /**
+     * 발송 단위(일자·거래처·학교·분류)의 출고 창고. 작업결과의 '출고창고' 컬럼·필터.
+     * 한 발송 건을 여러 번에 나눠 등록하면 창고가 섞일 수 있어 창고별로 행이 나온다(화면에서 합쳐 표기).
+     * 창고가 기록되기 전(V40 이전) 매출은 warehouse가 null이라 제외된다.
+     */
+    @Query("""
+            select s.salesDate as tradeDate, s.partner.id as partnerId,
+                   coalesce(s.schoolCode, '') as schoolCode,
+                   coalesce(p.salesDivision, '') as tradeClass,
+                   w.id as warehouseId, w.name as warehouseName, w.type as warehouseType
+              from Sale s join s.product p join s.warehouse w
+             where s.canceled = false
+               and s.salesCategory <> com.daesung.sales.salestype.entity.SalesCategory.RETURN
+               and s.salesDate between :from and :to
+             group by s.salesDate, s.partner.id, coalesce(s.schoolCode, ''),
+                      coalesce(p.salesDivision, ''), w.id, w.name, w.type
+            """)
+    List<ShipmentWarehouseAgg> shipmentWarehouses(@Param("from") LocalDate from, @Param("to") LocalDate to);
 }

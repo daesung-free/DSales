@@ -8,6 +8,7 @@ import com.daesung.sales.logistics.dto.WorkOrderResponse;
 import com.daesung.sales.logistics.dto.WorkResultRow;
 import com.daesung.sales.logistics.service.ShipmentService;
 import com.daesung.sales.logistics.service.WorkService;
+import com.daesung.sales.warehouse.entity.WarehouseType;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -92,6 +93,8 @@ public class WorkController {
                     발송 건별 진행 현황. 상품군별 수량(교재·IC 등)·박스 수·발송일을 함께 본다.
 
                     · '출력'·'완료'는 **날짜가 채워졌는지**로 판단한다(레거시에 상태 컬럼이 없다).
+                    · **출고창고**: 물류는 본사물류창고만 보이고, 관리자만 전체·본사물류·위탁을 고를 수 있다
+                      (발주처 확정 3-2 나). 물류가 다른 값을 보내도 본사물류창고로 강제된다.
                     · ⚠️'완료'는 레거시에도 값을 넣는 코드가 없어 **항상 false**다.
                       임의로 만들면 화면 의미가 달라져, 발주처 확인 후 붙일 항목으로 남겨 두었다.""")
     @GetMapping("/work-results")
@@ -100,8 +103,11 @@ public class WorkController {
             @RequestParam(name = "toDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @RequestParam(required = false) String tradeClass,
             @RequestParam(required = false) Long partnerId,
-            @RequestParam(required = false) Boolean printed) {
-        return ApiResponse.success(workService.workResults(fromDate, toDate, tradeClass, partnerId, printed));
+            @RequestParam(required = false) Boolean printed,
+            @Parameter(description = "출고창고 구분 MAIN(본사물류창고)/CONSIGN(위탁창고). 미지정=전체(관리자만)")
+            @RequestParam(required = false) WarehouseType warehouseType) {
+        return ApiResponse.success(
+                workService.workResults(fromDate, toDate, tradeClass, partnerId, printed, warehouseType));
     }
 
     @Operation(summary = "작업결과 엑셀 다운로드")
@@ -111,17 +117,19 @@ public class WorkController {
             @RequestParam(name = "toDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @RequestParam(required = false) String tradeClass,
             @RequestParam(required = false) Long partnerId,
-            @RequestParam(required = false) Boolean printed) {
+            @RequestParam(required = false) Boolean printed,
+            @RequestParam(required = false) WarehouseType warehouseType) {
         List<Col> cols = List.of(
                 new Col("분류", "tradeClass"), new Col("거래일자", "tradeDate"),
                 new Col("거래순번", "tradeSeq"),
                 new Col("거래처코드", "partnerCode"), new Col("거래처명", "partnerName"),
                 new Col("학교코드", "schoolCode"), new Col("학교명", "schoolName"),
                 new Col("출력", "printed"), new Col("완료", "completed"),
-                new Col("발송일", "sentDate"), new Col("수량", "totalQty"),
+                new Col("발송일", "sentDate"), new Col("출고창고", "warehouseName"),
+                new Col("수량", "totalQty"),
                 new Col("Box", "boxCount"), new Col("발송메모", "sendMemo"), new Col("비고", "memo"));
         byte[] xlsx = excel.toXlsx("작업결과", cols,
-                workService.workResults(fromDate, toDate, tradeClass, partnerId, printed));
+                workService.workResults(fromDate, toDate, tradeClass, partnerId, printed, warehouseType));
         return excel.asDownload(xlsx, "작업결과.xlsx");
     }
 }
