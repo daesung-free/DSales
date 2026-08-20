@@ -32,13 +32,15 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("도서 신규필드 — 매출구분·수불부노출·Web게시 저장/응답")
+    @DisplayName("도서 신규필드 — 세부구분(구 매출구분)·수불부노출·Web게시 저장/응답")
     void 도서_신규필드() {
         JsonNode d = data(post("/masters/products", Map.of(
                 "code", "MF-BK1", "name", "확장필드 도서", "contentType", "SELF",
-                "salesDivision", "정상", "ledgerVisible", false, "webVisible", true,
+                "salesDivision", "교재", "ledgerVisible", false, "webVisible", true,
                 "productYear", 2026, "productType", "교재")));
-        assertThat(d.path("salesDivision").asText()).isEqualTo("정상");
+        assertThat(d.path("salesDivision").asText()).isEqualTo("교재");
+        // 대분류는 세부구분 마스터에서 파생된다(회신 2026-08-20)
+        assertThat(d.path("majorCategoryName").asText()).isEqualTo("교재");
         assertThat(d.path("ledgerVisible").asBoolean()).isFalse();
         assertThat(d.path("webVisible").asBoolean()).isTrue();
         assertThat(d.path("productYear").asInt()).isEqualTo(2026);   // 32p 상품년도

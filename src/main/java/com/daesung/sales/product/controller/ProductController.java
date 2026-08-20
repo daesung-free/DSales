@@ -60,7 +60,9 @@ public class ProductController {
                 new com.daesung.sales.common.excel.ExcelExportUtil.Col("분류명", "catName"),
                 new com.daesung.sales.common.excel.ExcelExportUtil.Col("정가", "price"),
                 new com.daesung.sales.common.excel.ExcelExportUtil.Col("면세", "taxFree"),
-                new com.daesung.sales.common.excel.ExcelExportUtil.Col("매출구분", "salesDivision"),
+                // 발주처 회신 2026-08-20: '매출구분' → '세부구분'으로 명칭 변경. 집계 기준인 대분류를 앞에 둔다.
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("대분류", "majorCategoryName"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("세부구분", "salesDivision"),
                 new com.daesung.sales.common.excel.ExcelExportUtil.Col("수불부노출", "ledgerVisible"),
                 new com.daesung.sales.common.excel.ExcelExportUtil.Col("재고관리", "stockManaged"),
                 new com.daesung.sales.common.excel.ExcelExportUtil.Col("사용여부", "useYn"));

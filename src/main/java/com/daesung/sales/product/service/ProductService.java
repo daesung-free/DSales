@@ -22,9 +22,11 @@ import com.daesung.sales.product.dto.ProductUpdateRequest;
 import com.daesung.sales.product.entity.BomItem;
 import com.daesung.sales.product.entity.Product;
 import com.daesung.sales.product.entity.ProductPartnerPrice;
+import com.daesung.sales.product.entity.SalesDivision;
 import com.daesung.sales.product.repository.BomItemRepository;
 import com.daesung.sales.product.repository.ProductPartnerPriceRepository;
 import com.daesung.sales.product.repository.ProductRepository;
+import com.daesung.sales.product.repository.SalesDivisionRepository;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -46,17 +48,37 @@ public class ProductService {
     private final ProductPartnerPriceRepository partnerPriceRepository;
     private final PartnerRepository partnerRepository;
     private final CurrentAuditor currentAuditor;
+    private final SalesDivisionRepository salesDivisionRepository;
+    private final SalesDivisionService salesDivisionService;
 
     public PageResponse<ProductResponse> findAll(String keyword, Pageable pageable) {
         Page<Product> page = (keyword == null || keyword.isBlank())
                 ? productRepository.findAll(pageable)
                 : productRepository.findByCodeContainingIgnoreCaseOrNameContainingIgnoreCase(
                         keyword, keyword, pageable);
-        return PageResponse.of(page.map(ProductResponse::from));
+        // 세부구분 마스터는 몇 줄짜리라 한 번에 읽어 맵으로 쓴다 — 상품마다 조회하면 목록 한 장에 수백 번이 된다.
+        Map<String, SalesDivision> divisions = divisionsByCode();
+        return PageResponse.of(page.map(p -> ProductResponse.from(p, divisions.get(p.getSalesDivision()))));
     }
 
     public ProductResponse findById(Long id) {
-        return ProductResponse.from(getOrThrow(id));
+        Product product = getOrThrow(id);
+        return ProductResponse.from(product, findDivision(product.getSalesDivision()));
+    }
+
+    /** 세부구분 코드 → 마스터 전량. 고정 목록 수준의 크기라 통째로 읽는다. */
+    private Map<String, SalesDivision> divisionsByCode() {
+        Map<String, SalesDivision> map = new java.util.HashMap<>();
+        for (SalesDivision d : salesDivisionRepository.findAll()) {
+            map.put(d.getCode(), d);
+        }
+        return map;
+    }
+
+    /** 세부구분 단건. 미지정(null/공백)이면 null — 대분류가 '미분류'로 나간다. */
+    private SalesDivision findDivision(String code) {
+        return (code == null || code.isBlank())
+                ? null : salesDivisionRepository.findByCode(code).orElse(null);
     }
 
     @Transactional
@@ -64,6 +86,9 @@ public class ProductService {
         productRepository.findByCode(req.code()).ifPresent(p -> {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "이미 존재하는 상품코드: " + req.code());
         });
+        // 세부구분은 이제 마스터 값이다. 예전처럼 자유 문자열로 두면 오타가 그대로 새 구분이 되어
+        // 같은 뜻의 값이 여러 표기로 흩어지고, 대분류 매핑이 없어 집계에서 빠진다.
+        salesDivisionService.validateCode(req.salesDivision());
         Product product = Product.create(
                 req.code(), req.name(), req.contentType(), req.set(),
                 req.price(), req.taxFree(), req.grade(),
@@ -71,13 +96,15 @@ public class ProductService {
                 req.salesDivision(), req.ledgerVisibleOrDefault(), req.webVisibleOrDefault(),
                 req.stockManagedOrDefault());
         product.applyExtra(req.productYear(), req.productType(), req.supplyRate());
-        return ProductResponse.from(productRepository.save(product));
+        Product saved = productRepository.save(product);
+        return ProductResponse.from(saved, findDivision(saved.getSalesDivision()));
     }
 
     /** 도서 수정. 바뀐 필드는 변경이력에 남는다(발주처 확정 3-1 라). 스냅샷은 수정 전에 뜬다. */
     @Transactional
     public ProductResponse update(Long id, ProductUpdateRequest req) {
         Product product = getOrThrow(id);
+        salesDivisionService.validateCode(req.salesDivision());
         Map<String, String> before = product.auditSnapshot();
         product.update(req.name(), req.contentType(), req.set(),
                 req.price(), req.taxFree(), req.grade(),
@@ -86,7 +113,7 @@ public class ProductService {
         product.applyExtra(req.productYear(), req.productType(), req.supplyRate());
         masterChangeLogService.recordDiff(MasterEntityType.PRODUCT, product.getId(), product.getCode(),
                 before, product.auditSnapshot());
-        return ProductResponse.from(product);
+        return ProductResponse.from(product, findDivision(product.getSalesDivision()));
     }
 
     @Transactional
