@@ -13,8 +13,10 @@ import com.daesung.sales.inventory.service.InventoryService;
 import com.daesung.sales.partner.entity.Partner;
 import com.daesung.sales.partner.repository.PartnerRepository;
 import com.daesung.sales.product.entity.Product;
+import com.daesung.sales.product.entity.SalesDivision;
 import com.daesung.sales.product.repository.ProductPartnerPriceRepository;
 import com.daesung.sales.product.repository.ProductRepository;
+import com.daesung.sales.product.repository.SalesDivisionRepository;
 import com.daesung.sales.sale.dto.ReturnInboundRequest;
 import com.daesung.sales.sale.dto.ReturnableAgg;
 import com.daesung.sales.sale.dto.ReturnableResponse;
@@ -51,6 +53,7 @@ public class SaleService {
     private final PartnerRepository partnerRepository;
     private final ProductRepository productRepository;
     private final ProductPartnerPriceRepository partnerPriceRepository;
+    private final SalesDivisionRepository salesDivisionRepository;
     private final OutTypeLookupService outTypeLookupService;
     private final WarehouseRepository warehouseRepository;
     private final InventoryService inventoryService;
@@ -356,7 +359,7 @@ public class SaleService {
         // 취소 플래그를 먼저 확정(flush)하고 응답을 만든 뒤 역분개.
         // 역분개의 원자적 UPDATE(clearAutomatically)가 세션을 비우므로 순서가 중요.
         saleRepository.flush();
-        SaleResponse response = SaleResponse.from(sale);
+        SaleResponse response = SaleResponse.from(sale, divisionOf(sale));
         inventoryService.reverseShipments(sale.getSalesNo(), LocalDate.now());
         return response;
     }
@@ -366,9 +369,21 @@ public class SaleService {
     public PageResponse<SaleResponse> search(LocalDate from, LocalDate to, SalesCategory salesCategory,
                                              ShipmentType shipmentType, Long partnerId,
                                              boolean includeCanceled, Pageable pageable) {
+        // 세부구분 마스터는 몇 줄이라 한 번에 읽어 맵으로 쓴다 — 행마다 조회하면 목록 한 장에 수백 번이 된다.
+        Map<String, SalesDivision> divisions = new HashMap<>();
+        for (SalesDivision d : salesDivisionRepository.findAll()) {
+            divisions.put(d.getCode(), d);
+        }
         return PageResponse.of(
                 saleRepository.search(from, to, salesCategory, shipmentType, partnerId, includeCanceled, pageable)
-                        .map(SaleResponse::from));
+                        .map(s -> SaleResponse.from(s, divisions.get(s.getProduct().getSalesDivision()))));
+    }
+
+    /** 단건 응답용 세부구분 조회. 미지정이면 null → 대분류가 '미분류'로 나간다. */
+    private SalesDivision divisionOf(Sale sale) {
+        String code = sale.getProduct().getSalesDivision();
+        return (code == null || code.isBlank())
+                ? null : salesDivisionRepository.findByCode(code).orElse(null);
     }
 
 }

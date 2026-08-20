@@ -6,6 +6,7 @@ import java.util.List;
 /**
  * 월별매출액명세서(37p). 근거: 재무팀 파일 '연구소 월별매출액 명세서'.
  * 구분(대분류)×상품별 성적처리/비처리 인원·금액 + 계 + 과세매출액 + 부가세. 대분류 소계·총계 포함.
+ * ★대분류는 세부구분 마스터에서 파생(발주처 회신 2026-08-20). 예전엔 cat_code 첫 글자였다.
  * 인원 = 매출 수량(모의고사는 응시인원), 금액 = 공급가액. 매출(SALE)만 집계(무상·반품 제외).
  * ⚠️ 성적처리 구분은 sale.proc_type(null=비처리). DSRE 모의고사 자동 인원/처리 import는 후속.
  */
@@ -18,7 +19,8 @@ public record MonthlyStatementResponse(
     public record Row(
             @Schema(description = "행 구분", allowableValues = {"GRAND_TOTAL", "MAJOR_SUBTOTAL", "DETAIL"})
             RowType rowType,
-            @Schema(description = "대분류코드(cat_code 첫 글자)") String majorCode,
+            @Schema(description = "대분류 코드(세부구분 마스터에서 파생). 미지정은 null") String majorCode,
+            @Schema(description = "대분류 명칭(모의고사·교재 …). 미지정은 '미분류'") String majorName,
             @Schema(description = "분류명(상세행)") String catName,
             @Schema(description = "도서코드(상세행)") String bookCode,
             @Schema(description = "도서명(상세행)") String bookName,

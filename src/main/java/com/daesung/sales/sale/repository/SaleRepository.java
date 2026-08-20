@@ -25,19 +25,28 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     /**
      * 매출액명세서 도서 단위 집계(취소 제외, 기간·회계구분 필터). 근거: 레거시 매출액명세서.vb.
      * 금액=Σ공급가, 세액=Σ세액. 합계(금액+세액)와 대분류·소계·총계 rollup은 서비스에서 조립.
-     * 정렬은 rollup 조립 위해 catCode·code 오름차순.
+     *
+     * <p>★대분류는 세부구분 마스터를 <b>left join</b>해 가져온다(발주처 회신 2026-08-20).
+     * left인 이유: 세부구분이 없거나 마스터에 없는 상품도 매출은 실재하므로 빠지면 안 된다
+     * (그런 행은 대분류 null → 서비스에서 '미분류'로 모인다).
+     *
+     * <p>행 순서는 rollup 조립용으로 catCode·code 오름차순이고, <b>대분류 순서는 서비스에서 정한다</b> —
+     * 대분류를 SQL로 정렬하면 enum 이름 알파벳순(ETC, ETC_EXAM, MOCK_EXAM…)이 되어
+     * 화면 순서(모의고사·교재·기타고사·특강·기타)와 어긋난다.
      */
     @Query("""
-            select p.catCode as catCode, p.catName as catName,
+            select d.majorCategory as majorCategory,
+                   p.catCode as catCode, p.catName as catName,
                    p.code as bookCode, p.name as bookName,
                    sum(s.qty) as qty,
                    sum(coalesce(s.supplyAmount, 0)) as amount,
                    sum(coalesce(s.tax, 0)) as tax
             from Sale s join s.product p
+              left join SalesDivision d on d.code = p.salesDivision
             where s.canceled = false
               and s.salesDate between :from and :to
               and (:category is null or s.salesCategory = :category)
-            group by p.catCode, p.catName, p.code, p.name
+            group by d.majorCategory, p.catCode, p.catName, p.code, p.name
             order by p.catCode asc, p.code asc
             """)
     List<SalesStatementAgg> statementAgg(@Param("from") LocalDate from,
@@ -337,11 +346,17 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     /**
      * 월별매출액명세서(37p): 대분류×분류×상품별 성적처리/비처리 인원·금액 + 과세·부가세. 매출(SALE)만, 취소 제외.
      * 성적처리 = proc_type='GRADED', 그 외(비처리/미지정)는 UNGRADED 버킷. 인원=qty, 금액=supply_amount.
-     * 대분류 = LEFT(cat_code,1). 반환 Object[]:
+     * ★대분류 = 세부구분 마스터({@code sales_divisions.major_category})에서 파생. 발주처 회신 2026-08-20.
+     * 예전엔 {@code LEFT(cat_code,1)}이라 화면에 'H'·'M' 같은 글자가 나왔고, 분류코드 체계가 없는
+     * 신규 데이터에서는 대분류가 무의미했다. LEFT JOIN인 이유는 세부구분이 없는 상품의 매출도
+     * 빠지면 안 되기 때문(대분류 null → 서비스에서 '미분류'로 모인다).
+     * 대분류 순서는 서비스에서 정한다 — SQL로 정렬하면 enum 이름 알파벳순이라 화면 순서와 어긋난다.
+     *
+     * <p>반환 Object[]:
      *   [major, catCode, catName, productId, code, name, gradedQty, gradedAmt, ungradedQty, ungradedAmt, taxableAmt, vat].
      */
     @Query(value = """
-            SELECT LEFT(p.cat_code,1) AS major, p.cat_code, p.cat_name, s.product_id, p.code, p.name,
+            SELECT d.major_category AS major, p.cat_code, p.cat_name, s.product_id, p.code, p.name,
               COALESCE(SUM(CASE WHEN s.proc_type='GRADED' THEN s.qty ELSE 0 END),0)            AS graded_qty,
               COALESCE(SUM(CASE WHEN s.proc_type='GRADED' THEN s.supply_amount ELSE 0 END),0)  AS graded_amt,
               COALESCE(SUM(CASE WHEN s.proc_type='GRADED' THEN 0 ELSE s.qty END),0)            AS ungraded_qty,
@@ -349,12 +364,13 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
               COALESCE(SUM(CASE WHEN s.tax <> 0 THEN s.supply_amount ELSE 0 END),0)            AS taxable_amt,
               COALESCE(SUM(s.tax),0)                                                           AS vat
             FROM sales s JOIN products p ON p.id = s.product_id
+              LEFT JOIN sales_divisions d ON d.code = p.sales_division
             WHERE s.canceled = false
               AND s.sales_category = 'SALE'
               AND EXTRACT(YEAR FROM s.sales_date) = :year
               AND EXTRACT(MONTH FROM s.sales_date) = :month
-            GROUP BY LEFT(p.cat_code,1), p.cat_code, p.cat_name, s.product_id, p.code, p.name
-            ORDER BY LEFT(p.cat_code,1), p.cat_code, p.code
+            GROUP BY d.major_category, p.cat_code, p.cat_name, s.product_id, p.code, p.name
+            ORDER BY d.major_category, p.cat_code, p.code
             """, nativeQuery = true)
     List<Object[]> monthlyStatementAgg(@Param("year") int year, @Param("month") int month);
 

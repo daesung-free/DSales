@@ -154,6 +154,66 @@ class SalesDivisionIntegrationTest extends IntegrationTestSupport {
         assertThat(post("/masters/sales-divisions", body).path("success").asBoolean()).isFalse();
     }
 
+    @Test
+    @DisplayName("매출액명세서: 분류코드가 달라도 같은 대분류면 '분류 계'가 한 번만 찍힌다")
+    void 명세서_대분류_rollup() {
+        // 같은 대분류(기타고사)에 속하는 세부구분 둘 — 회신의 D모의고사·학원콘텐츠와 같은 관계
+        String d1 = "기타A" + sfx;
+        String d2 = "기타B" + sfx;
+        createId("/masters/sales-divisions", Map.of(
+                "code", d1, "name", d1, "majorCategory", "ETC_EXAM", "sortOrder", 60));
+        createId("/masters/sales-divisions", Map.of(
+                "code", d2, "name", d2, "majorCategory", "ETC_EXAM", "sortOrder", 61));
+
+        Long wh = createId("/masters/warehouses",
+                Map.of("code", "SDW" + sfx, "name", "명세창고", "type", "MAIN"));
+        Long partner = createId("/masters/clients",
+                Map.of("code", "SDC" + sfx, "name", "명세거래처", "type", "NORMAL"));
+
+        // ‼️분류코드를 서로 다르게 준다 — 예전 로직(대분류=분류코드 첫 글자)이라면
+        //   'X'와 'Y'로 갈려 대분류가 둘로 쪼개졌을 조합이다.
+        long p1 = product("SDP1" + sfx, "X2028X01", d1, wh, partner);
+        long p2 = product("SDP2" + sfx, "Y2028Y01", d2, wh, partner);
+
+        // 다른 테스트와 겹치지 않는 기간(2028-03)에서만 검증한다
+        sale(partner, wh, p1, 10);
+        sale(partner, wh, p2, 7);
+
+        JsonNode rows = data(get("/sales/statement?fromDate=2028-03-01&toDate=2028-03-31")).path("rows");
+
+        java.util.List<JsonNode> majorTotals = new java.util.ArrayList<>();
+        rows.forEach(r -> {
+            if ("MAJOR_TOTAL".equals(r.path("rowType").asText())) {
+                majorTotals.add(r);
+            }
+        });
+
+        assertThat(majorTotals).hasSize(1);
+        assertThat(majorTotals.get(0).path("majorCategory").asText()).isEqualTo("ETC_EXAM");
+        assertThat(majorTotals.get(0).path("majorName").asText()).isEqualTo("기타고사");
+        assertThat(majorTotals.get(0).path("qty").asLong()).isEqualTo(17);   // 10 + 7
+    }
+
+    private long product(String code, String catCode, String division, Long wh, Long partner) {
+        long id = createId("/masters/products", Map.of(
+                "code", code, "name", code, "contentType", "SELF", "set", false,
+                "price", 10000, "taxFree", true, "catCode", catCode, "catName", catCode,
+                "salesDivision", division));
+        post("/stock/inbound", Map.of(
+                "processedDate", "2028-03-01", "supplierClientId", partner, "destinationWarehouseId", wh,
+                "items", java.util.List.of(Map.of("productId", id, "unitCost", 1000, "qty", 100))));
+        return id;
+    }
+
+    private void sale(Long partner, Long wh, long productId, int qty) {
+        JsonNode r = post("/sales/entries", Map.of(
+                "salesDate", "2028-03-10", "partnerId", partner, "warehouseId", wh,
+                "items", java.util.List.of(Map.of(
+                        "productId", productId, "shipmentType", "NORMAL_SHIP",
+                        "unitPrice", 10000, "supplyRate", 75, "qty", qty))));
+        assertThat(r.path("success").asBoolean()).as("매출등록 성공: %s", r).isTrue();
+    }
+
     private java.util.List<String> codesOf(JsonNode apiResponse) {
         return data(apiResponse).findValuesAsText("code");
     }

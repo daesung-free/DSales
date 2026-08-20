@@ -168,8 +168,9 @@ public class SaleController {
     }
 
     @Operation(summary = "매출액명세서",
-            description = "분류코드(catCode) 계층으로 rollup한 매출 명세. 대분류(catCode 첫 글자)→분류→도서 "
-                    + "3계층 소계·총계. 금액=공급가, 세액, 합계=금액+세액. 취소건 제외. "
+            description = "대분류→분류(catCode)→도서 3계층으로 rollup한 매출 명세. 소계·총계 포함. "
+                    + "★대분류는 상품의 세부구분에서 파생된다(모의고사·교재·기타고사·특강·기타). "
+                    + "세부구분이 없는 상품은 '미분류'로 모인다 — 집계에서 빼지 않는다. 금액=공급가, 세액, 합계=금액+세액. 취소건 제외. "
                     + "category=SALE(매출)/FREE(무가)/RETURN(반품)/미지정(전체).")
     @GetMapping("/statement")
     public ApiResponse<SalesStatementResponse> statement(
@@ -189,7 +190,8 @@ public class SaleController {
             @RequestParam(name = "toDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
             @RequestParam(required = false) SalesCategory category) {
         List<Col> cols = List.of(
-                new Col("구분", "rowType"), new Col("분류코드", "catCode"), new Col("분류명", "catName"),
+                new Col("구분", "rowType"), new Col("대분류", "majorName"),
+                new Col("분류코드", "catCode"), new Col("분류명", "catName"),
                 new Col("도서코드", "bookCode"), new Col("도서명", "bookName"), new Col("수량", "qty"),
                 new Col("금액", "amount"), new Col("세액", "tax"), new Col("합계", "total"));
         byte[] xlsx = excel.toXlsx("매출액명세서", cols, saleReportService.statement(from, to, category).rows());
@@ -197,7 +199,8 @@ public class SaleController {
     }
 
     @Operation(summary = "월별매출액명세서(37p)",
-            description = "구분(대분류=catCode 첫 글자)×상품별 성적처리/비처리 인원·금액 + 계 + 과세매출액 + 부가세. "
+            description = "구분(대분류)×상품별 성적처리/비처리 인원·금액 + 계 + 과세매출액 + 부가세. "
+                    + "★대분류는 상품의 세부구분에서 파생(모의고사·교재·기타고사·특강·기타). "
                     + "대분류 소계·총계 포함. 매출(SALE)만 집계(무상·반품 제외), 취소 제외. "
                     + "인원=수량(모의고사=응시인원), 성적처리=매출등록 proc_type(GRADED, 미지정=비처리). "
                     + "year·month 미지정 시 이번 달.")
@@ -220,7 +223,7 @@ public class SaleController {
         int y = (year != null) ? year : now.getYear();
         int m = (month != null) ? month : now.getMonthValue();
         List<Col> cols = List.of(
-                new Col("구분", "rowType"), new Col("대분류", "majorCode"), new Col("분류명", "catName"),
+                new Col("구분", "rowType"), new Col("대분류", "majorName"), new Col("분류명", "catName"),
                 new Col("도서코드", "bookCode"), new Col("도서명", "bookName"),
                 new Col("성적처리인원", "gradedQty"), new Col("성적처리금액", "gradedAmount"),
                 new Col("비처리인원", "ungradedQty"), new Col("비처리금액", "ungradedAmount"),

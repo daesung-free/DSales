@@ -263,7 +263,9 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
             assertThat(sheet.getSheetName()).isEqualTo("매출액명세서");
             var header = sheet.getRow(0);
             assertThat(header.getCell(0).getStringCellValue()).isEqualTo("구분");
-            assertThat(header.getCell(1).getStringCellValue()).isEqualTo("분류코드");
+            // 집계 기준이 대분류라 분류코드보다 앞에 온다(발주처 회신 2026-08-20)
+            assertThat(header.getCell(1).getStringCellValue()).isEqualTo("대분류");
+            assertThat(header.getCell(2).getStringCellValue()).isEqualTo("분류코드");
             assertThat(sheet.getLastRowNum()).isGreaterThan(0);   // 데이터 행 존재
         }
     }

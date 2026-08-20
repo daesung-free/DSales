@@ -15,6 +15,7 @@ import com.daesung.sales.sale.dto.RoundWorkStatusRow;
 import com.daesung.sales.sale.dto.MonthlyStatementResponse;
 import com.daesung.sales.sale.dto.NetSalesResponse;
 import com.daesung.sales.sale.dto.PartnerProductSalesAgg;
+import com.daesung.sales.product.entity.MajorCategory;
 import com.daesung.sales.sale.dto.SalesStatementAgg;
 import com.daesung.sales.sale.dto.SalesStatementResponse;
 import com.daesung.sales.sale.dto.SalesStatementRow;
@@ -140,17 +141,32 @@ public class SaleReportService {
     }
 
     /**
-     * 매출액명세서. 근거: 레거시 매출액명세서.vb rollup(left(catCode,1), catCode, bookCode).
+     * 매출액명세서. 근거: 레거시 매출액명세서.vb rollup(대분류, catCode, bookCode).
      * flat 도서집계를 상세→소계(분류)→분류계(대분류)→총계 순 계층으로 조립.
      * 합계=금액+세액(레거시 totalAmt2 미사용 규칙). category=null이면 전체(매출·무가·반품).
+     *
+     * <p>★대분류는 세부구분 마스터에서 파생된 값이다(발주처 회신 2026-08-20).
+     * 예전엔 {@code left(catCode,1)}로 분류코드 첫 글자를 그대로 대분류로 썼는데,
+     * 화면에 'H'·'M' 같은 글자가 나왔고 분류코드 체계가 아직 없는 신규 데이터에서는 값 자체가 무의미했다.
      */
     @Transactional(readOnly = true)
     public SalesStatementResponse statement(LocalDate from, LocalDate to, SalesCategory category) {
-        List<SalesStatementAgg> aggs = saleRepository.statementAgg(from, to, category);
+        List<SalesStatementAgg> aggs = new ArrayList<>(saleRepository.statementAgg(from, to, category));
+        // ‼️rollup은 같은 대분류가 연속으로 붙어 있어야 성립한다. 대분류는 분류코드가 아니라
+        //   세부구분에서 오므로, 서로 다른 분류코드가 같은 대분류에 속해 흩어져 있을 수 있다.
+        //   정렬하지 않으면 같은 대분류의 '분류 계' 행이 여러 번 찍힌다.
+        //   순서의 정본은 enum 선언 순서(모의고사·교재·기타고사·특강·기타) — SQL로 정렬하면
+        //   enum 이름 알파벳순이 되어 화면 순서와 어긋난다. 미분류는 맨 뒤.
+        aggs.sort(java.util.Comparator
+                .comparingInt((SalesStatementAgg a) -> (a.getMajorCategory() == null)
+                        ? Integer.MAX_VALUE : a.getMajorCategory().ordinal())
+                .thenComparing(a -> blank(a.getCatCode()))
+                .thenComparing(a -> blank(a.getBookCode())));
+
         List<SalesStatementRow> rows = new ArrayList<>();
 
         long gQty = 0, gAmt = 0, gTax = 0;                 // 총계
-        String curMajor = null;
+        MajorCategory curMajor = null;
         boolean majorOpen = false;
         long mQty = 0, mAmt = 0, mTax = 0;                 // 대분류계
         String curCat = null, curCatName = null;
@@ -158,7 +174,7 @@ public class SaleReportService {
         long cQty = 0, cAmt = 0, cTax = 0;                 // 분류 소계
 
         for (SalesStatementAgg a : aggs) {
-            String major = majorOf(a.getCatCode());
+            MajorCategory major = a.getMajorCategory();
             String cat = a.getCatCode();
 
             if (catOpen && !java.util.Objects.equals(cat, curCat)) {
@@ -199,9 +215,22 @@ public class SaleReportService {
         return new SalesStatementResponse(from, to, category == null ? null : category.name(), rows);
     }
 
-    /** 대분류코드 = catCode 첫 글자. null/빈값은 미분류(null). */
-    private static String majorOf(String catCode) {
-        return (catCode == null || catCode.isEmpty()) ? null : catCode.substring(0, 1);
+    /** 정렬용 null 방어. 분류·도서 코드가 비어도 순서가 뒤집히지 않게 빈 문자열로 맞춘다. */
+    private static String blank(String v) {
+        return (v == null) ? "" : v;
+    }
+
+    /**
+     * 대분류 정렬 순서 — enum 선언 순서가 정본(모의고사·교재·기타고사·특강·기타). 미지정은 맨 뒤.
+     * SQL에 넣지 않는 이유: enum 이름 알파벳순(ETC, ETC_EXAM, MOCK_EXAM…)이 되어 화면 순서와 어긋난다.
+     */
+    private static int majorOrder(String majorName) {
+        for (MajorCategory c : MajorCategory.values()) {
+            if (c.name().equals(majorName)) {
+                return c.ordinal();
+            }
+        }
+        return Integer.MAX_VALUE;
     }
 
     /**
@@ -217,8 +246,16 @@ public class SaleReportService {
         String curMajor = null;
         boolean majorOpen = false;
 
-        for (Object[] r : saleRepository.monthlyStatementAgg(year, month)) {
-            String m = (r[0] == null) ? null : r[0].toString();  // LEFT()가 Character로 올 수 있어 toString
+        // 대분류는 세부구분에서 오므로 서로 다른 분류코드가 같은 대분류에 흩어질 수 있다.
+        // 정렬하지 않으면 같은 대분류의 소계 행이 여러 번 찍힌다(순서 정본 = enum 선언 순서).
+        List<Object[]> aggs = new ArrayList<>(saleRepository.monthlyStatementAgg(year, month));
+        aggs.sort(java.util.Comparator
+                .comparingInt((Object[] r) -> majorOrder((r[0] == null) ? null : r[0].toString()))
+                .thenComparing(r -> blank((String) r[1]))
+                .thenComparing(r -> blank((String) r[4])));
+
+        for (Object[] r : aggs) {
+            String m = (r[0] == null) ? null : r[0].toString();
             long[] v = {num(r[6]), num(r[7]), num(r[8]), num(r[9]), num(r[10]), num(r[11])};
 
             if (majorOpen && !java.util.Objects.equals(m, curMajor)) {
@@ -231,7 +268,8 @@ public class SaleReportService {
                 majorOpen = true;
             }
             rows.add(new MonthlyStatementResponse.Row(
-                    MonthlyStatementResponse.Row.RowType.DETAIL, m, (String) r[2], (String) r[4], (String) r[5],
+                    MonthlyStatementResponse.Row.RowType.DETAIL, m, majorLabel(m),
+                    (String) r[2], (String) r[4], (String) r[5],
                     v[0], v[1], v[2], v[3], v[0] + v[2], v[1] + v[3], v[4], v[5]));
             for (int i = 0; i < 6; i++) {
                 major[i] += v[i];
@@ -248,8 +286,21 @@ public class SaleReportService {
     /** 집계배열 v=[gradedQty,gradedAmt,ungradedQty,ungradedAmt,taxableAmt,vat] → 소계/총계 행. */
     private MonthlyStatementResponse.Row majorRow(MonthlyStatementResponse.Row.RowType type,
                                                   String majorCode, long[] v) {
-        return new MonthlyStatementResponse.Row(type, majorCode, null, null, null,
+        // 총계 행은 대분류가 없으므로 이름도 비운다 — '미분류'로 찍으면 대분류 하나처럼 보인다.
+        boolean grand = (type == MonthlyStatementResponse.Row.RowType.GRAND_TOTAL);
+        return new MonthlyStatementResponse.Row(type, majorCode, grand ? null : majorLabel(majorCode),
+                null, null, null,
                 v[0], v[1], v[2], v[3], v[0] + v[2], v[1] + v[3], v[4], v[5]);
+    }
+
+    /** 대분류 코드 → 화면 표기명. 미지정은 '미분류'(집계에서 빼지 않는다). */
+    private static String majorLabel(String majorName) {
+        for (MajorCategory c : MajorCategory.values()) {
+            if (c.name().equals(majorName)) {
+                return c.label();
+            }
+        }
+        return SalesStatementRow.UNCLASSIFIED;
     }
 
     /**
