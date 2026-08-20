@@ -194,6 +194,44 @@ class SalesDivisionIntegrationTest extends IntegrationTestSupport {
         assertThat(majorTotals.get(0).path("qty").asLong()).isEqualTo(17);   // 10 + 7
     }
 
+    @Test
+    @DisplayName("34p 단가: 매핑 하나가 그 대분류의 모든 도서에 걸린다 — 도서마다 깔 필요가 없다")
+    void 단가는_대분류_단위() {
+        Long wh = createId("/masters/warehouses",
+                Map.of("code", "PSW" + sfx, "name", "단가창고", "type", "MAIN"));
+        Long partner = createId("/masters/clients",
+                Map.of("code", "PSC" + sfx, "name", "단가거래처", "type", "NORMAL"));
+
+        // 같은 대분류(교재)에 속하는 서로 다른 도서 둘
+        long book1 = product("PSB1" + sfx, "H2028H01", "교재", wh, partner);
+        long book2 = product("PSB2" + sfx, "H2028H02", "교재", wh, partner);
+
+        // 거래처 × 대분류 매핑 한 건만 등록
+        put("/masters/partner-supply-rates/" + partner + "/TEXTBOOK", Map.of("supplyRate", 80));
+
+        // 도서별 매핑을 따로 안 깔았는데도 두 도서 모두 80%가 적용된다
+        assertThat(supplyAmountOf(partner, wh, book1)).isEqualTo(80_000);   // 10000 × 80% × 10
+        assertThat(supplyAmountOf(partner, wh, book2)).isEqualTo(80_000);
+
+        // 사용여부를 끄면 자동조회에서 빠진다 → 도서 기본 공급률이 없어 등록 실패
+        put("/masters/partner-supply-rates/" + partner + "/TEXTBOOK", Map.of("useYn", false));
+        JsonNode fail = post("/sales/entries", Map.of(
+                "salesDate", "2028-03-10", "partnerId", partner, "warehouseId", wh,
+                "items", java.util.List.of(Map.of(
+                        "productId", book1, "shipmentType", "NORMAL_SHIP", "qty", 1))));
+        assertThat(fail.path("success").asBoolean()).as("꺼진 매핑은 없는 것으로 본다: %s", fail).isFalse();
+    }
+
+    /** 공급률 미입력으로 매출 1건 등록 → 자동적용된 공급가액. */
+    private long supplyAmountOf(Long partner, Long wh, long productId) {
+        JsonNode r = post("/sales/entries", Map.of(
+                "salesDate", "2028-03-10", "partnerId", partner, "warehouseId", wh,
+                "items", java.util.List.of(Map.of(
+                        "productId", productId, "shipmentType", "NORMAL_SHIP", "qty", 10))));
+        assertThat(r.path("success").asBoolean()).as("매출등록 성공: %s", r).isTrue();
+        return data(r).path("items").get(0).path("supplyAmount").asLong();
+    }
+
     private long product(String code, String catCode, String division, Long wh, Long partner) {
         long id = createId("/masters/products", Map.of(
                 "code", code, "name", code, "contentType", "SELF", "set", false,

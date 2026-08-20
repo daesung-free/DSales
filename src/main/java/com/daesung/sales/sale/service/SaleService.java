@@ -14,7 +14,6 @@ import com.daesung.sales.partner.entity.Partner;
 import com.daesung.sales.partner.repository.PartnerRepository;
 import com.daesung.sales.product.entity.Product;
 import com.daesung.sales.product.entity.SalesDivision;
-import com.daesung.sales.product.repository.ProductPartnerPriceRepository;
 import com.daesung.sales.product.repository.ProductRepository;
 import com.daesung.sales.product.repository.SalesDivisionRepository;
 import com.daesung.sales.sale.dto.ReturnInboundRequest;
@@ -52,7 +51,7 @@ public class SaleService {
     private final SaleRepository saleRepository;
     private final PartnerRepository partnerRepository;
     private final ProductRepository productRepository;
-    private final ProductPartnerPriceRepository partnerPriceRepository;
+    private final com.daesung.sales.product.service.PartnerSupplyRateService partnerSupplyRateService;
     private final SalesDivisionRepository salesDivisionRepository;
     private final OutTypeLookupService outTypeLookupService;
     private final WarehouseRepository warehouseRepository;
@@ -139,7 +138,7 @@ public class SaleService {
     /**
      * 상품 조회 + 회계구분 룩업 + 정가·공급률 자동적용.
      *
-     * <p>공급률 우선순위: <b>입력값 &gt; 거래처별 매핑(V19) &gt; 도서 기본 공급률(V34)</b>.
+     * <p>공급률 우선순위: <b>입력값 &gt; 거래처별 매핑(거래처×대분류, 34p) &gt; 도서 기본 공급률</b>.
      * 도서 기본값이 마지막 바탕인 이유는, 발주처가 공급률을 거래처구분별 대표값으로만 운영하기
      * 때문이다(자료요청서 1-2). 바탕값이 없으면 등록을 하려고 전 거래처×전 도서 매핑을 깔아야 한다.
      */
@@ -153,10 +152,8 @@ public class SaleService {
         Integer unitPrice = (item.unitPrice() != null) ? item.unitPrice() : product.getPrice();
         Integer supplyRate = item.supplyRate();
         if (supplyRate == null) {
-            supplyRate = partnerPriceRepository
-                    .findByProductIdAndPartnerId(product.getId(), partner.getId())
-                    .map(m -> m.getSupplyRate())
-                    .orElseGet(product::getSupplyRate);
+            Integer mapped = partnerSupplyRateService.rateFor(product, partner.getId());
+            supplyRate = (mapped != null) ? mapped : product.getSupplyRate();
         }
         if (unitPrice == null || supplyRate == null) {
             throw new BusinessException(ErrorCode.INVALID_INPUT,

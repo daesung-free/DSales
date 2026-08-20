@@ -132,36 +132,36 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("거래처별 단가·노출 매핑 — upsert/자동조회/삭제 + 단가 파생")
+    @DisplayName("거래처별 단가(34p) — 축은 거래처×대분류. upsert/조회/삭제")
     void 거래처별단가매핑() {
-        Long book = createId("/masters/products",
-                Map.of("code", "PP-BK", "name", "단가매핑도서", "contentType", "SELF", "price", 10000));
         Long partner = createId("/masters/clients",
                 Map.of("code", "PP-CUST", "name", "매핑거래처", "type", "NORMAL"));
+        String base = "/masters/partner-supply-rates/" + partner;
 
-        // 등록: 공급률 70 → 단가 = 10000×70/100 = 7000
-        JsonNode d = data(put("/masters/products/" + book + "/partner-prices/" + partner,
-                Map.of("supplyRate", 70, "visible", true)));
-        assertThat(d.path("supplyRate").asInt()).isEqualTo(70);
-        assertThat(d.path("unitPrice").asLong()).isEqualTo(7000);
+        // 같은 거래처라도 대분류마다 다른 공급률(정본 34p "특약점 D모의고사 75%, 교재 60%")
+        JsonNode d = data(put(base + "/ETC_EXAM",
+                Map.of("supplyRate", 75, "discountAmount", 0, "webVisible", true)));
+        assertThat(d.path("supplyRate").asInt()).isEqualTo(75);
+        assertThat(d.path("majorCategoryName").asText()).isEqualTo("기타고사");
         assertThat(d.path("partnerName").asText()).isEqualTo("매핑거래처");
 
-        // 자동조회 단건
-        JsonNode one = data(get("/masters/products/" + book + "/partner-prices/" + partner));
-        assertThat(one.path("unitPrice").asLong()).isEqualTo(7000);
+        data(put(base + "/TEXTBOOK", Map.of("supplyRate", 60)));
+        assertThat(data(get("/masters/partner-supply-rates?partnerId=" + partner))).hasSize(2);
 
-        // upsert(수정): 60 → 단가 6000, 중복 생성 아님(목록 1건)
-        data(put("/masters/products/" + book + "/partner-prices/" + partner,
-                Map.of("supplyRate", 60, "visible", false)));
-        JsonNode list = data(get("/masters/products/" + book + "/partner-prices"));
-        assertThat(list).hasSize(1);
-        assertThat(list.get(0).path("unitPrice").asLong()).isEqualTo(6000);
-        assertThat(list.get(0).path("visible").asBoolean()).isFalse();
+        // upsert(수정) — 중복 생성이 아니다
+        data(put(base + "/TEXTBOOK", Map.of("supplyRate", 65, "webVisible", false)));
+        JsonNode one = data(get(base + "/TEXTBOOK"));
+        assertThat(one.path("supplyRate").asInt()).isEqualTo(65);
+        assertThat(one.path("webVisible").asBoolean()).isFalse();
+        assertThat(data(get("/masters/partner-supply-rates?partnerId=" + partner))).hasSize(2);
 
-        // 삭제 후 자동조회 404
-        del("/masters/products/" + book + "/partner-prices/" + partner);
-        JsonNode gone = get("/masters/products/" + book + "/partner-prices/" + partner);
-        assertThat(gone.path("success").asBoolean()).isFalse();
+        // 보내지 않은 항목은 건드리지 않는다 — 공급률만 고치려다 Web게시가 켜지면 안 된다
+        data(put(base + "/TEXTBOOK", Map.of("supplyRate", 70)));
+        assertThat(data(get(base + "/TEXTBOOK")).path("webVisible").asBoolean()).isFalse();
+
+        // 삭제 후 조회 404
+        del(base + "/TEXTBOOK");
+        assertThat(get(base + "/TEXTBOOK").path("success").asBoolean()).isFalse();
     }
 
     @Test
@@ -590,10 +590,12 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
     @DisplayName("매출등록 — 공급률 미입력 시 거래처별 단가 자동적용, 매핑 없으면 오류")
     void 단가자동적용() {
         Long wh = createId("/masters/warehouses", Map.of("code", "AP-WH", "name", "자동단가창고", "type", "MAIN"));
+        // 매핑은 거래처×대분류다 → 상품이 대분류를 갖도록 세부구분을 준다(교재→TEXTBOOK)
         Long p = createId("/masters/products",
-                Map.of("code", "AP-BK", "name", "자동단가도서", "contentType", "SELF", "price", 10000));
+                Map.of("code", "AP-BK", "name", "자동단가도서", "contentType", "SELF", "price", 10000,
+                        "salesDivision", "교재"));
         Long partner = createId("/masters/clients", Map.of("code", "AP-CUST", "name", "자동단가거래처", "type", "NORMAL"));
-        put("/masters/products/" + p + "/partner-prices/" + partner, Map.of("supplyRate", 70, "visible", true));
+        put("/masters/partner-supply-rates/" + partner + "/TEXTBOOK", Map.of("supplyRate", 70));
         inbound(wh, p);
 
         // 정가·공급률 미입력 → 매핑(70%)·정가(10000) 자동적용: 10000×70%×10 = 70,000
@@ -760,8 +762,10 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
         Long sup = createId("/masters/clients", Map.of("code", "SRS" + sfx, "name", "인쇄소", "type", "NORMAL"));
         Long pt = createId("/masters/clients", Map.of("code", "SRP" + sfx, "name", "거래처", "type", "NORMAL"));
         Long wh = createId("/masters/warehouses", Map.of("code", "SRW" + sfx, "name", "창고", "type", "MAIN"));
+        // 거래처 매핑은 거래처×대분류라 상품이 대분류를 가져야 한다(교재→TEXTBOOK)
         Long pr = createId("/masters/products", Map.of("code", "SRB" + sfx, "name", "도서",
-                "contentType", "SELF", "price", 10000, "supplyRate", 60, "catCode", "A2026SR"));
+                "contentType", "SELF", "price", 10000, "supplyRate", 60, "catCode", "A2026SR",
+                "salesDivision", "교재"));
         post("/stock/inbound", Map.of("processedDate", "2026-11-01", "supplierClientId", sup,
                 "destinationWarehouseId", wh,
                 "items", List.of(Map.of("productId", pr, "unitCost", 3000, "qty", 500))));
@@ -773,7 +777,7 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
         assertThat(a.path("items").get(0).path("supplyAmount").asLong()).isEqualTo(60_000);
 
         // 거래처별 매핑이 생기면 그게 이긴다
-        put("/masters/products/" + pr + "/partner-prices/" + pt, Map.of("supplyRate", 70));
+        put("/masters/partner-supply-rates/" + pt + "/TEXTBOOK", Map.of("supplyRate", 70));
         JsonNode b = data(post("/sales/entries", Map.of("salesDate", "2026-11-10", "partnerId", pt,
                 "warehouseId", wh,
                 "items", List.of(Map.of("productId", pr, "shipmentType", "NORMAL_SHIP", "qty", 10)))));
@@ -791,25 +795,24 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
     @DisplayName("거래처별 단가 일괄 적용 — 예외 단가는 기본적으로 덮지 않는다")
     void 단가_일괄적용() {
         String sfx = "-BK" + (System.nanoTime() % 1_000_000L);
-        Long pr = createId("/masters/products", Map.of("code", "BKB" + sfx, "name", "일괄도서",
-                "contentType", "SELF", "price", 10000));
         Long p1 = createId("/masters/clients", Map.of("code", "BP1" + sfx, "name", "특약점1", "type", "NORMAL"));
         Long p2 = createId("/masters/clients", Map.of("code", "BP2" + sfx, "name", "특약점2", "type", "NORMAL"));
-        put("/masters/products/" + pr + "/partner-prices/" + p2, Map.of("supplyRate", 55));   // 예외 단가
+        put("/masters/partner-supply-rates/" + p2 + "/MOCK_EXAM", Map.of("supplyRate", 55));   // 예외 단가
 
-        JsonNode r = data(put("/masters/products/" + pr + "/partner-prices",
-                Map.of("partnerIds", List.of(p1, p2), "supplyRate", 70)));
+        JsonNode r = data(put("/masters/partner-supply-rates/bulk",
+                Map.of("partnerIds", List.of(p1, p2), "majorCategory", "MOCK_EXAM", "supplyRate", 70)));
         assertThat(r.path("created").asInt()).isEqualTo(1);
         assertThat(r.path("skipped").asInt()).as("예외 단가를 가진 거래처는 건너뛴다").isEqualTo(1);
         // 건너뛴 대상을 코드로 돌려줘야 담당자가 누락인지 의도인지 구분한다
         assertThat(r.path("skippedPartnerCodes").get(0).asText()).isEqualTo("BP2" + sfx);
-        assertThat(data(get("/masters/products/" + pr + "/partner-prices/" + p2))
+        assertThat(data(get("/masters/partner-supply-rates/" + p2 + "/MOCK_EXAM"))
                 .path("supplyRate").asInt()).as("예외 단가 보존").isEqualTo(55);
 
-        JsonNode f = data(put("/masters/products/" + pr + "/partner-prices",
-                Map.of("partnerIds", List.of(p1, p2), "supplyRate", 70, "overwrite", true)));
+        JsonNode f = data(put("/masters/partner-supply-rates/bulk",
+                Map.of("partnerIds", List.of(p1, p2), "majorCategory", "MOCK_EXAM",
+                        "supplyRate", 70, "overwrite", true)));
         assertThat(f.path("updated").asInt()).isEqualTo(2);
-        assertThat(data(get("/masters/products/" + pr + "/partner-prices/" + p2))
+        assertThat(data(get("/masters/partner-supply-rates/" + p2 + "/MOCK_EXAM"))
                 .path("supplyRate").asInt()).isEqualTo(70);
     }
 
@@ -885,16 +888,14 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
     void 단가_변경이력() {
         String sfx = "-CP" + (System.nanoTime() % 1_000_000L);
         Long pt = createId("/masters/clients", Map.of("code", "CP" + sfx, "name", "단가처", "type", "NORMAL"));
-        Long pr = createId("/masters/products", Map.of("code", "CPB" + sfx, "name", "단가도서",
-                "contentType", "SELF", "price", 10000));
 
-        put("/masters/products/" + pr + "/partner-prices/" + pt, Map.of("supplyRate", 70));  // 신규
-        put("/masters/products/" + pr + "/partner-prices/" + pt, Map.of("supplyRate", 65));  // 변경
+        put("/masters/partner-supply-rates/" + pt + "/TEXTBOOK", Map.of("supplyRate", 70));  // 신규
+        put("/masters/partner-supply-rates/" + pt + "/TEXTBOOK", Map.of("supplyRate", 65));  // 변경
 
         JsonNode rows = data(get("/audit/master-changes?entityType=PARTNER_PRICE")).path("content");
         boolean found = false;
         for (JsonNode r : rows) {
-            if (r.path("entityCode").asText().contains("CPB" + sfx)) {
+            if (r.path("entityCode").asText().contains("CP" + sfx)) {
                 assertThat(r.path("oldValue").asText()).isEqualTo("70");
                 assertThat(r.path("newValue").asText()).isEqualTo("65");
                 found = true;

@@ -5,12 +5,8 @@ import com.daesung.sales.common.response.ApiResponse;
 import com.daesung.sales.common.response.PageResponse;
 import com.daesung.sales.product.dto.BomRegisterRequest;
 import com.daesung.sales.product.dto.BomResponse;
-import com.daesung.sales.product.dto.PartnerPriceBulkRequest;
-import com.daesung.sales.product.dto.PartnerPriceBulkResult;
-import com.daesung.sales.product.dto.PartnerPriceRequest;
 import com.daesung.sales.product.dto.ProductFlagBulkRequest;
 import com.daesung.sales.product.dto.ProductFlagBulkResult;
-import com.daesung.sales.product.dto.PartnerPriceResponse;
 import com.daesung.sales.product.dto.ProductCreateRequest;
 import com.daesung.sales.product.dto.ProductResponse;
 import com.daesung.sales.product.dto.ProductUpdateRequest;
@@ -110,29 +106,10 @@ public class ProductController {
         return ApiResponse.success(productService.registerBom(id, req));
     }
 
-    // ── 거래처별 단가·노출 매핑(도서관리 3번째 탭) ─────────────────────────
-
-    @Operation(summary = "거래처별 단가·노출 매핑 목록",
-            description = "도서의 거래처별 공급률·노출여부 매핑 목록. 단가는 정가×공급률로 파생.")
-    @GetMapping("/{id}/partner-prices")
-    public ApiResponse<java.util.List<PartnerPriceResponse>> getPartnerPrices(@PathVariable Long id) {
-        return ApiResponse.success(productService.getPartnerPrices(id));
-    }
-
-    @Operation(summary = "거래처별 단가 매핑 단건 조회(자동조회)",
-            description = "도서×거래처 매핑 조회. 매출등록 시 공급률·단가 자동조회용. 없으면 404.")
-    @GetMapping("/{id}/partner-prices/{partnerId}")
-    public ApiResponse<PartnerPriceResponse> getPartnerPrice(@PathVariable Long id, @PathVariable Long partnerId) {
-        return ApiResponse.success(productService.getPartnerPrice(id, partnerId));
-    }
-
-    @Operation(summary = "거래처별 단가·노출 매핑 등록/수정",
-            description = "도서×거래처 공급률·노출여부 upsert(있으면 수정, 없으면 생성).")
-    @PutMapping("/{id}/partner-prices/{partnerId}")
-    public ApiResponse<PartnerPriceResponse> upsertPartnerPrice(
-            @PathVariable Long id, @PathVariable Long partnerId, @Valid @RequestBody PartnerPriceRequest req) {
-        return ApiResponse.success(productService.upsertPartnerPrice(id, partnerId, req));
-    }
+    // ── 거래처별 단가(34p)는 별도 컨트롤러다 ──────────────────────────────
+    //   화면은 도서관리 3번째 탭이지만 데이터에 도서 차원이 없다 —
+    //   정본 34p가 "거래처별로 상품군(대분류)마다"라고 못박고 있다.
+    //   경로: /masters/partner-supply-rates (PartnerSupplyRateController).
 
     @Operation(summary = "도서 Y/N 항목 일괄 변경",
             description = """
@@ -150,25 +127,4 @@ public class ProductController {
         return ApiResponse.success(productService.bulkUpdateFlags(req));
     }
 
-    @Operation(summary = "거래처별 단가 일괄 적용",
-            description = """
-                    여러 거래처에 같은 공급률을 한 번에 적용한다.
-                    발주처가 공급률을 거래처구분별 대표값으로 운영해(특약점 일괄 70, B2B 일괄 85)
-                    건별 등록으로는 손이 너무 많이 가기 때문이다.
-
-                    · 기본은 **기존 매핑을 건드리지 않는다**(overwrite=false).
-                      예외 단가를 넣어둔 거래처가 일괄 적용에 조용히 덮이면 잘못된 금액으로 매출이 등록된다.
-                    · 건너뛴 거래처는 코드까지 응답에 담아, 예외가 지켜진 건지 누락인지 구분할 수 있게 한다.""")
-    @PutMapping("/{id}/partner-prices")
-    public ApiResponse<PartnerPriceBulkResult> bulkUpsertPartnerPrices(
-            @PathVariable Long id, @Valid @RequestBody PartnerPriceBulkRequest req) {
-        return ApiResponse.success(productService.bulkUpsertPartnerPrices(id, req));
-    }
-
-    @Operation(summary = "거래처별 단가 매핑 삭제")
-    @DeleteMapping("/{id}/partner-prices/{partnerId}")
-    public ApiResponse<Void> deletePartnerPrice(@PathVariable Long id, @PathVariable Long partnerId) {
-        productService.deletePartnerPrice(id, partnerId);
-        return ApiResponse.success(null);
-    }
 }

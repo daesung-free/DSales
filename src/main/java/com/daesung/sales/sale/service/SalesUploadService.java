@@ -8,7 +8,6 @@ import com.daesung.sales.common.sequence.SequenceService;
 import com.daesung.sales.partner.entity.Partner;
 import com.daesung.sales.partner.repository.PartnerRepository;
 import com.daesung.sales.product.entity.Product;
-import com.daesung.sales.product.repository.ProductPartnerPriceRepository;
 import com.daesung.sales.product.repository.ProductRepository;
 import com.daesung.sales.sale.dto.SalesUploadResponse;
 import com.daesung.sales.sale.entity.Sale;
@@ -50,7 +49,7 @@ public class SalesUploadService {
     private final SaleRepository saleRepository;
     private final PartnerRepository partnerRepository;
     private final ProductRepository productRepository;
-    private final ProductPartnerPriceRepository partnerPriceRepository;
+    private final com.daesung.sales.product.service.PartnerSupplyRateService partnerSupplyRateService;
     private final SequenceService sequenceService;
     private final PeriodLockService periodLockService;
 
@@ -112,9 +111,10 @@ public class SalesUploadService {
                     }
                     Integer supplyRate = rate(row, 7);
                     if (supplyRate == null) {
-                        supplyRate = partnerPriceRepository
-                                .findByProductIdAndPartnerId(product.getId(), partner.getId())
-                                .map(m -> m.getSupplyRate()).orElse(null);
+                        supplyRate = partnerSupplyRateService.rateFor(product, partner.getId());
+                        if (supplyRate == null) {
+                            supplyRate = product.getSupplyRate();   // 도서 기본정보 공급률(정본 34p 바탕값)
+                        }
                     }
                     if (unitPrice == null || supplyRate == null) {
                         throw new BusinessException(ErrorCode.INVALID_INPUT,

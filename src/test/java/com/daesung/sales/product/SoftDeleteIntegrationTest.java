@@ -79,12 +79,11 @@ class SoftDeleteIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("거래처별 단가 매핑 — 삭제는 논리삭제, 삭제 후 같은 도서×거래처 재등록 가능")
+    @DisplayName("거래처별 단가 매핑 — 삭제는 논리삭제, 삭제 후 같은 거래처×대분류 재등록 가능")
     void 단가매핑_논리삭제_재등록() {
-        long book = product("SD-BK", "논리삭제도서");
         long partner = createId("/masters/clients",
                 Map.of("code", "SD-CUST", "name", "논리삭제거래처", "type", "NORMAL"));
-        String path = "/masters/products/" + book + "/partner-prices/" + partner;
+        String path = "/masters/partner-supply-rates/" + partner + "/TEXTBOOK";
 
         put(path, Map.of("supplyRate", 70));
         assertThat(data(get(path)).path("supplyRate").asInt()).isEqualTo(70);
@@ -93,16 +92,16 @@ class SoftDeleteIntegrationTest extends IntegrationTestSupport {
         assertThat(get(path).path("success").asBoolean()).as("삭제 후 조회는 404").isFalse();
 
         Long deleted = jdbc.queryForObject(
-                "SELECT COUNT(*) FROM product_partner_price WHERE product_id = ? AND partner_id = ? "
-                        + "AND deleted_at IS NOT NULL AND deleted_by = 'admin'", Long.class, book, partner);
+                "SELECT COUNT(*) FROM partner_supply_rate WHERE partner_id = ? AND major_category = 'TEXTBOOK' "
+                        + "AND deleted_at IS NOT NULL AND deleted_by = 'admin'", Long.class, partner);
         assertThat(deleted).as("행은 남고 삭제자·시각이 기록돼야 함").isEqualTo(1);
 
         // 같은 조합 재등록 — del_key 없으면 여기서 유니크 충돌
         put(path, Map.of("supplyRate", 65));
         assertThat(data(get(path)).path("supplyRate").asInt()).as("재등록된 공급률").isEqualTo(65);
         assertThat(jdbc.queryForObject(
-                "SELECT COUNT(*) FROM product_partner_price WHERE product_id = ? AND partner_id = ?",
-                Long.class, book, partner)).as("삭제행 1 + 활성행 1").isEqualTo(2);
+                "SELECT COUNT(*) FROM partner_supply_rate WHERE partner_id = ? AND major_category = 'TEXTBOOK'",
+                Long.class, partner)).as("삭제행 1 + 활성행 1").isEqualTo(2);
     }
 
     @Test
