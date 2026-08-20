@@ -3,6 +3,8 @@ package com.daesung.sales.logistics.entity;
 import com.daesung.sales.common.entity.BaseEntity;
 import com.daesung.sales.partner.entity.Partner;
 import jakarta.persistence.Column;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
 import jakarta.persistence.GeneratedValue;
@@ -78,6 +80,30 @@ public class Shipment extends BaseEntity {
     @Column(name = "deleted_at")
     private LocalDateTime deletedAt;
 
+    /**
+     * 발송구분(택배/화물). 근거: 정본 26p 클라이언트 정정 2026-07-25.
+     * ⚠️기본값을 두지 않는다 — 정본이 "자동 기본값이 있는지"를 미해결로 남겼다.
+     * 임의로 정하면 물류가 고르지 않은 건까지 한쪽으로 발송된 것처럼 보인다.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "delivery_type", length = 10)
+    private DeliveryType deliveryType;
+
+    /** 수령인 — 정본 26p "'택배' 선택 시 담당자 정보가 노출". */
+    @Column(name = "receiver_name", length = 50)
+    private String receiverName;
+
+    @Column(name = "receiver_phone", length = 30)
+    private String receiverPhone;
+
+    /** 택배사(예: CJ대한통운). 수기·엑셀 일괄 입력. ⚠️택배사 API 연동은 하지 않는다. */
+    @Column(name = "courier_name", length = 30)
+    private String courierName;
+
+    /** 송장번호. 수기·엑셀 일괄 입력. */
+    @Column(name = "tracking_no", length = 50)
+    private String trackingNo;
+
     public static Shipment of(String tradeClass, LocalDate tradeDate, Partner partner,
                               String schoolCode, String schoolName, String memo) {
         Shipment s = new Shipment();
@@ -109,6 +135,37 @@ public class Shipment extends BaseEntity {
         }
         if (sendMemo != null) {
             this.sendMemo = sendMemo;
+        }
+    }
+
+    /**
+     * 발송구분·수령인 입력(26p). null인 항목은 건드리지 않는다 —
+     * 발송구분만 고치려다 수령인이 지워지면 택배가 누구에게 가는지 알 수 없게 된다.
+     */
+    public void updateDelivery(DeliveryType deliveryType, String receiverName, String receiverPhone) {
+        if (deliveryType != null) {
+            this.deliveryType = deliveryType;
+        }
+        if (receiverName != null) {
+            this.receiverName = receiverName;
+        }
+        if (receiverPhone != null) {
+            this.receiverPhone = receiverPhone;
+        }
+    }
+
+    /**
+     * 송장 기록(수기·엑셀 일괄). null인 항목은 건드리지 않는다.
+     *
+     * <p>택배사 API를 부르지 않는다 — 연동 여부가 아직 미확정이라(물류팀 인터뷰 대기)
+     * 지금은 사람이 받아 적은 값을 그대로 보관만 한다.
+     */
+    public void updateTracking(String courierName, String trackingNo) {
+        if (courierName != null) {
+            this.courierName = courierName;
+        }
+        if (trackingNo != null) {
+            this.trackingNo = trackingNo;
         }
     }
 

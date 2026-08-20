@@ -2,11 +2,20 @@ package com.daesung.sales.logistics.service;
 
 import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
+import com.daesung.sales.logistics.dto.ShippingUpdateRequest;
+import com.daesung.sales.logistics.dto.TrackingUploadResponse;
 import com.daesung.sales.logistics.entity.Shipment;
 import com.daesung.sales.logistics.repository.ShipmentRepository;
 import com.daesung.sales.sale.entity.Sale;
-import java.time.LocalDate;
+import java.io.IOException;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
+import org.apache.poi.ss.usermodel.Row;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.ss.usermodel.Workbook;
+import org.apache.poi.ss.usermodel.WorkbookFactory;
+import org.springframework.web.multipart.MultipartFile;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -52,12 +61,98 @@ public class ShipmentService {
         return getOrThrow(shipmentId).markPrinted(LocalDateTime.now());
     }
 
-    /** 물류 발송정보 입력(박스 수·발송일·발송메모). 근거: 작업요청서.vb:915. */
+    /**
+     * 물류 발송정보 입력. 박스 수·발송일·발송메모(작업요청서.vb:915)에
+     * 26p 확정 항목인 <b>발송구분·수령인·송장</b>을 함께 받는다.
+     *
+     * <p>보내지 않은 항목은 건드리지 않는다 — 박스 수만 고치려다 발송일이나
+     * 수령인이 지워지면 택배가 누구에게 가는지 알 수 없게 된다.
+     */
     @Transactional
-    public Shipment updateShipping(Long shipmentId, Integer boxCount, LocalDate sentDate, String sendMemo) {
+    public Shipment updateShipping(Long shipmentId, ShippingUpdateRequest req) {
         Shipment s = getOrThrow(shipmentId);
-        s.updateShipping(boxCount, sentDate, sendMemo);
+        s.updateShipping(req.boxCount(), req.sentDate(), req.sendMemo());
+        s.updateDelivery(req.deliveryType(), req.receiverName(), req.receiverPhone());
+        s.updateTracking(req.courierName(), req.trackingNo());
         return s;
+    }
+
+    /**
+     * 송장번호 엑셀 일괄 등록. 택배사에 넘긴 목록에 송장번호가 채워져 돌아오는 흐름을 그대로 받는다.
+     *
+     * <p>양식 3컬럼: <b>발송건ID · 택배사 · 송장번호</b>. 발송건ID로 맞추는 이유는,
+     * 거래처·학교 이름으로 맞추면 같은 날 같은 학교에 두 건이 나갈 때 어느 쪽인지 가릴 수 없기 때문이다
+     * (내보내는 양식에 ID를 넣어 두므로 담당자가 따로 채울 필요가 없다).
+     *
+     * <p>한 행이 실패해도 나머지는 반영한다 — 택배사 파일에 우리가 모르는 행이 섞여 있다고
+     * 전체가 취소되면, 담당자는 어느 줄이 문제인지 모른 채 처음부터 다시 해야 한다.
+     * ⚠️택배사 API를 부르지 않는다(연동 여부는 물류팀 인터뷰 회신 대기).
+     */
+    @Transactional
+    public TrackingUploadResponse uploadTracking(MultipartFile file) {
+        List<TrackingUploadResponse.Line> lines = new ArrayList<>();
+        int updated = 0;
+        int failed = 0;
+
+        try (Workbook wb = WorkbookFactory.create(file.getInputStream())) {
+            Sheet sheet = wb.getSheetAt(0);
+            for (int r = 1; r <= sheet.getLastRowNum(); r++) {   // 0행=헤더
+                Row row = sheet.getRow(r);
+                if (row == null) {
+                    continue;
+                }
+                Long id = longOrNull(row.getCell(0));
+                if (id == null) {
+                    continue;   // 발송건ID가 숫자가 아니면 설명행/빈행 → 스킵
+                }
+                int rowNo = r + 1;
+                String courier = str(row.getCell(1));
+                String tracking = str(row.getCell(2));
+                try {
+                    if (tracking == null || tracking.isBlank()) {
+                        throw new BusinessException(ErrorCode.INVALID_INPUT, "송장번호가 비어 있음");
+                    }
+                    Shipment s = shipmentRepository.findById(id).orElseThrow(() ->
+                            new BusinessException(ErrorCode.NOT_FOUND, "발송 건이 없습니다. id=" + id));
+                    s.updateTracking(courier, tracking);
+                    updated++;
+                    lines.add(new TrackingUploadResponse.Line(rowNo, "UPDATED", id, tracking, null));
+                } catch (BusinessException e) {
+                    failed++;
+                    lines.add(new TrackingUploadResponse.Line(rowNo, "ERROR", id, tracking, e.getMessage()));
+                }
+            }
+        } catch (IOException e) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "엑셀 파일을 읽을 수 없습니다: " + e.getMessage());
+        }
+        return new TrackingUploadResponse(updated, failed, lines);
+    }
+
+    private static String str(org.apache.poi.ss.usermodel.Cell c) {
+        if (c == null) {
+            return null;
+        }
+        return switch (c.getCellType()) {
+            case STRING -> c.getStringCellValue().trim();
+            // 송장번호가 숫자로 들어오면 지수표기(1.23E11)가 되지 않게 정수로 찍는다
+            case NUMERIC -> String.valueOf((long) c.getNumericCellValue());
+            default -> null;
+        };
+    }
+
+    private static Long longOrNull(org.apache.poi.ss.usermodel.Cell c) {
+        if (c == null) {
+            return null;
+        }
+        try {
+            return switch (c.getCellType()) {
+                case NUMERIC -> (long) c.getNumericCellValue();
+                case STRING -> Long.parseLong(c.getStringCellValue().trim());
+                default -> null;
+            };
+        } catch (NumberFormatException e) {
+            return null;
+        }
     }
 
     private Shipment getOrThrow(Long id) {

@@ -2,6 +2,7 @@ package com.daesung.sales.logistics.service;
 
 import com.daesung.sales.logistics.dto.WorkOrderResponse;
 import com.daesung.sales.logistics.dto.WorkResultRow;
+import com.daesung.sales.logistics.entity.DeliveryType;
 import com.daesung.sales.logistics.entity.Shipment;
 import com.daesung.sales.logistics.repository.ShipmentRepository;
 import com.daesung.sales.common.audit.CurrentAuditor;
@@ -71,7 +72,7 @@ public class WorkService {
         }
 
         List<WorkResultRow> rows = new ArrayList<>();
-        for (Shipment s : shipmentRepository.search(from, to, tradeClass, partnerId, printed)) {
+        for (Shipment s : shipmentRepository.search(from, to, tradeClass, partnerId, printed, null)) {
             String k = key(s.getTradeDate(), s.getPartner().getId(), s.getSchoolCode(), s.getTradeClass());
             List<ShipmentWarehouseAgg> whs = whByKey.getOrDefault(k, List.of());
 
@@ -98,7 +99,8 @@ public class WorkService {
 
     /** 작업요청서 — 발송 건 + 그 안에 담을 도서 목록(무엇을 몇 개 넣어라). */
     public List<WorkOrderResponse> workOrders(LocalDate from, LocalDate to, String tradeClass,
-                                              Long partnerId, Boolean printed) {
+                                              Long partnerId, Boolean printed,
+                                              DeliveryType deliveryType) {
         Map<String, List<WorkOrderResponse.Line>> linesByKey = new LinkedHashMap<>();
         for (WorkOrderLineAgg a : saleRepository.workOrderLines(from, to)) {
             linesByKey.computeIfAbsent(
@@ -110,15 +112,20 @@ public class WorkService {
         }
 
         List<WorkOrderResponse> out = new ArrayList<>();
-        for (Shipment s : shipmentRepository.search(from, to, tradeClass, partnerId, printed)) {
+        for (Shipment s : shipmentRepository.search(from, to, tradeClass, partnerId, printed, deliveryType)) {
             List<WorkOrderResponse.Line> lines = linesByKey.getOrDefault(
                     key(s.getTradeDate(), s.getPartner().getId(), s.getSchoolCode(), s.getTradeClass()),
                     List.of());
             long total = lines.stream().mapToLong(WorkOrderResponse.Line::qty).sum();
+            DeliveryType dt = s.getDeliveryType();
             out.add(new WorkOrderResponse(s.getId(), s.getTradeClass(), s.getTradeDate(),
                     s.getPartner().getCode(), s.getPartner().getName(),
                     s.getSchoolCode(), s.getSchoolName(), s.getPrintedAt() != null,
-                    s.getBoxCount(), s.getSentDate(), s.getSendMemo(), total, lines));
+                    s.getBoxCount(), s.getSentDate(), s.getSendMemo(),
+                    dt, (dt == null) ? null : dt.label(),
+                    s.getReceiverName(), s.getReceiverPhone(),
+                    s.getCourierName(), s.getTrackingNo(),
+                    total, lines));
         }
         return out;
     }

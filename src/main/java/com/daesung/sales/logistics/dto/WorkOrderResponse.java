@@ -1,5 +1,6 @@
 package com.daesung.sales.logistics.dto;
 
+import com.daesung.sales.logistics.entity.DeliveryType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDate;
 import java.util.List;
@@ -23,6 +24,12 @@ public record WorkOrderResponse(
         @Schema(description = "박스 수") int boxCount,
         @Schema(description = "발송일") LocalDate sentDate,
         @Schema(description = "발송메모") String sendMemo,
+        @Schema(description = "발송구분 코드(COURIER/FREIGHT). 미지정이면 null") DeliveryType deliveryType,
+        @Schema(description = "발송구분 명칭(택배/화물)") String deliveryTypeName,
+        @Schema(description = "수령인 — 정본 26p \"'택배' 선택 시 담당자 정보가 노출\"") String receiverName,
+        @Schema(description = "수령인 연락처") String receiverPhone,
+        @Schema(description = "택배사") String courierName,
+        @Schema(description = "송장번호") String trackingNo,
         @Schema(description = "총 수량") long totalQty,
         @Schema(description = "도서별 지시 목록") List<Line> lines
 ) {

@@ -1,5 +1,6 @@
 package com.daesung.sales.logistics.repository;
 
+import com.daesung.sales.logistics.entity.DeliveryType;
 import com.daesung.sales.logistics.entity.Shipment;
 import java.time.LocalDate;
 import java.util.List;
@@ -34,10 +35,12 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long> {
                and (:printed is null
                     or (:printed = true  and s.printedAt is not null)
                     or (:printed = false and s.printedAt is null))
+               and (:deliveryType is null or s.deliveryType = :deliveryType)
              order by s.tradeDate desc, p.code, s.schoolCode
             """)
     List<Shipment> search(@Param("from") LocalDate from, @Param("to") LocalDate to,
                           @Param("tradeClass") String tradeClass,
                           @Param("partnerId") Long partnerId,
-                          @Param("printed") Boolean printed);
+                          @Param("printed") Boolean printed,
+                          @Param("deliveryType") DeliveryType deliveryType);
 }
