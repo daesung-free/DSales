@@ -1,6 +1,7 @@
 package com.daesung.sales.sale.repository;
 
 import com.daesung.sales.sale.dto.AttendanceAgg;
+import com.daesung.sales.sale.dto.AttendancePeriodAgg;
 import com.daesung.sales.sale.dto.BookSalesAgg;
 import com.daesung.sales.sale.dto.CategorySalesAgg;
 import com.daesung.sales.sale.dto.PartnerProductSalesAgg;
@@ -467,6 +468,48 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     List<AttendanceAgg> attendanceYearly(@Param("year") int year,
                                          @Param("grade") String grade,
                                          @Param("productType") String productType);
+
+    /**
+     * 응시현황(기간별, 18p) 원자료. 지역·거래처·학교·학년·연월·처리구분별 인원(수량).
+     *
+     * <p><b>모의고사만</b> 집계한다. 판별은 상품의 <b>대분류</b>로 한다(세부구분 마스터 조인) —
+     * 레거시({@code 고사별처리인원.vb})는 {@code catCode in ('M22A','M22B')}처럼
+     * <b>분류코드에 박힌 연도</b>로 걸렀고, 그래서 해마다 SQL을 새로 써야 했다.
+     * 2022년 이후 분기를 아무도 안 써서 화면이 "2022년까지만 조회 가능"으로 멈춘 것이 그 결과다.
+     * 대분류로 거르면 연도 의존이 사라진다.
+     *
+     * <p>처리/비처리는 {@code proc_type}으로 가른다(미지정=비처리, 37p와 같은 규칙).
+     * 레거시는 이걸 도서명 문자열({@code bookName like '%11월%고3%1영역%'})로 긁었는데,
+     * 도서 명명 규칙이 해마다 바뀌는 것이 하드코딩의 근본 원인이었다.
+     *
+     * <p>매출(SALE)만 — 응시 인원이라 증정·반품은 대상이 아니다. 취소 제외.
+     */
+    @Query("""
+            select p.region as region, p.code as partnerCode, p.name as partnerName,
+                   coalesce(s.schoolCode, '') as schoolCode,
+                   coalesce(s.schoolName, '') as schoolName,
+                   coalesce(b.grade, '') as grade,
+                   year(s.salesDate) as year, month(s.salesDate) as month,
+                   sum(case when s.procType = com.daesung.sales.sale.entity.ProcType.GRADED
+                            then s.qty else 0 end) as gradedQty,
+                   sum(case when s.procType = com.daesung.sales.sale.entity.ProcType.GRADED
+                            then 0 else s.qty end) as ungradedQty
+              from Sale s join s.partner p join s.product b
+                   join SalesDivision d on d.code = b.salesDivision
+             where s.canceled = false
+               and s.salesCategory = com.daesung.sales.salestype.entity.SalesCategory.SALE
+               and d.majorCategory = com.daesung.sales.product.entity.MajorCategory.MOCK_EXAM
+               and s.salesDate between :fromDate and :toDate
+               and (:grade is null or b.grade = :grade)
+               and (:partnerId is null or p.id = :partnerId)
+             group by p.region, p.code, p.name, s.schoolCode, s.schoolName, b.grade,
+                      year(s.salesDate), month(s.salesDate)
+             order by p.region, p.code, s.schoolCode, b.grade
+            """)
+    List<AttendancePeriodAgg> attendancePeriod(@Param("fromDate") LocalDate fromDate,
+                                               @Param("toDate") LocalDate toDate,
+                                               @Param("grade") String grade,
+                                               @Param("partnerId") Long partnerId);
 
     /**
      * 발송 단위(일자·거래처·학교·분류)의 출고 창고. 작업결과의 '출고창고' 컬럼·필터.

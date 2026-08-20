@@ -1,8 +1,11 @@
 package com.daesung.sales.sale.service;
 
 import com.daesung.sales.sale.dto.AttendanceAgg;
+import com.daesung.sales.sale.dto.AttendancePeriodAgg;
+import com.daesung.sales.sale.dto.AttendancePeriodResponse;
 import com.daesung.sales.sale.dto.AttendanceResponse;
 import com.daesung.sales.sale.repository.SaleRepository;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -61,6 +64,177 @@ public class AttendanceService {
         }
         rows.add(grand.toRow("TOTAL"));
         return new AttendanceResponse(year, rows);
+    }
+
+    /**
+     * 응시현황(기간별, 18p). 지역·거래처·학교·학년별 월 크로스탭 + 처리/비처리/계.
+     *
+     * <p>★레거시({@code 고사별처리인원.vb})가 죽은 이유를 반복하지 않는 것이 이 구현의 요지다.
+     * 그쪽은 월·학년·영역을 SQL에 하드코딩하고 <b>연도마다 3천 줄을 복붙</b>했다:
+     * <pre>
+     *   If catYear &lt;= 2017 Then ... ElseIf catYear = 2021 Then ...
+     *   ElseIf catYear &gt; 2023 Then MessageBox("2022년 까지만 조회 가능합니다")
+     * </pre>
+     * 그래야 했던 까닭은 두 가지다 — 모의고사 판별을 <b>연도가 박힌 분류코드</b>
+     * ({@code catCode in ('M22A','M22B')})로 했고, 영역·월을
+     * <b>도서명 문자열</b>({@code bookName like '%11월%고3%1영역%'})로 긁었기 때문이다.
+     * 도서 명명 규칙이 해마다 바뀌니 매년 사람이 SQL을 새로 써야 했고, 2022년에 멈췄다.
+     *
+     * <p>우리는 둘 다 쓰지 않는다. 모의고사는 <b>대분류</b>로 거르고(연도 무관),
+     * 처리/비처리는 {@code proc_type}으로 가르며, 월 칸은 <b>조회 기간에서 만든다</b>.
+     * 그래서 해가 바뀌어도 손댈 곳이 없다.
+     *
+     * @param grade     학년 필터(null=전체)
+     * @param partnerId 거래처 필터(null=전체)
+     */
+    public AttendancePeriodResponse period(LocalDate fromDate, LocalDate toDate,
+                                           String grade, Long partnerId) {
+        List<String> months = monthsBetween(fromDate, toDate);
+        Map<String, Integer> monthIndex = new LinkedHashMap<>();
+        for (int i = 0; i < months.size(); i++) {
+            monthIndex.put(months.get(i), i);
+        }
+
+        // 학교×학년 단위로 월 칸을 채운다(빈 달은 0).
+        Map<String, PeriodBucket> byKey = new LinkedHashMap<>();
+        for (AttendancePeriodAgg a : saleRepository.attendancePeriod(fromDate, toDate,
+                blankToNull(grade), partnerId)) {
+            String region = nz(a.getRegion());
+            String key = region + "|" + nz(a.getPartnerCode()) + "|" + nz(a.getSchoolCode())
+                    + "|" + nz(a.getGrade());
+            PeriodBucket b = byKey.computeIfAbsent(key, k -> new PeriodBucket(months.size(),
+                    region, a.getPartnerCode(), a.getPartnerName(),
+                    a.getSchoolCode(), a.getSchoolName(), a.getGrade()));
+            Integer idx = monthIndex.get(String.format("%04d-%02d", a.getYear(), a.getMonth()));
+            if (idx == null) {
+                continue;   // 기간 밖(있을 수 없지만 방어)
+            }
+            b.graded[idx] += num(a.getGradedQty());
+            b.ungraded[idx] += num(a.getUngradedQty());
+        }
+
+        // 지역 → 거래처 → 학교 순으로 묶어 소계·총계를 만든다(레거시 rollup 순서와 같다).
+        List<AttendancePeriodResponse.Row> rows = new ArrayList<>();
+        PeriodBucket grand = new PeriodBucket(months.size(), null, null, null, null, null, null);
+        String curRegion = null;
+        String curPartner = null;
+        PeriodBucket regionSub = null;
+        PeriodBucket partnerSub = null;
+
+        for (PeriodBucket b : sortedBuckets(byKey.values())) {
+            if (partnerSub != null && !java.util.Objects.equals(b.partnerCode, curPartner)) {
+                rows.add(partnerSub.toRow("PARTNER_SUBTOTAL"));
+                partnerSub = null;
+            }
+            if (regionSub != null && !java.util.Objects.equals(b.region, curRegion)) {
+                rows.add(regionSub.toRow("REGION_SUBTOTAL"));
+                regionSub = null;
+            }
+            if (regionSub == null) {
+                curRegion = b.region;
+                regionSub = new PeriodBucket(months.size(), b.region, null, null, null, null, null);
+            }
+            if (partnerSub == null) {
+                curPartner = b.partnerCode;
+                partnerSub = new PeriodBucket(months.size(), b.region, b.partnerCode, b.partnerName,
+                        null, null, null);
+            }
+            rows.add(b.toRow("SCHOOL"));
+            partnerSub.add(b);
+            regionSub.add(b);
+            grand.add(b);
+        }
+        if (partnerSub != null) {
+            rows.add(partnerSub.toRow("PARTNER_SUBTOTAL"));
+        }
+        if (regionSub != null) {
+            rows.add(regionSub.toRow("REGION_SUBTOTAL"));
+        }
+        rows.add(grand.toRow("TOTAL"));
+
+        return new AttendancePeriodResponse(fromDate, toDate, months, rows);
+    }
+
+    /** 지역 → 거래처 → 학교 → 학년 순. rollup은 같은 값이 연속으로 붙어 있어야 성립한다. */
+    private static List<PeriodBucket> sortedBuckets(java.util.Collection<PeriodBucket> src) {
+        List<PeriodBucket> list = new ArrayList<>(src);
+        list.sort(java.util.Comparator
+                .comparing((PeriodBucket b) -> nz(b.region))
+                .thenComparing(b -> nz(b.partnerCode))
+                .thenComparing(b -> nz(b.schoolCode))
+                .thenComparing(b -> nz(b.grade)));
+        return list;
+    }
+
+    /**
+     * 조회 기간이 포함하는 월 목록(yyyy-MM). <b>여기가 레거시와 갈리는 지점</b> —
+     * 월을 상수로 두지 않으니 해가 바뀌어도, 기간이 해를 넘겨도 손댈 곳이 없다.
+     */
+    private static List<String> monthsBetween(LocalDate from, LocalDate to) {
+        List<String> out = new ArrayList<>();
+        java.time.YearMonth cur = java.time.YearMonth.from(from);
+        java.time.YearMonth end = java.time.YearMonth.from(to);
+        while (!cur.isAfter(end)) {
+            out.add(String.format("%04d-%02d", cur.getYear(), cur.getMonthValue()));
+            cur = cur.plusMonths(1);
+        }
+        return out;
+    }
+
+    private static long num(Long v) {
+        return (v == null) ? 0L : v;
+    }
+
+    private static String nz(String v) {
+        return (v == null) ? "" : v;
+    }
+
+    /** 월 칸 누적 통. 소계·총계도 같은 통을 써서 합산 규칙이 갈리지 않게 한다. */
+    private static final class PeriodBucket {
+        private final String region;
+        private final String partnerCode;
+        private final String partnerName;
+        private final String schoolCode;
+        private final String schoolName;
+        private final String grade;
+        private final long[] graded;
+        private final long[] ungraded;
+
+        private PeriodBucket(int months, String region, String partnerCode, String partnerName,
+                             String schoolCode, String schoolName, String grade) {
+            this.region = region;
+            this.partnerCode = partnerCode;
+            this.partnerName = partnerName;
+            this.schoolCode = schoolCode;
+            this.schoolName = schoolName;
+            this.grade = grade;
+            this.graded = new long[months];
+            this.ungraded = new long[months];
+        }
+
+        private void add(PeriodBucket o) {
+            for (int i = 0; i < graded.length; i++) {
+                graded[i] += o.graded[i];
+                ungraded[i] += o.ungraded[i];
+            }
+        }
+
+        private AttendancePeriodResponse.Row toRow(String rowType) {
+            List<Long> g = new ArrayList<>(graded.length);
+            List<Long> u = new ArrayList<>(graded.length);
+            List<Long> t = new ArrayList<>(graded.length);
+            long tg = 0;
+            long tu = 0;
+            for (int i = 0; i < graded.length; i++) {
+                g.add(graded[i]);
+                u.add(ungraded[i]);
+                t.add(graded[i] + ungraded[i]);
+                tg += graded[i];
+                tu += ungraded[i];
+            }
+            return new AttendancePeriodResponse.Row(rowType, region, partnerCode, partnerName,
+                    schoolCode, schoolName, grade, g, u, t, tg, tu, tg + tu);
+        }
     }
 
     /**

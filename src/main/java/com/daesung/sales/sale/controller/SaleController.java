@@ -10,6 +10,7 @@ import com.daesung.sales.sale.dto.NetSalesResponse;
 import com.daesung.sales.sale.dto.ReturnInboundRequest;
 import com.daesung.sales.sale.dto.ReturnableResponse;
 import com.daesung.sales.sale.dto.RoundWorkStatusRow;
+import com.daesung.sales.sale.dto.AttendancePeriodResponse;
 import com.daesung.sales.sale.dto.AttendanceResponse;
 import com.daesung.sales.sale.dto.SaleResponse;
 import com.daesung.sales.sale.dto.SalesEntryRequest;
@@ -430,5 +431,69 @@ public class SaleController {
         cols.add(new com.daesung.sales.common.excel.ExcelExportUtil.Col("합계[매출]", "totalAmount"));
         byte[] xlsx = excel.toXlsx("응시현황", cols, attendanceService.yearly(year, grade, productType).rows());
         return excel.asDownload(xlsx, "응시현황_연도별.xlsx");
+    }
+
+    @Operation(summary = "응시현황(기간별) 18p",
+            description = """
+                    모의고사 응시(처리)현황을 **기간별**로 본다.
+                    행은 지역 · 특약점 · 학교 · 학년, 열은 **조회 기간의 각 월** × 처리/비처리/계.
+                    소계는 학교 → 특약점 → 지역 → 총계 순으로 붙는다.
+
+                    · **모의고사만** 집계한다. 판별은 상품의 **대분류**로 한다.
+                    · 처리/비처리는 매출등록의 성적처리 구분(`procType`)이다(미지정=비처리).
+                    · 인원 = 매출 수량. 매출(SALE)만 — 증정·반품은 응시가 아니다.
+                    · 월 컬럼 개수는 **조회 기간에 따라 달라진다**. 응답 `months`(yyyy-MM)가
+                      `monthlyGraded`/`monthlyUngraded`/`monthlyTotal` 배열의 순서를 알려준다.
+
+                    ⚠️레거시(`고사별처리인원.vb`)는 이 화면이 **"2022년까지만 조회 가능"** 으로 막혀 있었다.
+                    정본에는 '2022년 이후 데이터 미유입'으로 적혀 있으나 실측 결과 원인은 데이터가 아니라
+                    **코드**였다 — 모의고사 판별을 연도가 박힌 분류코드(`catCode in ('M22A','M22B')`)로 하고
+                    영역·월을 도서명 문자열로 긁어서, 연도마다 SQL을 복붙해야 했고 2022년에 멈춘 것이다.
+                    여기서는 연도에 의존하는 부분을 두지 않아 해가 바뀌어도 손댈 곳이 없다.""")
+    @GetMapping("/attendance-period")
+    public ApiResponse<AttendancePeriodResponse> attendancePeriod(
+            @Parameter(description = "시작일(yyyy-MM-dd)", required = true) @RequestParam(name = "fromDate")
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @Parameter(description = "종료일(yyyy-MM-dd)", required = true) @RequestParam(name = "toDate")
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @Parameter(description = "학년 필터(도서 학년). 미지정=전체", example = "고3")
+            @RequestParam(required = false) String grade,
+            @Parameter(description = "거래처(특약점) 필터. 미지정=전체")
+            @RequestParam(required = false) Long partnerId) {
+        return ApiResponse.success(attendanceService.period(fromDate, toDate, grade, partnerId));
+    }
+
+    @Operation(summary = "응시현황(기간별) 엑셀 다운로드",
+            description = "월 컬럼은 조회 기간에서 만들어지므로 기간에 따라 열 개수가 달라진다.")
+    @GetMapping("/attendance-period/export")
+    public org.springframework.http.ResponseEntity<byte[]> attendancePeriodExport(
+            @RequestParam(name = "fromDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam(name = "toDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @RequestParam(required = false) String grade,
+            @RequestParam(required = false) Long partnerId) {
+        AttendancePeriodResponse res = attendanceService.period(fromDate, toDate, grade, partnerId);
+        var cols = new java.util.ArrayList<com.daesung.sales.common.excel.ExcelExportUtil.Col>();
+        cols.add(new com.daesung.sales.common.excel.ExcelExportUtil.Col("구분", "rowType"));
+        cols.add(new com.daesung.sales.common.excel.ExcelExportUtil.Col("지역", "region"));
+        cols.add(new com.daesung.sales.common.excel.ExcelExportUtil.Col("특약점코드", "partnerCode"));
+        cols.add(new com.daesung.sales.common.excel.ExcelExportUtil.Col("특약점명", "partnerName"));
+        cols.add(new com.daesung.sales.common.excel.ExcelExportUtil.Col("학교코드", "schoolCode"));
+        cols.add(new com.daesung.sales.common.excel.ExcelExportUtil.Col("학교명", "schoolName"));
+        cols.add(new com.daesung.sales.common.excel.ExcelExportUtil.Col("학년", "grade"));
+        // 월 컬럼은 응답이 알려준 목록으로 만든다 — 상수로 두면 레거시와 같은 하드코딩이 된다.
+        for (int i = 0; i < res.months().size(); i++) {
+            String m = res.months().get(i);
+            cols.add(new com.daesung.sales.common.excel.ExcelExportUtil.Col(
+                    m + "[처리]", "monthlyGraded[" + i + "]"));
+            cols.add(new com.daesung.sales.common.excel.ExcelExportUtil.Col(
+                    m + "[비처리]", "monthlyUngraded[" + i + "]"));
+            cols.add(new com.daesung.sales.common.excel.ExcelExportUtil.Col(
+                    m + "[계]", "monthlyTotal[" + i + "]"));
+        }
+        cols.add(new com.daesung.sales.common.excel.ExcelExportUtil.Col("합계[처리]", "gradedTotal"));
+        cols.add(new com.daesung.sales.common.excel.ExcelExportUtil.Col("합계[비처리]", "ungradedTotal"));
+        cols.add(new com.daesung.sales.common.excel.ExcelExportUtil.Col("합계[계]", "total"));
+        byte[] xlsx = excel.toXlsx("응시현황(기간별)", cols, res.rows());
+        return excel.asDownload(xlsx, "응시현황_기간별_" + fromDate + "_" + toDate + ".xlsx");
     }
 }
