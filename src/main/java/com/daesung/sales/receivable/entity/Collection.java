@@ -1,6 +1,6 @@
 package com.daesung.sales.receivable.entity;
 
-import com.daesung.sales.common.entity.BaseEntity;
+import com.daesung.sales.common.entity.SoftDeletableEntity;
 import com.daesung.sales.partner.entity.Partner;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -17,6 +17,7 @@ import java.time.LocalDate;
 import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
+import org.hibernate.annotations.SQLRestriction;
 
 /**
  * 수금(amtData 정규화). 채권 잔액에서 차감. 어음 필드는 입금구분=어음일 때만.
@@ -26,9 +27,10 @@ import lombok.NoArgsConstructor;
  */
 @Entity
 @Table(name = "collection")
+@SQLRestriction("deleted_at is null")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class Collection extends BaseEntity {
+public class Collection extends SoftDeletableEntity {
 
     /** 레거시 화면이 고정으로 넣던 값. 미입력 시 이 값으로 채운다. */
     public static final String DEFAULT_KIND = "도서대금";
@@ -109,5 +111,34 @@ public class Collection extends BaseEntity {
         }
         c.memo = memo;
         return c;
+    }
+
+    /**
+     * 수정(23p "CRUD 전체"). 수금번호·거래처는 바꾸지 않는다 —
+     * 거래처를 옮기면 두 거래처의 채권 잔액이 동시에 틀어지고, 그건 수정이 아니라 취소 후 재등록이다.
+     *
+     * <p>입금구분을 어음이 아닌 값으로 바꾸면 어음 정보를 <b>지운다</b>. 남겨두면
+     * "현금인데 어음번호가 붙은" 행이 생겨, 어음 관리 화면에 유령 어음이 뜬다.
+     */
+    public void update(LocalDate collDate, LocalDate writeDate, String collKind,
+                       CollectionType collType, long collAmt, String promissoryNo,
+                       LocalDate promissoryDue, String bankName, String branchName, String memo) {
+        this.collDate = collDate;
+        this.writeDate = writeDate;
+        this.collKind = (collKind == null || collKind.isBlank()) ? DEFAULT_KIND : collKind.trim();
+        this.collType = collType;
+        this.collAmt = collAmt;
+        if (collType == CollectionType.PROMISSORY) {
+            this.promissoryNo = promissoryNo;
+            this.promissoryDue = promissoryDue;
+            this.bankName = bankName;
+            this.branchName = branchName;
+        } else {
+            this.promissoryNo = null;
+            this.promissoryDue = null;
+            this.bankName = null;
+            this.branchName = null;
+        }
+        this.memo = memo;
     }
 }

@@ -9,6 +9,7 @@ import com.daesung.sales.receivable.dto.ArLedgerResponse;
 import com.daesung.sales.receivable.dto.ArStatusResponse;
 import com.daesung.sales.receivable.dto.CarryforwardResult;
 import com.daesung.sales.receivable.dto.CollectionRequest;
+import com.daesung.sales.receivable.dto.CollectionLedgerResponse;
 import com.daesung.sales.receivable.dto.CollectionResponse;
 import com.daesung.sales.receivable.entity.CollectionType;
 import com.daesung.sales.receivable.service.ReceivableService;
@@ -23,7 +24,10 @@ import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -75,6 +79,91 @@ public class ReceivableController {
             @ParameterObject PageRequestDto pageReq) {
         return ApiResponse.success(receivableService.searchCollections(
                 fromDate, toDate, partnerId, collKind, collType, pageReq.toPageable()));
+    }
+
+    @Operation(summary = "수금 수정",
+            description = """
+                    수금 내용을 고친다(23p "CRUD 전체 가능 화면").
+                    **수금번호·거래처는 바꿀 수 없다** — 거래처를 옮기면 두 거래처의 채권 잔액이
+                    동시에 틀어진다. 그건 수정이 아니라 취소 후 재등록이다.
+
+                    · **원래 달과 옮겨 갈 달 양쪽**의 월마감을 본다. 옮겨 갈 달만 검사하면
+                      마감된 달에서 열린 달로 금액을 빼내는 길이 열린다.
+                    · 입금구분을 어음이 아닌 값으로 바꾸면 어음 정보를 지운다 —
+                      남겨두면 "현금인데 어음번호가 붙은" 유령 어음이 생긴다.""")
+    @PutMapping("/collections/{id}")
+    public ApiResponse<CollectionResponse> updateCollection(@PathVariable Long id,
+                                                            @Valid @RequestBody CollectionRequest req) {
+        return ApiResponse.success(receivableService.updateCollection(id, req));
+    }
+
+    @Operation(summary = "수금 삭제(논리삭제)",
+            description = """
+                    수금을 지운다. **행은 남고 삭제자·시각이 기록된다.**
+
+                    수금은 돈이 들어온 기록이라 지우면 그만큼 **채권 잔액이 늘어난다**.
+                    누가 언제 지웠는지 남지 않으면 잔액이 왜 달라졌는지 설명할 수 없다.
+                    삭제분은 미수금현황·외상매출장·이월 스냅샷 계산에서 모두 빠진다.
+
+                    ⚠️레거시는 이 기능이 주석 처리돼 막혀 있었으나 정본 23p가 "CRUD 전체"를 요구한다.
+                    마감된 달의 수금은 지울 수 없다(PERIOD_LOCKED).""")
+    @DeleteMapping("/collections/{id}")
+    public ApiResponse<Void> deleteCollection(@PathVariable Long id) {
+        receivableService.deleteCollection(id);
+        return ApiResponse.success(null);
+    }
+
+    @Operation(summary = "수금 조회(소계 포함) 23p",
+            description = """
+                    수금관리 화면의 본 조회. **조회대상기준 3종**과 **소계**가 붙는다.
+
+                    · `WRITE_DATE`(기장일자) — **기본값**. 기장일자로 걸러 날짜순.
+                      ⚠️기장일자가 비어 있는 건(아직 기표 전)은 이 기준에서 빠진다.
+                    · `COLLECT_DATE`(수금일자) — 수금일자로 걸러 날짜순.
+                    · `PARTNER`(거래처) — 날짜는 수금일자로 걸러 **거래처순**으로 묶는다.
+
+                    소계는 레거시 실물 그대로다 — 날짜 기준은 **일 계·월 계·누 계** 3단,
+                    거래처 기준은 **소 계(거래처코드 첫 글자 그룹)·누 계**.
+                    정본은 '일계'만 적었지만 레거시는 더 촘촘하다.
+
+                    **페이징하지 않는다** — 소계는 앞뒤 행이 다 있어야 성립해서,
+                    페이지를 자르면 잘린 지점의 소계가 틀린 값이 된다.
+                    등록·수정용 그리드는 `GET /closing/collections`(페이징)를 쓴다.""")
+    @GetMapping("/collections/ledger")
+    public ApiResponse<CollectionLedgerResponse> collectionLedger(
+            @Parameter(description = "조회대상기준(미지정 시 기장일자)")
+            @RequestParam(required = false) CollectionLedgerResponse.Basis basis,
+            @Parameter(description = "시작일", required = true) @RequestParam(name = "fromDate")
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @Parameter(description = "종료일", required = true) @RequestParam(name = "toDate")
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @RequestParam(required = false) Long partnerId,
+            @Parameter(description = "수금구분(명목)") @RequestParam(required = false) String collKind,
+            @Parameter(description = "입금구분(형태)") @RequestParam(required = false) CollectionType collType) {
+        return ApiResponse.success(receivableService.collectionLedger(
+                basis, fromDate, toDate, partnerId, collKind, collType));
+    }
+
+    @Operation(summary = "수금 조회 엑셀 다운로드(소계 포함)")
+    @GetMapping("/collections/ledger/export")
+    public ResponseEntity<byte[]> collectionLedgerExport(
+            @RequestParam(required = false) CollectionLedgerResponse.Basis basis,
+            @RequestParam(name = "fromDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam(name = "toDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @RequestParam(required = false) Long partnerId,
+            @RequestParam(required = false) String collKind,
+            @RequestParam(required = false) CollectionType collType) {
+        List<Col> cols = List.of(
+                new Col("구분", "rowType"), new Col("소계명", "label"),
+                new Col("수금일자", "collDate"), new Col("기장일자", "writeDate"),
+                new Col("거래처코드", "partnerCode"), new Col("거래처명", "partnerName"),
+                new Col("수금구분", "collKind"), new Col("입금구분", "collTypeName"),
+                new Col("금액", "collAmt"), new Col("어음번호", "promissoryNo"),
+                new Col("만기일자", "promissoryDue"), new Col("은행명", "bankName"),
+                new Col("지점명", "branchName"), new Col("비고", "memo"));
+        byte[] xlsx = excel.toXlsx("수금관리", cols, receivableService.collectionLedger(
+                basis, fromDate, toDate, partnerId, collKind, collType).rows());
+        return excel.asDownload(xlsx, "수금관리_" + fromDate + "_" + toDate + ".xlsx");
     }
 
     @Operation(summary = "채권 이월 스냅샷 생성(idempotent)",

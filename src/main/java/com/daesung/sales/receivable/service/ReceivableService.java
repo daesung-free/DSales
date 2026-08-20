@@ -11,6 +11,7 @@ import com.daesung.sales.receivable.dto.ArLedgerResponse;
 import com.daesung.sales.receivable.dto.ArStatusResponse;
 import com.daesung.sales.receivable.dto.CarryforwardResult;
 import com.daesung.sales.receivable.dto.CollectionRequest;
+import com.daesung.sales.receivable.dto.CollectionLedgerResponse;
 import com.daesung.sales.receivable.dto.CollectionResponse;
 import com.daesung.sales.receivable.entity.Collection;
 import com.daesung.sales.receivable.entity.CollectionType;
@@ -53,6 +54,7 @@ public class ReceivableService {
     private final SaleRepository saleRepository;
     private final PartnerRepository partnerRepository;
     private final PeriodLockService periodLockService;
+    private final com.daesung.sales.common.audit.CurrentAuditor currentAuditor;
 
     /** 수금 등록. 수금번호(C) 채번. 어음정보는 유형=어음일 때만 저장(엔티티에서 처리). */
     @Transactional
@@ -76,6 +78,131 @@ public class ReceivableService {
         String kind = (collKind == null || collKind.isBlank()) ? null : collKind.trim();
         return PageResponse.of(collectionRepository.search(from, to, partnerId, kind, collType, pageable)
                 .map(CollectionResponse::from));
+    }
+
+    /**
+     * 수금 수정(23p "CRUD 전체"). 수금번호·거래처는 불변 —
+     * 거래처를 옮기면 두 거래처의 채권 잔액이 동시에 틀어진다(취소 후 재등록이 맞다).
+     *
+     * <p><b>바뀐 날짜와 원래 날짜 양쪽</b>의 월마감을 본다. 옮겨 갈 달만 검사하면
+     * 마감된 달에서 열린 달로 빼내는 길이 열려, 마감 후에도 그 달 금액을 바꿀 수 있게 된다.
+     */
+    @Transactional
+    public CollectionResponse updateCollection(Long id, CollectionRequest req) {
+        Collection c = getCollectionOrThrow(id);
+        periodLockService.assertNotLocked(c.getCollDate());     // 원래 귀속 월
+        periodLockService.assertNotLocked(req.collDate());      // 옮겨 갈 월
+        c.update(req.collDate(), req.writeDate(), req.collKind(), req.collType(), req.collAmt(),
+                req.promissoryNo(), req.promissoryDue(), req.bankName(), req.branchName(), req.memo());
+        return CollectionResponse.from(c);
+    }
+
+    /**
+     * 수금 삭제(논리삭제). 레거시는 이 기능이 주석 처리돼 막혀 있었으나(수금관리.vb:356)
+     * 정본 23p가 "CRUD 전체 가능 화면"을 요구한다.
+     *
+     * <p>물리삭제하지 않는 이유: 수금은 돈이 들어온 기록이라 지우면 그만큼 <b>채권 잔액이 늘어난다</b>.
+     * 누가 언제 지웠는지 남지 않으면 잔액이 왜 달라졌는지 설명할 수 없다.
+     */
+    @Transactional
+    public void deleteCollection(Long id) {
+        Collection c = getCollectionOrThrow(id);
+        periodLockService.assertNotLocked(c.getCollDate());
+        c.markDeleted(currentAuditor.username());
+    }
+
+    private Collection getCollectionOrThrow(Long id) {
+        return collectionRepository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "수금이 없습니다. id=" + id));
+    }
+
+    /**
+     * 수금관리(23p) 조회 — 조회대상기준 3종 + 소계. 근거: 레거시 수금관리.vb:146~227.
+     *
+     * <p>레거시가 붙이는 소계는 정본이 적은 '일계'보다 촘촘하다 —
+     * 날짜 기준은 <b>일계·월계·누계</b> 3단, 거래처 기준은 <b>소계(거래처코드 첫 글자 그룹)·누계</b>다.
+     * 그대로 옮긴다.
+     *
+     * <p>페이징하지 않는다. 소계는 앞뒤 행이 다 있어야 성립해서 잘린 지점의 소계가 틀린 값이 된다.
+     */
+    @Transactional(readOnly = true)
+    public CollectionLedgerResponse collectionLedger(CollectionLedgerResponse.Basis basis,
+                                                     LocalDate fromDate, LocalDate toDate,
+                                                     Long partnerId, String collKind,
+                                                     CollectionType collType) {
+        CollectionLedgerResponse.Basis b =
+                (basis == null) ? CollectionLedgerResponse.Basis.WRITE_DATE : basis;   // 레거시 기본 선택
+        boolean byWrite = (b == CollectionLedgerResponse.Basis.WRITE_DATE);
+        boolean byPartner = (b == CollectionLedgerResponse.Basis.PARTNER);
+        String kind = (collKind == null || collKind.isBlank()) ? null : collKind.trim();
+
+        List<Collection> src = collectionRepository.ledger(
+                fromDate, toDate, partnerId, kind, collType, byWrite, byPartner);
+
+        List<CollectionLedgerResponse.Row> rows = new ArrayList<>();
+        long running = 0;
+        long dayOrGroup = 0;
+        long month = 0;
+        String prevDay = null;
+        String prevKey = null;
+
+        for (Collection c : src) {
+            String day = String.valueOf(byWrite ? c.getWriteDate() : c.getCollDate());
+            // 거래처 기준의 그룹 키는 거래처코드 첫 글자다(레거시 custCode.Substring(0,1)).
+            String key = byPartner ? groupOf(c.getPartner().getCode()) : day;
+
+            if (prevKey != null && !prevKey.equals(key)) {
+                if (byPartner) {
+                    rows.add(CollectionLedgerResponse.Row.subtotal("GROUP_SUBTOTAL", "소 계", dayOrGroup));
+                    rows.add(CollectionLedgerResponse.Row.subtotal("RUNNING_TOTAL", "누 계", running));
+                } else {
+                    rows.add(CollectionLedgerResponse.Row.subtotal("DAY_SUBTOTAL", "일 계", dayOrGroup));
+                    if (!month(prevDay).equals(month(day))) {   // 달이 바뀌면 월계·누계도(레거시 순서 그대로)
+                        rows.add(CollectionLedgerResponse.Row.subtotal("MONTH_SUBTOTAL", "월 계", month));
+                        rows.add(CollectionLedgerResponse.Row.subtotal("RUNNING_TOTAL", "누 계", running));
+                        month = 0;
+                    }
+                }
+                dayOrGroup = 0;
+            }
+
+            rows.add(detailRow(c));
+            dayOrGroup += c.getCollAmt();
+            month += c.getCollAmt();
+            running += c.getCollAmt();
+            prevDay = day;
+            prevKey = key;
+        }
+
+        if (prevKey != null) {
+            if (byPartner) {
+                rows.add(CollectionLedgerResponse.Row.subtotal("GROUP_SUBTOTAL", "소 계", dayOrGroup));
+            } else {
+                rows.add(CollectionLedgerResponse.Row.subtotal("DAY_SUBTOTAL", "일 계", dayOrGroup));
+                rows.add(CollectionLedgerResponse.Row.subtotal("MONTH_SUBTOTAL", "월 계", month));
+            }
+            rows.add(CollectionLedgerResponse.Row.subtotal("RUNNING_TOTAL", "누 계", running));
+        }
+
+        return new CollectionLedgerResponse(b, b.label(), fromDate, toDate, rows, running);
+    }
+
+    /** 거래처 그룹 = 거래처코드 첫 글자(레거시 custCode.Substring(0,1)). 코드가 비면 빈 그룹. */
+    private static String groupOf(String partnerCode) {
+        return (partnerCode == null || partnerCode.isEmpty()) ? "" : partnerCode.substring(0, 1);
+    }
+
+    /** yyyy-MM. 날짜 문자열(yyyy-MM-dd)에서 잘라 쓴다 — 월계 경계 판정용. */
+    private static String month(String day) {
+        return (day == null || day.length() < 7) ? "" : day.substring(0, 7);
+    }
+
+    private static CollectionLedgerResponse.Row detailRow(Collection c) {
+        return new CollectionLedgerResponse.Row("DETAIL", null, c.getId(), c.getCollectionNo(),
+                c.getCollDate(), c.getWriteDate(),
+                c.getPartner().getCode(), c.getPartner().getName(),
+                c.getCollKind(), c.getCollType(), c.getCollType().label(), c.getCollAmt(),
+                c.getPromissoryNo(), c.getPromissoryDue(), c.getBankName(), c.getBranchName(), c.getMemo());
     }
 
     /**

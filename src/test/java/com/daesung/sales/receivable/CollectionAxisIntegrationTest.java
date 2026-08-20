@@ -65,6 +65,126 @@ class CollectionAxisIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("조회기준 3종 — 기준마다 날짜 필터 대상과 정렬이 함께 바뀐다")
+    void 조회기준_3종() {
+        // 수금일 7/20, 기장일 8/05 → 두 기준에서 서로 다른 달에 잡힌다
+        long id = data(post("/closing/collections", Map.of(
+                "collDate", "2035-07-20", "writeDate", "2035-08-05", "partnerId", partner,
+                "collType", "CASH", "collAmt", 11_000))).path("id").asLong();
+
+        // 수금일자 기준 7월 조회 → 잡힌다
+        assertThat(detailIds(ledger("COLLECT_DATE", "2035-07-01", "2035-07-31"))).contains(id);
+        // 기장일자 기준 7월 조회 → 안 잡힌다(기장은 8월)
+        assertThat(detailIds(ledger("WRITE_DATE", "2035-07-01", "2035-07-31"))).doesNotContain(id);
+        // 기장일자 기준 8월 조회 → 잡힌다
+        assertThat(detailIds(ledger("WRITE_DATE", "2035-08-01", "2035-08-31"))).contains(id);
+    }
+
+    @Test
+    @DisplayName("기장일자가 비어 있으면 기장일자 기준에서 빠진다 — 아직 기표 전이라 그게 맞다")
+    void 기장일_미입력() {
+        long id = data(post("/closing/collections", Map.of(
+                "collDate", "2035-07-21", "partnerId", partner,
+                "collType", "CASH", "collAmt", 3_000))).path("id").asLong();
+
+        assertThat(detailIds(ledger("COLLECT_DATE", "2035-07-01", "2035-07-31"))).contains(id);
+        assertThat(detailIds(ledger("WRITE_DATE", "2035-07-01", "2035-07-31"))).doesNotContain(id);
+    }
+
+    @Test
+    @DisplayName("소계: 일 계·월 계·누 계가 붙고 누계가 전체 합계와 같다")
+    void 소계() {
+        JsonNode l = ledger("COLLECT_DATE", "2035-07-01", "2035-07-31");
+        JsonNode rows = l.path("rows");
+
+        java.util.List<String> types = new java.util.ArrayList<>();
+        long detailSum = 0;
+        for (JsonNode r : rows) {
+            types.add(r.path("rowType").asText());
+            if ("DETAIL".equals(r.path("rowType").asText())) {
+                detailSum += r.path("collAmt").asLong();
+            }
+        }
+        assertThat(types).contains("DETAIL", "DAY_SUBTOTAL", "MONTH_SUBTOTAL", "RUNNING_TOTAL");
+        assertThat(types.get(types.size() - 1)).as("마지막은 누 계").isEqualTo("RUNNING_TOTAL");
+        assertThat(l.path("total").asLong()).as("누계 = 명세 합계").isEqualTo(detailSum);
+
+        // 일 계 합 = 명세 합 (일계가 빠지거나 겹치면 어긋난다)
+        long daySum = 0;
+        for (JsonNode r : rows) {
+            if ("DAY_SUBTOTAL".equals(r.path("rowType").asText())) {
+                daySum += r.path("collAmt").asLong();
+            }
+        }
+        assertThat(daySum).isEqualTo(detailSum);
+    }
+
+    @Test
+    @DisplayName("수정: 어음에서 현금으로 바꾸면 어음 정보가 지워진다")
+    void 수정_어음정보_정리() {
+        long id = data(post("/closing/collections", Map.of(
+                "collDate", "2035-07-22", "partnerId", partner,
+                "collType", "PROMISSORY", "collAmt", 50_000,
+                "promissoryNo", "나9999", "promissoryDue", "2035-12-31",
+                "bankName", "신한은행", "branchName", "역삼지점"))).path("id").asLong();
+
+        JsonNode u = data(put("/closing/collections/" + id, Map.of(
+                "collDate", "2035-07-22", "partnerId", partner,
+                "collType", "CASH", "collAmt", 50_000)));
+
+        assertThat(u.path("collTypeName").asText()).isEqualTo("현금");
+        assertThat(u.hasNonNull("promissoryNo"))
+                .as("현금인데 어음번호가 남으면 유령 어음이 된다").isFalse();
+        assertThat(u.hasNonNull("bankName")).isFalse();
+    }
+
+    @Test
+    @DisplayName("삭제한 수금은 채권 잔액에서 빠진다 — 네이티브 집계까지")
+    void 삭제_채권반영() {
+        long before = arBalance();
+
+        long id = data(post("/closing/collections", Map.of(
+                "collDate", "2035-07-23", "partnerId", partner,
+                "collType", "CASH", "collAmt", 40_000))).path("id").asLong();
+        assertThat(arBalance()).as("수금하면 잔액이 준다").isEqualTo(before - 40_000);
+
+        del("/closing/collections/" + id);
+
+        // ‼️미수금현황의 수금 합계는 네이티브 쿼리라 @SQLRestriction이 안 걸린다.
+        //   조건을 손으로 안 넣으면 지운 수금이 계속 잔액을 깎는다.
+        assertThat(arBalance()).as("삭제하면 되돌아온다").isEqualTo(before);
+        // 목록에서도 사라진다
+        assertThat(detailIds(ledger("COLLECT_DATE", "2035-07-01", "2035-07-31"))).doesNotContain(id);
+    }
+
+    /** 이 거래처의 미수금 잔액. */
+    private long arBalance() {
+        JsonNode rows = data(get("/closing/ar-status?fromDate=2035-01-01&toDate=2035-12-31"
+                + "&partnerId=" + partner)).path("rows");
+        for (JsonNode r : rows) {
+            if (r.path("partnerId").asLong() == partner) {
+                return r.path("balance").asLong();
+            }
+        }
+        return 0L;
+    }
+
+    private JsonNode ledger(String basis, String from, String to) {
+        return data(get("/closing/collections/ledger?basis=" + basis
+                + "&fromDate=" + from + "&toDate=" + to + "&partnerId=" + partner));
+    }
+
+    private java.util.List<Long> detailIds(JsonNode ledger) {
+        java.util.List<Long> ids = new java.util.ArrayList<>();
+        for (JsonNode r : ledger.path("rows")) {
+            if ("DETAIL".equals(r.path("rowType").asText())) {
+                ids.add(r.path("id").asLong());
+            }
+        }
+        return ids;
+    }
+
+    @Test
     @DisplayName("수금구분·입금구분으로 각각 거른다")
     void 두_축_필터() {
         post("/closing/collections", Map.of(
