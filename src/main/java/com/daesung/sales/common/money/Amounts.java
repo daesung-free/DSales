@@ -6,7 +6,8 @@ import com.daesung.sales.common.exception.ErrorCode;
 /**
  * 매출 금액 계산 단일 소스.
  * <pre>
- *   금액(공급가액) = 정가 × 공급률/100 × 수량 (버림)
+ *   공급단가       = 할인액 &gt; 0 ? 정가 − 할인액 : 정가 × 공급률/100
+ *   금액(공급가액) = 공급단가 × 수량 (버림)
  *   세액           = 담당자가 입력한 값. 미입력이면 0
  *   총금액         = 금액 + 세액
  * </pre>
@@ -21,13 +22,42 @@ import com.daesung.sales.common.exception.ErrorCode;
  * <p>면세 상품에 세액을 입력하면 명백한 오류이므로 거부한다 — 조용히 무시하면 담당자가
  * 입력한 값이 사라진 것을 모른다.
  *
+ * <p><b>할인액</b>(34p 거래처별 단가): 있으면 공급률 대신 쓰인다(레거시 매출가져오기.vb:425).
+ * 권당 금액이라 단가에서 빼고 수량을 곱한다. 둘 다 곱하면 이중 할인이 된다.
+ *
  * <p>반올림: 버림(1원 단위 그대로, 반올림 없음 — 발주처 확정).
  */
 public record Amounts(long supplyAmount, long tax, long totalAmount) {
 
-    /** 공급가액 = 정가 × 공급률/100 × 수량 (버림). */
+    /** 공급가액 = 정가 × 공급률/100 × 수량 (버림). 할인액이 없는 기본 경로. */
     public static long supplyOf(int unitPrice, int supplyRate, int qty) {
         return (long) ((double) unitPrice * supplyRate / 100.0 * qty);
+    }
+
+    /**
+     * 할인액을 감안한 공급가액. 근거: 레거시 {@code 매출가져오기.vb:425·1145}
+     * <pre>단가 = if(할인액 > 0, 정가 − 할인액, 정가 × 공급률/100)
+     * 금액 = 단가 × 수량</pre>
+     *
+     * <p>할인액은 <b>권당</b>이다(단가에서 뺀 뒤 수량을 곱한다). 할인액이 있으면 공급률은 쓰이지 않는다 —
+     * 둘 다 곱하면 이중 할인이 된다.
+     *
+     * <p>★할인액이 없을 때는 기존 식({@link #supplyOf(int, int, int)})을 <b>그대로</b> 탄다.
+     * 단가를 먼저 버림하고 수량을 곱하면 결과가 달라지기 때문이다
+     * (정가 999·공급률 33·수량 3 → 기존 989 vs 단가선버림 987). 기존 매출 금액이 바뀌면 안 된다.
+     *
+     * @param discountAmount 권당 할인액. null이거나 0 이하면 할인 없음
+     */
+    public static long supplyOf(int unitPrice, int supplyRate, int qty, Integer discountAmount) {
+        if (discountAmount == null || discountAmount <= 0) {
+            return supplyOf(unitPrice, supplyRate, qty);
+        }
+        if (discountAmount > unitPrice) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "할인액이 정가보다 클 수 없습니다. 정가=" + unitPrice + ", 할인액=" + discountAmount);
+        }
+        // 할인 단가는 정수라 곱셈만 하면 된다(반올림 여지 없음).
+        return (long) (unitPrice - discountAmount) * qty;
     }
 
     /**
@@ -37,7 +67,17 @@ public record Amounts(long supplyAmount, long tax, long totalAmount) {
      * @param taxFree  면세 여부 — 면세인데 세액이 들어오면 거부한다
      */
     public static Amounts of(int unitPrice, int supplyRate, int qty, boolean taxFree, Integer tax) {
-        long supply = supplyOf(unitPrice, supplyRate, qty);
+        return of(unitPrice, supplyRate, qty, taxFree, tax, null);
+    }
+
+    /**
+     * 할인액까지 감안한 금액 산출. 할인액은 거래처×대분류 매핑(34p)이나 매출등록 입력에서 온다.
+     *
+     * @param discountAmount 권당 할인액(null·0 이하면 할인 없음)
+     */
+    public static Amounts of(int unitPrice, int supplyRate, int qty, boolean taxFree, Integer tax,
+                             Integer discountAmount) {
+        long supply = supplyOf(unitPrice, supplyRate, qty, discountAmount);
         long t = (tax == null) ? 0L : tax;
         if (t != 0 && taxFree) {
             throw new BusinessException(ErrorCode.INVALID_INPUT,

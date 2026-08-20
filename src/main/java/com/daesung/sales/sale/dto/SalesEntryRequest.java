@@ -45,6 +45,13 @@ public record SalesEntryRequest(
             @Schema(description = "공급률(%). 미입력 시 거래처별 단가 매핑에서 자동조회(둘 다 없으면 오류)", example = "75")
             @PositiveOrZero Integer supplyRate,
 
+            @Schema(description = """
+                    권당 할인액(선택). 미입력 시 거래처×대분류 매핑(34p)에서 자동조회.
+                    **값이 있으면 공급률 대신 이 값으로 금액이 계산된다** — 공급가액 = (정가−할인액)×수량.
+                    둘 다 곱하면 이중 할인이 되기 때문이다(레거시 매출가져오기.vb:425).""",
+                    example = "0")
+            @PositiveOrZero Integer discountAmount,
+
             @Schema(description = "수량", example = "100", requiredMode = Schema.RequiredMode.REQUIRED)
             @Positive int qty,
 

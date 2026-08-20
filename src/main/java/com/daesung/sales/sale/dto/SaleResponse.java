@@ -43,6 +43,10 @@ public record SaleResponse(
         SalesCategory salesCategory,
         Integer unitPrice,
         Integer supplyRate,
+        @Schema(description = """
+                적용된 권당 할인액(34p). 값이 있으면 공급가액 = (정가−할인액)×수량이고
+                공급률은 금액에 쓰이지 않았다는 뜻이다.""")
+        Integer discountAmount,
         int qty,
         Long supplyAmount,
         Long tax,
@@ -70,7 +74,7 @@ public record SaleResponse(
                 major, (major == null) ? null : major.label(),
                 s.getProduct().getId(), s.getProduct().getCode(), s.getProduct().getName(), s.getBookRound(),
                 s.getSalesType(), s.getShipmentType(), s.getSalesCategory(),
-                s.getUnitPrice(), s.getSupplyRate(), s.getQty(),
+                s.getUnitPrice(), s.getSupplyRate(), s.getDiscountAmount(), s.getQty(),
                 s.getSupplyAmount(), s.getTax(), s.getTotalAmount(),
                 s.isCanceled(),
                 (s.getWarehouse() == null) ? null : s.getWarehouse().getId(),

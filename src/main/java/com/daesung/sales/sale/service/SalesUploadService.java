@@ -122,11 +122,14 @@ public class SalesUploadService {
                     }
 
                     // 표준 업로드 양식(12컬럼)에 세액 항목이 없다 → 0. 세액이 필요한 건은 등록 후 수정한다.
-                    Amounts amt = Amounts.of(unitPrice, supplyRate, qty, product.isTaxFree());
+                    // 표준 양식 12컬럼에 할인액이 없다 → 거래처×대분류 매핑에서만 온다.
+                    Integer discount = partnerSupplyRateService.discountFor(product, partner.getId());
+                    Amounts amt = Amounts.of(unitPrice, supplyRate, qty, product.isTaxFree(), null, discount);
                     String salesNo = "I-" + date.format(YYYYMMDD) + "-" + sequenceService.next(SequenceService.SEQ_INVOICE);
                     Sale sale = Sale.createBulk(salesNo, date, partner, product,
                             kind.shipmentType(), kind.category(), unitPrice, supplyRate, qty,
                             amt.supplyAmount(), amt.tax(), amt.totalAmount(), str(row, 11), null);
+                    sale.applyDiscount(discount);
                     sale.applyUploadDetail(str(row, 2), null, intOrNull(row, 5));   // 학교코드·(학교명 미구현)·회차
                     saleRepository.save(sale);
 

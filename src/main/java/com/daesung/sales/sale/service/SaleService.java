@@ -92,7 +92,8 @@ public class SaleService {
             SalesEntryRequest.Item item = r.item();
             Product product = r.product();
 
-            Amounts amt = Amounts.of(r.unitPrice(), r.supplyRate(), item.qty(), product.isTaxFree(), item.tax());
+            Amounts amt = Amounts.of(r.unitPrice(), r.supplyRate(), item.qty(), product.isTaxFree(),
+                    item.tax(), r.discountAmount());
             long supplyAmount = amt.supplyAmount();
             long tax = amt.tax();
             long totalAmount = amt.totalAmount();
@@ -103,6 +104,7 @@ public class SaleService {
                     SalesType.NORMAL_SALES, item.shipmentType(), r.salesCategory(),
                     r.unitPrice(), r.supplyRate(), item.qty(),
                     supplyAmount, tax, totalAmount, item.procType(), item.memo());
+            sale.applyDiscount(r.discountAmount());   // 적용된 할인액을 남긴다(매핑은 나중에 바뀐다)
             sale.applyWarehouse(warehouse);   // 출고 창고(7p 재고위치 · 27p 출고창고)
             sale.applyUploadDetail(item.schoolCode(), item.schoolName(), item.round());   // 학교·회차(12p)
             sale.applyPackType(item.packType());   // 포장구분(회차별 작업현황 집계축)
@@ -132,7 +134,8 @@ public class SaleService {
 
     /** 매출등록 라인 해석 결과(정가·공급률 자동적용까지 확정된 상태). */
     private record ResolvedItem(SalesEntryRequest.Item item, Product product,
-                                SalesCategory salesCategory, int unitPrice, int supplyRate) {
+                                SalesCategory salesCategory, int unitPrice, int supplyRate,
+                                Integer discountAmount) {
     }
 
     /**
@@ -160,7 +163,10 @@ public class SaleService {
                     "정가·공급률이 없고 거래처별 단가 매핑도, 도서 기본 공급률도 없습니다. 상품="
                             + product.getCode());
         }
-        return new ResolvedItem(item, product, salesCategory, unitPrice, supplyRate);
+        // 할인액도 같은 우선순위(입력값 > 거래처×대분류 매핑). 있으면 공급률 대신 금액에 쓰인다.
+        Integer discount = (item.discountAmount() != null)
+                ? item.discountAmount() : partnerSupplyRateService.discountFor(product, partner.getId());
+        return new ResolvedItem(item, product, salesCategory, unitPrice, supplyRate, discount);
     }
 
     /**
@@ -213,7 +219,11 @@ public class SaleService {
 
             consumeReturnable(returnable, product, item.qty());
 
-            Amounts amt = Amounts.of(item.unitPrice(), item.supplyRate(), item.qty(), product.isTaxFree(), item.tax());
+            // 반품도 출고와 같은 기준으로 계산되어야 한다 — 할인 매출을 정가 기준으로 되돌리면
+            // 반품 금액이 원래 판 금액보다 커진다.
+            Integer discount = partnerSupplyRateService.discountFor(product, partner.getId());
+            Amounts amt = Amounts.of(item.unitPrice(), item.supplyRate(), item.qty(),
+                    product.isTaxFree(), item.tax(), discount);
             long supplyAmount = amt.supplyAmount();
             long tax = amt.tax();
             long totalAmount = amt.totalAmount();
@@ -225,6 +235,7 @@ public class SaleService {
                     SalesType.NORMAL_SALES, ShipmentType.RETURN, SalesCategory.RETURN,
                     item.unitPrice(), item.supplyRate(), item.qty(),
                     supplyAmount, tax, totalAmount, null, item.memo());
+            sale.applyDiscount(discount);
             if (item.sourceOutNo() != null && !item.sourceOutNo().isBlank()) {
                 sale.linkSourceOut(item.sourceOutNo());
             }

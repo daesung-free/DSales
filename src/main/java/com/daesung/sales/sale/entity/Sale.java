@@ -84,6 +84,16 @@ public class Sale extends BaseEntity {
     @Column(name = "supply_rate")
     private Integer supplyRate;
 
+    /**
+     * 적용된 권당 할인액(34p). 값이 있으면 <b>공급가액 = (정가−할인액) × 수량</b>이고
+     * 공급률은 금액에 쓰이지 않는다(레거시 매출가져오기.vb:425 — 둘 중 하나만 쓴다).
+     *
+     * <p>거래처×대분류 매핑에서 오지만 매핑은 언제든 바뀌므로, 정가·공급률과 같은 이유로
+     * 매출 라인에 복사해 둔다 — 그래야 "이 건의 금액이 왜 이 값인가"를 나중에 설명할 수 있다.
+     */
+    @Column(name = "discount_amount")
+    private Integer discountAmount;
+
     /** 수량(반품/취소는 음수). */
     @Column(nullable = false)
     private int qty;
@@ -224,6 +234,11 @@ public class Sale extends BaseEntity {
     /** 출고 창고 지정(매출등록·위탁정산에서 호출). */
     public void applyWarehouse(Warehouse warehouse) {
         this.warehouse = warehouse;
+    }
+
+    /** 적용된 할인액 기록(매출등록·업로드·위탁정산·반품입고에서 호출). 할인 없으면 호출하지 않는다. */
+    public void applyDiscount(Integer discountAmount) {
+        this.discountAmount = discountAmount;
     }
 
     public void applyPackType(PackType packType) {

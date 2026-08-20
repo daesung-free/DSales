@@ -68,6 +68,25 @@ public class PartnerSupplyRateService {
                 .map(PartnerSupplyRate::getSupplyRate).orElse(null);
     }
 
+    /**
+     * 이 거래처가 이 상품에 대해 갖는 <b>권당 할인액</b>(34p).
+     *
+     * <p>있으면 금액이 공급률 대신 이 값으로 계산된다(정가−할인액)×수량.
+     * 근거: 레거시 {@code 매출가져오기.vb:425}.
+     *
+     * @return 할인액 또는 null(매핑 없음·미설정·0)
+     */
+    public Integer discountFor(Product product, Long partnerId) {
+        MajorCategory major = majorOf(product);
+        if (major == null) {
+            return null;
+        }
+        return rateRepository.findActive(partnerId, major)
+                .map(PartnerSupplyRate::getDiscountAmount)
+                .filter(d -> d > 0)
+                .orElse(null);
+    }
+
     /** 상품의 대분류 — 세부구분 마스터를 거쳐 파생. 미지정이면 null. */
     private MajorCategory majorOf(Product product) {
         String code = product.getSalesDivision();

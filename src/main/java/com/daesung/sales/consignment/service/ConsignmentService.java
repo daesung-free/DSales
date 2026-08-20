@@ -52,6 +52,7 @@ public class ConsignmentService {
     private static final DateTimeFormatter YYYYMMDD = DateTimeFormatter.BASIC_ISO_DATE;
 
     private final InventoryService inventoryService;
+    private final com.daesung.sales.product.service.PartnerSupplyRateService partnerSupplyRateService;
     private final com.daesung.sales.inventory.repository.InventoryTxnRepository inventoryTxnRepository;
     private final SequenceService sequenceService;
     private final ConsignmentOutRepository consignmentOutRepository;
@@ -167,8 +168,10 @@ public class ConsignmentService {
                             "정산수량을 입력하면 정가·공급률이 필요합니다. 미결 id=" + s.consignmentOutId());
                 }
                 Product product = co.getProduct();
+                // 위탁정산도 거래처×대분류 할인액을 탄다(정산 시점이 매출 시점 — 위탁 회계기준 확정)
+                Integer discount = partnerSupplyRateService.discountFor(product, co.getPartner().getId());
                 Amounts amt = Amounts.of(s.unitPrice(), s.supplyRate(), settleQty,
-                        product.isTaxFree(), s.tax());
+                        product.isTaxFree(), s.tax(), discount);
                 supplyAmount = amt.supplyAmount();
                 tax = amt.tax();
                 totalAmount = amt.totalAmount();
@@ -180,6 +183,7 @@ public class ConsignmentService {
                         salesNo, req.salesDate(), co.getPartner(), product,
                         s.unitPrice(), s.supplyRate(), settleQty,
                         supplyAmount, tax, totalAmount, co.getSourceOutNo(), settlement, s.memo());
+                consignSale.applyDiscount(discount);
                 // 위탁정산 매출은 위탁창고에서 나간다(7p 재고위치).
                 consignSale.applyWarehouse(consignWarehouseOf(co));
                 saleRepository.save(consignSale);

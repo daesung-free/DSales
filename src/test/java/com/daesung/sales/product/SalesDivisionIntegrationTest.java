@@ -222,6 +222,66 @@ class SalesDivisionIntegrationTest extends IntegrationTestSupport {
         assertThat(fail.path("success").asBoolean()).as("꺼진 매핑은 없는 것으로 본다: %s", fail).isFalse();
     }
 
+    @Test
+    @DisplayName("할인액: 있으면 공급률 대신 쓰인다 — 금액 = (정가−할인액)×수량, 이중할인 아님")
+    void 할인액_금액반영() {
+        Long wh = createId("/masters/warehouses",
+                Map.of("code", "DCW" + sfx, "name", "할인창고", "type", "MAIN"));
+        Long partner = createId("/masters/clients",
+                Map.of("code", "DCC" + sfx, "name", "할인거래처", "type", "NORMAL"));
+        long book = product("DCB" + sfx, "H2028D01", "교재", wh, partner);
+
+        // 공급률 80%만 있을 때: 10000 × 80% × 10 = 80,000
+        put("/masters/partner-supply-rates/" + partner + "/TEXTBOOK", Map.of("supplyRate", 80));
+        assertThat(supplyAmountOf(partner, wh, book)).isEqualTo(80_000);
+
+        // 할인액 3000을 주면 공급률은 금액에 쓰이지 않는다: (10000−3000) × 10 = 70,000
+        // ‼️이중할인(10000×80%−3000)×10 = 50,000 이 아니어야 한다
+        put("/masters/partner-supply-rates/" + partner + "/TEXTBOOK",
+                Map.of("supplyRate", 80, "discountAmount", 3000));
+        assertThat(supplyAmountOf(partner, wh, book)).isEqualTo(70_000);
+
+        // 적용된 할인액이 매출에 남는다 — 매핑은 나중에 바뀌므로 금액 근거가 사라지면 안 된다.
+        // 이 거래처의 매출 중 할인 70,000짜리 건을 찾아 확인한다(앞의 80,000 건은 할인 없음).
+        JsonNode sales = data(get("/sales?fromDate=2028-03-01&toDate=2028-03-31&partnerId=" + partner))
+                .path("content");
+        boolean found = false;
+        for (JsonNode s : sales) {
+            if (s.path("supplyAmount").asLong() == 70_000L) {
+                assertThat(s.path("discountAmount").asInt()).isEqualTo(3000);
+                found = true;
+            }
+        }
+        assertThat(found).as("할인 적용 매출이 조회돼야 함: %s", sales).isTrue();
+
+        // 라인에 직접 넣은 할인액이 매핑을 이긴다: (10000−5000) × 10 = 50,000
+        JsonNode r = post("/sales/entries", Map.of(
+                "salesDate", "2028-03-10", "partnerId", partner, "warehouseId", wh,
+                "items", java.util.List.of(Map.of(
+                        "productId", book, "shipmentType", "NORMAL_SHIP", "qty", 10,
+                        "discountAmount", 5000))));
+        assertThat(data(r).path("items").get(0).path("supplyAmount").asLong()).isEqualTo(50_000);
+    }
+
+    @Test
+    @DisplayName("할인액이 정가보다 크면 거부 — 단가가 음수가 되면 매출이 마이너스로 쌓인다")
+    void 할인액_정가초과_거부() {
+        Long wh = createId("/masters/warehouses",
+                Map.of("code", "DXW" + sfx, "name", "초과창고", "type", "MAIN"));
+        Long partner = createId("/masters/clients",
+                Map.of("code", "DXC" + sfx, "name", "초과거래처", "type", "NORMAL"));
+        long book = product("DXB" + sfx, "H2028X01", "교재", wh, partner);
+
+        JsonNode r = post("/sales/entries", Map.of(
+                "salesDate", "2028-03-10", "partnerId", partner, "warehouseId", wh,
+                "items", java.util.List.of(Map.of(
+                        "productId", book, "shipmentType", "NORMAL_SHIP", "qty", 1,
+                        "supplyRate", 75, "discountAmount", 99999))));
+
+        assertThat(r.path("success").asBoolean()).isFalse();
+        assertThat(r.path("error").path("code").asText()).isEqualTo("INVALID_INPUT");
+    }
+
     /** 공급률 미입력으로 매출 1건 등록 → 자동적용된 공급가액. */
     private long supplyAmountOf(Long partner, Long wh, long productId) {
         JsonNode r = post("/sales/entries", Map.of(
