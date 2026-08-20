@@ -19,7 +19,15 @@ public record CollectionRequest(
         @Schema(description = "거래처 id", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotNull Long partnerId,
 
-        @Schema(description = "수금유형(CASH/PROMISSORY/PREPAY/REPLACE)", example = "CASH",
+        @Schema(description = """
+                수금구분 — **무슨 명목으로 받은 돈인가**(정본 23p 데이터 항목).
+                미입력 시 `도서대금`. 레거시는 이 값을 화면에서 "도서대금"으로 고정하고 편집을 막아 두었다.""",
+                example = "도서대금")
+        String collKind,
+
+        @Schema(description = """
+                입금구분 — **어떤 형태로 들어왔는가**. CASH(현금)/PROMISSORY(어음)/PREPAY(선수금)/REPLACE(대체).
+                어음번호·만기·은행/지점은 PROMISSORY일 때만 저장된다.""", example = "CASH",
                 requiredMode = Schema.RequiredMode.REQUIRED)
         @NotNull CollectionType collType,
 

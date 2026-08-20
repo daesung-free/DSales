@@ -18,12 +18,20 @@ import lombok.AccessLevel;
 import lombok.Getter;
 import lombok.NoArgsConstructor;
 
-/** 수금(amtData 정규화). 채권 잔액에서 차감. 어음 필드는 collType=PROMISSORY일 때만. */
+/**
+ * 수금(amtData 정규화). 채권 잔액에서 차감. 어음 필드는 입금구분=어음일 때만.
+ *
+ * <p>구분이 <b>두 축</b>이다(정본 23p) — {@code collKind}(수금구분, 무슨 명목)와
+ * {@code collType}(입금구분, 어떤 형태). 하나로 합치면 "어음으로 받은 도서대금"을 표현할 수 없다.
+ */
 @Entity
 @Table(name = "collection")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Collection extends BaseEntity {
+
+    /** 레거시 화면이 고정으로 넣던 값. 미입력 시 이 값으로 채운다. */
+    public static final String DEFAULT_KIND = "도서대금";
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
@@ -47,6 +55,17 @@ public class Collection extends BaseEntity {
     @JoinColumn(name = "partner_id", nullable = false)
     private Partner partner;
 
+    /**
+     * 수금구분 — <b>무슨 명목으로 받은 돈인가</b>. 근거: 레거시 collKind.
+     *
+     * <p>레거시 화면은 {@code "도서대금"}으로 고정하고 편집을 막아 두었다(수금등록.vb:19~20).
+     * 우리도 기본값은 같지만 컬럼은 열어 둔다 — 정본 23p가 데이터 항목으로 명시한 이상
+     * 다른 명목으로 받을 여지를 막을 이유가 없다.
+     */
+    @Column(name = "coll_kind", nullable = false, length = 30)
+    private String collKind = DEFAULT_KIND;
+
+    /** 입금구분 — <b>어떤 형태로 들어왔는가</b>(현금/어음/선수금/대체). 근거: 레거시 collType. */
     @Enumerated(EnumType.STRING)
     @Column(name = "coll_type", nullable = false, length = 20)
     private CollectionType collType;
@@ -70,7 +89,7 @@ public class Collection extends BaseEntity {
     private String memo;
 
     public static Collection create(String collectionNo, LocalDate collDate, LocalDate writeDate,
-                                    Partner partner,
+                                    Partner partner, String collKind,
                                     CollectionType collType, long collAmt, String promissoryNo,
                                     LocalDate promissoryDue, String bankName, String branchName, String memo) {
         Collection c = new Collection();
@@ -78,6 +97,7 @@ public class Collection extends BaseEntity {
         c.collDate = collDate;
         c.writeDate = writeDate;
         c.partner = partner;
+        c.collKind = (collKind == null || collKind.isBlank()) ? DEFAULT_KIND : collKind.trim();
         c.collType = collType;
         c.collAmt = collAmt;
         // 어음일 때만 어음 정보 보존(레거시 IIf 처리).

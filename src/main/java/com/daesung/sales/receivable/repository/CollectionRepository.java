@@ -1,6 +1,7 @@
 package com.daesung.sales.receivable.repository;
 
 import com.daesung.sales.receivable.entity.Collection;
+import com.daesung.sales.receivable.entity.CollectionType;
 import java.time.LocalDate;
 import java.util.List;
 import org.springframework.data.domain.Page;
@@ -11,14 +12,18 @@ import org.springframework.data.repository.query.Param;
 
 public interface CollectionRepository extends JpaRepository<Collection, Long> {
 
-    /** 수금 목록(기간·거래처 필터). */
+    /** 수금 목록(기간·거래처 + 수금구분·입금구분 두 축 필터). 근거: 정본 23p 데이터 항목. */
     @Query("select c from Collection c "
             + "where (:from is null or c.collDate >= :from) "
             + "and (:to is null or c.collDate <= :to) "
-            + "and (:partnerId is null or c.partner.id = :partnerId)")
+            + "and (:partnerId is null or c.partner.id = :partnerId) "
+            + "and (:collKind is null or c.collKind = :collKind) "
+            + "and (:collType is null or c.collType = :collType)")
     Page<Collection> search(@Param("from") LocalDate from,
                             @Param("to") LocalDate to,
                             @Param("partnerId") Long partnerId,
+                            @Param("collKind") String collKind,
+                            @Param("collType") CollectionType collType,
                             Pageable pageable);
 
     /** 거래처별 수금 합계(기간). 반환 Object[]: [partnerId, collSum]. */

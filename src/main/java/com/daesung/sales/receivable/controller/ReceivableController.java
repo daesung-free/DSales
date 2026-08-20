@@ -10,6 +10,7 @@ import com.daesung.sales.receivable.dto.ArStatusResponse;
 import com.daesung.sales.receivable.dto.CarryforwardResult;
 import com.daesung.sales.receivable.dto.CollectionRequest;
 import com.daesung.sales.receivable.dto.CollectionResponse;
+import com.daesung.sales.receivable.entity.CollectionType;
 import com.daesung.sales.receivable.service.ReceivableService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
@@ -41,14 +42,25 @@ public class ReceivableController {
     private final ExcelExportUtil excel;
 
     @Operation(summary = "수금 등록",
-            description = "수금번호(C) 채번. 유형=어음일 때만 어음정보(번호/만기/은행/지점) 저장. 채권 잔액에서 차감됨.")
+            description = """
+                    수금번호(C) 채번. 채권 잔액에서 차감된다.
+
+                    · **수금구분**(명목) 미입력 시 `도서대금` — 레거시가 화면에서 고정하던 값이다.
+                    · **입금구분**=어음일 때만 어음정보(번호/만기/은행/지점)를 저장한다.""")
     @PostMapping("/collections")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<CollectionResponse> registerCollection(@Valid @RequestBody CollectionRequest req) {
         return ApiResponse.success(receivableService.registerCollection(req));
     }
 
-    @Operation(summary = "수금 목록 조회", description = "기간·거래처로 수금 내역 조회.")
+    @Operation(summary = "수금 목록 조회",
+            description = """
+                    기간·거래처 + **구분 2축**으로 수금 내역을 조회한다(정본 23p 데이터 항목).
+
+                    · **수금구분**(`collKind`) = 무슨 명목으로 받은 돈인가. 기본 `도서대금`.
+                    · **입금구분**(`collType`) = 어떤 형태로 들어왔는가(현금/어음/선수금/대체).
+
+                    두 축을 하나로 합치면 "**어음으로 받은 도서대금**"을 표현할 수 없다.""")
     @GetMapping("/collections")
     public ApiResponse<PageResponse<CollectionResponse>> listCollections(
             @Parameter(description = "시작일(yyyy-MM-dd)") @RequestParam(required = false)
@@ -56,9 +68,13 @@ public class ReceivableController {
             @Parameter(description = "종료일(yyyy-MM-dd)") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @Parameter(description = "거래처 id") @RequestParam(required = false) Long partnerId,
+            @Parameter(description = "수금구분(명목). 미지정=전체", example = "도서대금")
+            @RequestParam(required = false) String collKind,
+            @Parameter(description = "입금구분(형태) CASH/PROMISSORY/PREPAY/REPLACE. 미지정=전체")
+            @RequestParam(required = false) CollectionType collType,
             @ParameterObject PageRequestDto pageReq) {
-        return ApiResponse.success(
-                receivableService.searchCollections(fromDate, toDate, partnerId, pageReq.toPageable()));
+        return ApiResponse.success(receivableService.searchCollections(
+                fromDate, toDate, partnerId, collKind, collType, pageReq.toPageable()));
     }
 
     @Operation(summary = "채권 이월 스냅샷 생성(idempotent)",

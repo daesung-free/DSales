@@ -63,7 +63,7 @@ public class ReceivableService {
                         "거래처가 없습니다. id=" + req.partnerId()));
         String collNo = "C-" + req.collDate().format(YYYYMMDD) + "-" + sequenceService.next(SequenceService.SEQ_COLLECTION);
         Collection c = collectionRepository.save(Collection.create(
-                collNo, req.collDate(), req.writeDate(), partner, req.collType(), req.collAmt(),
+                collNo, req.collDate(), req.writeDate(), partner, req.collKind(), req.collType(), req.collAmt(),
                 req.promissoryNo(), req.promissoryDue(), req.bankName(), req.branchName(), req.memo()));
         return CollectionResponse.from(c);
     }
@@ -71,9 +71,11 @@ public class ReceivableService {
     /** 수금 목록 조회. */
     @Transactional(readOnly = true)
     public PageResponse<CollectionResponse> searchCollections(LocalDate from, LocalDate to,
-                                                              Long partnerId, Pageable pageable) {
-        return PageResponse.of(
-                collectionRepository.search(from, to, partnerId, pageable).map(CollectionResponse::from));
+                                                              Long partnerId, String collKind,
+                                                              CollectionType collType, Pageable pageable) {
+        String kind = (collKind == null || collKind.isBlank()) ? null : collKind.trim();
+        return PageResponse.of(collectionRepository.search(from, to, partnerId, kind, collType, pageable)
+                .map(CollectionResponse::from));
     }
 
     /**
