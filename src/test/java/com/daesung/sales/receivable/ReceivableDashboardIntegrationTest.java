@@ -265,6 +265,32 @@ class ReceivableDashboardIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("비교연도를 고를 수 있다 — 전년이 아닌 해와도 견준다(20p)")
+    void 비교연도_선택() {
+        // 2044년 실적만 만들고, 2046년을 2044년과 견준다(전년 2045는 매출이 없다)
+        String sfx = "-CY" + (System.nanoTime() % 1_000_000L);
+        Long sup = createId("/masters/clients", Map.of("code", "CYS" + sfx, "name", "인쇄", "type", "NORMAL"));
+        Long pt = createId("/masters/clients", Map.of("code", "CYP" + sfx, "name", "비교처", "type", "NORMAL"));
+        Long wh = createId("/masters/warehouses", Map.of("code", "CYW" + sfx, "name", "창고", "type", "MAIN"));
+        Long pr = createId("/masters/products", Map.of("code", "CYB" + sfx, "name", "도서",
+                "contentType", "SELF", "price", 10000, "supplyRate", 100));
+        post("/stock/inbound", Map.of("processedDate", "2044-01-01", "supplierClientId", sup,
+                "destinationWarehouseId", wh,
+                "items", List.of(Map.of("productId", pr, "unitCost", 3000, "qty", 100))));
+        post("/sales/entries", Map.of("salesDate", "2044-03-10", "partnerId", pt, "warehouseId", wh,
+                "items", List.of(Map.of("productId", pr, "shipmentType", "NORMAL_SHIP", "qty", 10))));
+
+        // 기본(전년=2045)은 실적이 없다
+        assertThat(data(get("/dashboard/sales?year=2046")).path("months").get(2)
+                .path("prevActual").asLong()).isZero();
+
+        // 비교연도를 2044로 고르면 그 해 3월 실적이 잡힌다
+        JsonNode picked = data(get("/dashboard/sales?year=2046&compareYear=2044"));
+        assertThat(picked.path("compareYear").asInt()).isEqualTo(2044);
+        assertThat(picked.path("months").get(2).path("prevActual").asLong()).isEqualTo(100_000);
+    }
+
+    @Test
     @DisplayName("대시보드 누적목표·누적실적 — 1월부터 해당월까지의 합")
     void 대시보드_누적() {
         // 요구 20p 매출 상세 대시보드: 당월목표/누적목표/당월실적/누적실적/달성률/성장률

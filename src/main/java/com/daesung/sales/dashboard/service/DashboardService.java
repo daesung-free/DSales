@@ -70,7 +70,10 @@ public class DashboardService {
      * 과거연도) 저장된 ACTUAL 값으로 채운다.
      */
     @Transactional(readOnly = true)
-    public DashboardResponse salesDashboard(int year, TargetScope scope, String scopeKey, Long productId) {
+    public DashboardResponse salesDashboard(int year, Integer compareYear,
+                                            TargetScope scope, String scopeKey, Long productId) {
+        // 비교연도는 고를 수 있다(정본 20p 데이터 항목 "기준/비교연도"). 미지정이면 전년.
+        int cmpYear = (compareYear != null) ? compareYear : year - 1;
         // scope 미지정이면 넘어온 값에서 추론한다 — 기존처럼 productId만 넘기던 호출이
         // 조용히 전사 대시보드로 바뀌면 안 된다.
         TargetScope sc = scope;
@@ -95,7 +98,7 @@ public class DashboardService {
         }
 
         Map<Integer, Long> actual = monthlyMap(year, sc, pid);
-        Map<Integer, Long> prev = monthlyMap(year - 1, sc, pid);
+        Map<Integer, Long> prev = monthlyMap(cmpYear, sc, pid);
 
         List<DashboardResponse.MonthCell> months = new ArrayList<>();
         long tTarget = 0;
@@ -127,11 +130,11 @@ public class DashboardService {
         // 연간 목표가 등록돼 있으면 월 합계보다 그 값이 우선이다(월별을 안 넣고 연간만 넣는 운영).
         long yearTarget = (annualTarget != null) ? annualTarget : tTarget;
         // 전년 매출이 통째로 비어 있으면 저장해둔 확정 실적으로 대체.
-        long yearPrev = (tPrev > 0) ? tPrev : storedActual(year - 1, sc, key, pid);
+        long yearPrev = (tPrev > 0) ? tPrev : storedActual(cmpYear, sc, key, pid);
 
         DashboardResponse.YearSummary summary = new DashboardResponse.YearSummary(
                 yearTarget, tActual, pct(tActual, yearTarget), yearPrev, growth(tActual, yearPrev));
-        return new DashboardResponse(year, sc, key, pid, computedAt(year, sc), months, summary);
+        return new DashboardResponse(year, cmpYear, sc, key, pid, computedAt(year, sc), months, summary);
     }
 
     /**

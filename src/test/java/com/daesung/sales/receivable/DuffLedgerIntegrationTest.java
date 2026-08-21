@@ -41,26 +41,35 @@ class DuffLedgerIntegrationTest extends IntegrationTestSupport {
         // 모의고사 완제품(세트) + 구성 자재 — 시행예정일은 BOM에 있다(V27)
         Long material = createId("/masters/products", Map.of("code", "DFM" + SFX, "name", "시험지",
                 "contentType", "SELF", "price", 1000, "salesDivision", "모의고사"));
+        // ★더프 판별 = 분류코드 M + A/B/C 계열(레거시 외상매출장조회.vb:668)
         mockSet = createId("/masters/products", Map.of("code", "DFK" + SFX, "name", "모의고사세트",
                 "contentType", "SELF", "price", 10000, "supplyRate", 100,
-                "grade", "고3", "salesDivision", "모의고사", "stockManaged", false));
+                "grade", "고3", "catCode", "M2043A01", "catName", "더프 고3",
+                "salesDivision", "모의고사", "stockManaged", false));
         put("/masters/products/" + mockSet + "/bom", Map.of("components", List.of(Map.of(
                 "childProductId", material, "ratio", 1, "round", 3,
                 "examDate", YEAR + "-09-05"))));
 
-        // 교재(모의고사 아님) — 이 화면에 섞이면 안 된다
+        // 교재(모의고사 아님) — 섞이면 안 된다
         Long textBook = createId("/masters/products", Map.of("code", "DFT" + SFX, "name", "교재",
-                "contentType", "SELF", "price", 10000, "supplyRate", 100, "salesDivision", "교재"));
+                "contentType", "SELF", "price", 10000, "supplyRate", 100,
+                "catCode", "H2043H01", "catName", "교재", "salesDivision", "교재"));
+        // ‼️모의고사이지만 더프가 아닌 계열(M…D) — 대분류로 걸렀다면 섞여 들어왔을 건이다
+        Long nonDuff = createId("/masters/products", Map.of("code", "DFN" + SFX, "name", "비더프모의고사",
+                "contentType", "SELF", "price", 10000, "supplyRate", 100,
+                "catCode", "M2043D01", "catName", "기타 모의고사", "salesDivision", "모의고사"));
         post("/stock/inbound", Map.of("processedDate", YEAR + "-01-01", "supplierClientId", sup,
                 "destinationWarehouseId", wh,
-                "items", List.of(Map.of("productId", textBook, "unitCost", 1000, "qty", 500))));
+                "items", List.of(Map.of("productId", textBook, "unitCost", 1000, "qty", 500),
+                        Map.of("productId", nonDuff, "unitCost", 1000, "qty", 500))));
 
         // 같은 달·같은 학교 2건(처리/비처리) + 다른 학교 1건
         sale(YEAR + "-09-10", wh, mockSet, 10, "A고", "GRADED", 3);
         sale(YEAR + "-09-11", wh, mockSet, 5, "A고", null, 3);
         sale(YEAR + "-09-12", wh, mockSet, 7, "B고", "GRADED", 3);
-        // 교재 매출 — 대분류가 모의고사가 아니라 제외돼야 한다
+        // 제외돼야 하는 둘: 교재 / 더프가 아닌 모의고사
         sale(YEAR + "-09-13", wh, textBook, 99, "A고", "GRADED", null);
+        sale(YEAR + "-09-14", wh, nonDuff, 88, "A고", "GRADED", null);
     }
 
     @Test
@@ -81,12 +90,12 @@ class DuffLedgerIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("모의고사만 나온다 — 교재는 섞이지 않는다")
-    void 모의고사만() {
+    @DisplayName("더프만 나온다 — 교재도, 더프 아닌 모의고사(M…D)도 빠진다")
+    void 더프만() {
         assertThat(detail()).hasSize(3);
-        assertThat(detail().stream().mapToLong(r -> r.path("qty").asLong()).sum()).isEqualTo(22);
-        // 교재 99권이 섞였으면 121이 된다
         assertThat(data(ledger()).path("totalQty").asLong()).isEqualTo(22);
+        // 교재 99가 섞이면 121, 비더프 모의고사 88까지 섞이면 209가 된다.
+        // ‼️대분류(모의고사)로 걸렀다면 88이 섞여 110이 나왔을 것 — 더프는 모의고사의 부분집합이다.
     }
 
     @Test

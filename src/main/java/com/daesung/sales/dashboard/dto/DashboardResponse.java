@@ -5,7 +5,8 @@ import java.util.List;
 
 /** 매출 대시보드: 목표 대비 실적(월별 + 연간 합계). 근거: 대시보드 화면(19·20p). */
 public record DashboardResponse(
-        @Schema(description = "연도") int year,
+        @Schema(description = "기준 연도") int year,
+        @Schema(description = "비교 연도(미지정 시 전년). 전년/전전년 등 임의 연도와 견줄 수 있다") int compareYear,
         @Schema(description = "대상 축") com.daesung.sales.dashboard.entity.TargetScope scope,
         @Schema(description = "사업부문명(scope=DIVISION일 때)") String scopeKey,
         @Schema(description = "상품 id(scope=PRODUCT일 때)") Long productId,
@@ -27,8 +28,8 @@ public record DashboardResponse(
                     + "누적은 지금까지의 합이라 유지되는 게 맞고, 비우면 선그래프가 끊긴다")
             long cumulativeActual,
             @Schema(description = "달성률 %(실적/목표), 목표 0이면 null") Double achievementPct,
-            @Schema(description = "전년 동월 실적") long prevActual,
-            @Schema(description = "전년比 성장률 %((실적−전년)/전년), 전년 0이면 null") Double growthPct
+            @Schema(description = "비교연도 동월 실적") long prevActual,
+            @Schema(description = "비교연도比 성장률 %((실적−비교)/비교), 비교가 0이면 null") Double growthPct
     ) {
     }
 
@@ -36,8 +37,8 @@ public record DashboardResponse(
             @Schema(description = "연간 목표(연간 목표가 등록돼 있으면 그 값, 없으면 월 목표 합)") long totalTarget,
             @Schema(description = "연간 실적 합") long totalActual,
             @Schema(description = "연간 달성률 %") Double achievementPct,
-            @Schema(description = "전년 연간 실적(그 해 매출이 없으면 저장된 확정 실적)") long prevTotalActual,
-            @Schema(description = "전년比 성장률 %") Double growthPct
+            @Schema(description = "비교연도 연간 실적(그 해 매출이 없으면 저장된 확정 실적)") long prevTotalActual,
+            @Schema(description = "비교연도比 성장률 %") Double growthPct
     ) {
     }
 }

@@ -188,8 +188,14 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
      * 학년={@code products.grade}, 처리={@code sales.proc_type},
      * 시행월={@code bom_items.exam_date}(V27, 그 상품·회차의 시행예정일).
      *
-     * <p>모의고사 판별도 마찬가지다. 레거시는 {@code catCode LIKE 'M%A%'}처럼 코드 패턴으로 걸렀는데,
-     * 우리는 <b>대분류</b>로 거른다(연도·코드체계에 기대지 않는다).
+     * <p>★<b>더프 판별은 레거시 그대로</b> 분류코드 패턴이다 —
+     * {@code catCode LIKE 'M%A%' OR 'M%B%' OR 'M%C%'}(외상매출장조회.vb:668).
+     * 더프는 모의고사 <b>전체가 아니라 그중 A·B·C 계열</b>이라, 대분류(모의고사)로 거르면 범위가 넓어진다.
+     *
+     * <p>패턴에 기대도 되는 이유: 우리 분류코드는 {@code @CatCode}로
+     * {@code [영문1][연도4][영문·숫자1~3]} 형식을 <b>강제</b>하고 있고, 그 규칙은
+     * 레거시 실데이터 4,600건이 100% 따르는 것을 확인한 것이다. 2~5자리가 숫자라
+     * {@code 'M%A%'}의 A는 접미부에서만 걸린다.
      *
      * <p>소계(학교 계·월 계)는 서비스에서 조립한다. 반환 Object[]:
      * [salesDate, schoolName, examDate, grade, procType, unitPrice, supplyRate, qty, amount].
@@ -205,7 +211,8 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
               JOIN products p ON p.id = s.product_id
               LEFT JOIN sales_divisions d ON d.code = p.sales_division
             WHERE s.canceled = false
-              AND d.major_category = 'MOCK_EXAM'
+              AND p.cat_code LIKE 'M%'
+              AND (p.cat_code LIKE 'M%A%' OR p.cat_code LIKE 'M%B%' OR p.cat_code LIKE 'M%C%')
               AND s.partner_id = :partnerId
               AND s.sales_date BETWEEN :fromDate AND :toDate
             ORDER BY EXTRACT(YEAR FROM s.sales_date), EXTRACT(MONTH FROM s.sales_date),
@@ -546,11 +553,15 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     /**
      * 응시현황(기간별, 18p) 원자료. 지역·거래처·학교·학년·연월·처리구분별 인원(수량).
      *
-     * <p><b>모의고사만</b> 집계한다. 판별은 상품의 <b>대분류</b>로 한다(세부구분 마스터 조인) —
-     * 레거시({@code 고사별처리인원.vb})는 {@code catCode in ('M22A','M22B')}처럼
-     * <b>분류코드에 박힌 연도</b>로 걸렀고, 그래서 해마다 SQL을 새로 써야 했다.
-     * 2022년 이후 분기를 아무도 안 써서 화면이 "2022년까지만 조회 가능"으로 멈춘 것이 그 결과다.
-     * 대분류로 거르면 연도 의존이 사라진다.
+     * <p><b>더프 모의고사만</b> 집계한다. 판별은 레거시와 같은 분류코드 패턴이다 —
+     * {@code catCode LIKE 'M%A%' OR 'M%B%' OR 'M%C%'}. 더프는 모의고사 전체가 아니라
+     * 그중 A·B·C 계열이라, 대분류(모의고사)로 거르면 범위가 넓어진다(24p 더프모와 같은 기준).
+     *
+     * <p>★레거시({@code 고사별처리인원.vb})는 여기에 <b>연도를 박아</b> 걸렀다:
+     * {@code catCode in ('M2022A','M2022B')}. 그래서 해마다 SQL을 새로 써야 했고,
+     * 2022년 이후 분기를 아무도 안 써서 화면이 "2022년까지만 조회 가능"으로 멈췄다.
+     * <b>패턴은 그대로 쓰되 연도만 빼면</b> 그 문제가 사라진다 —
+     * 연도 자리(2~5)는 어차피 숫자라 {@code 'M%A%'}의 A는 접미부에서만 걸린다.
      *
      * <p>처리/비처리는 {@code proc_type}으로 가른다(미지정=비처리, 37p와 같은 규칙).
      * 레거시는 이걸 도서명 문자열({@code bookName like '%11월%고3%1영역%'})로 긁었는데,
@@ -572,7 +583,8 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
                    join SalesDivision d on d.code = b.salesDivision
              where s.canceled = false
                and s.salesCategory = com.daesung.sales.salestype.entity.SalesCategory.SALE
-               and d.majorCategory = com.daesung.sales.product.entity.MajorCategory.MOCK_EXAM
+               and b.catCode like 'M%'
+               and (b.catCode like 'M%A%' or b.catCode like 'M%B%' or b.catCode like 'M%C%')
                and s.salesDate between :fromDate and :toDate
                and (:grade is null or b.grade = :grade)
                and (:partnerId is null or p.id = :partnerId)

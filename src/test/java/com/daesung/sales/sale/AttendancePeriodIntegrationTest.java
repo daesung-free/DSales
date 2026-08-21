@@ -42,6 +42,8 @@ class AttendancePeriodIntegrationTest extends IntegrationTestSupport {
         long mock2 = mockBook("APM2" + sfx, "M2037B99");
         // 모의고사가 아닌 도서(교재) — 집계에서 빠져야 한다
         long book = product("APB" + sfx, "H2036H01", "교재");
+        // ‼️모의고사이지만 더프가 아닌 계열(M…D) — 대분류로 걸렀다면 섞여 들어왔을 건이다
+        long nonDuff = mockBook("APN" + sfx, "M2036D01");
 
         // ‼️연도 선택 주의: 대시보드 테스트가 2030~2032년 목표와 그 전년 실적을 전역 집계로 검증한다.
         //   그 근처에 매출을 만들면 남의 기대값이 깨진다(실제로 한 번 깨뜨렸다).
@@ -49,7 +51,8 @@ class AttendancePeriodIntegrationTest extends IntegrationTestSupport {
         sale("2036-11-05", mock1, 100, "GRADED");
         sale("2036-11-05", mock1, 30, null);          // 미지정 = 비처리
         sale("2037-03-10", mock2, 50, "GRADED");
-        sale("2037-03-10", book, 999, "GRADED");      // 교재 → 응시현황 대상 아님
+        sale("2037-03-10", book, 999, "GRADED");      // 교재 → 대상 아님
+        sale("2037-03-10", nonDuff, 777, "GRADED");   // 비더프 모의고사 → 대상 아님
     }
 
     @Test
@@ -74,7 +77,8 @@ class AttendancePeriodIntegrationTest extends IntegrationTestSupport {
         assertThat(total.path("monthlyTotal").get(0).asLong()).isEqualTo(130);
         assertThat(total.path("monthlyGraded").get(4).asLong()).isEqualTo(50);
 
-        // 교재 999는 어디에도 섞이지 않는다(대분류가 모의고사가 아니다)
+        // 교재 999도, 더프 아닌 모의고사 777도 섞이지 않는다.
+        // 더프 판별은 분류코드 M+A/B/C 계열(레거시 그대로) — 대분류로 걸렀다면 777이 섞였을 것이다.
         assertThat(total.path("gradedTotal").asLong()).isEqualTo(150);
         assertThat(total.path("ungradedTotal").asLong()).isEqualTo(30);
         assertThat(total.path("total").asLong()).isEqualTo(180);

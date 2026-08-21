@@ -48,17 +48,25 @@ public class DashboardController {
                     · 대상은 scope로 고른다 — COMPANY(전사, 기본) / DIVISION(사업부문) / PRODUCT(상품).
                     · **연간 목표만 등록된 경우 월 셀 목표는 0이고 연간 요약에만 잡힌다.**
                       연간 금액을 12로 나눠 뿌리면 있지도 않은 월 목표를 만들어내기 때문이다.
-                    · 전년 실적은 우리 매출에서 계산하되, 그 해 매출이 통째로 없으면
-                      저장된 확정 실적(entryType=ACTUAL)으로 채운다.""")
+                    · **비교 연도를 고를 수 있다**(정본 20p "기준/비교연도"). 미지정이면 전년이다.
+                      2026을 2024와 견주는 식으로 임의 연도 비교가 된다.
+                    · 비교연도 실적은 우리 매출에서 계산하되, 그 해 매출이 통째로 없으면
+                      저장된 확정 실적(entryType=ACTUAL)으로 채운다.
+                    · **미도래 월은 당월 실적이 비어 나온다**(0으로 채우면 차트가 바닥으로 떨어진 것처럼 보인다).
+                      누적은 비우지 않는다.""")
     @GetMapping("/sales")
     public ApiResponse<DashboardResponse> sales(
-            @Parameter(description = "연도", example = "2026") @RequestParam int year,
+            @Parameter(description = "기준 연도", example = "2026") @RequestParam int year,
+            @Parameter(description = "비교 연도(미지정 시 전년). 예: 2026을 2024와 견주려면 2024",
+                    example = "2025")
+            @RequestParam(required = false) Integer compareYear,
             @Parameter(description = "대상 축(미지정=COMPANY 전사)")
             @RequestParam(required = false) com.daesung.sales.dashboard.entity.TargetScope scope,
             @Parameter(description = "사업부문명(scope=DIVISION)", example = "더프리미엄")
             @RequestParam(required = false) String scopeKey,
             @Parameter(description = "상품 id(scope=PRODUCT)") @RequestParam(required = false) Long productId) {
-        return ApiResponse.success(dashboardService.salesDashboard(year, scope, scopeKey, productId));
+        return ApiResponse.success(
+                dashboardService.salesDashboard(year, compareYear, scope, scopeKey, productId));
     }
 
     @Operation(summary = "기본 통계 대시보드(19p)",
