@@ -13,6 +13,7 @@ import com.daesung.sales.receivable.dto.CarryforwardResult;
 import com.daesung.sales.receivable.dto.CollectionRequest;
 import com.daesung.sales.receivable.dto.CollectionLedgerResponse;
 import com.daesung.sales.receivable.dto.CollectionResponse;
+import com.daesung.sales.receivable.dto.DuffLedgerResponse;
 import com.daesung.sales.receivable.entity.Collection;
 import com.daesung.sales.receivable.entity.CollectionType;
 import com.daesung.sales.receivable.entity.ReceivableCarryforward;
@@ -185,6 +186,105 @@ public class ReceivableService {
         }
 
         return new CollectionLedgerResponse(b, b.label(), fromDate, toDate, rows, running);
+    }
+
+    /**
+     * 외상매출장 '더프모만'(24p). 근거: 레거시 외상매출장조회.vb:603 {@code Refresh_DataGridView_더프모만()}.
+     *
+     * <p>정본이 "그리드 컬럼 구조 자체가 완전 전환"이라고 못박아, 기본 장부와 <b>다른 응답</b>으로 낸다.
+     * 기본 장부는 채권 러닝밸런스를 보는 화면이고 이쪽은 모의고사 매출 세부라 잔액 개념이 없다.
+     *
+     * <p>소계는 레거시 {@code GROUP BY rollup(schCode, idx), 거래년월} 그대로
+     * <b>학교(원) 계 → 월 계</b> 순으로 붙인다.
+     */
+    @Transactional(readOnly = true)
+    public DuffLedgerResponse duffLedger(Long partnerId, LocalDate fromDate, LocalDate toDate) {
+        Partner partner = partnerRepository.findById(partnerId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                        "거래처가 없습니다. id=" + partnerId));
+        LocalDate from = (fromDate != null) ? fromDate : LocalDate.now().withDayOfYear(1);
+        LocalDate to = (toDate != null) ? toDate : LocalDate.now();
+
+        List<DuffLedgerResponse.Row> rows = new ArrayList<>();
+        long schoolQty = 0;
+        long schoolAmt = 0;
+        long monthQty = 0;
+        long monthAmt = 0;
+        long totalQty = 0;
+        long totalAmt = 0;
+        String prevMonth = null;
+        String prevSchool = null;
+
+        for (Object[] r : saleRepository.duffLedgerLines(partnerId, from, to)) {
+            LocalDate date = toLocalDate(r[0]);
+            String school = str(r[1]);
+            String month = (date == null) ? "" : String.format("%04d-%02d", date.getYear(), date.getMonthValue());
+            long qty = num(r[7]);
+            long amt = num(r[8]);
+
+            // 학교가 바뀌면 학교 계, 달이 바뀌면 월 계까지(레거시 rollup 순서 그대로).
+            if (prevSchool != null && !prevSchool.equals(school)) {
+                rows.add(DuffLedgerResponse.Row.subtotal("SCHOOL_SUBTOTAL", "학교(원) 계",
+                        prevSchool, schoolQty, schoolAmt));
+                schoolQty = 0;
+                schoolAmt = 0;
+            }
+            if (prevMonth != null && !prevMonth.equals(month)) {
+                rows.add(DuffLedgerResponse.Row.subtotal("MONTH_SUBTOTAL", "월 계", null, monthQty, monthAmt));
+                monthQty = 0;
+                monthAmt = 0;
+            }
+
+            rows.add(new DuffLedgerResponse.Row("DETAIL", null, date, school,
+                    examMonth(toLocalDate(r[2])), str(r[3]), procLabel(str(r[4])),
+                    intOrNull(r[5]), intOrNull(r[6]), qty, amt));
+
+            schoolQty += qty;
+            schoolAmt += amt;
+            monthQty += qty;
+            monthAmt += amt;
+            totalQty += qty;
+            totalAmt += amt;
+            prevSchool = school;
+            prevMonth = month;
+        }
+
+        if (prevSchool != null) {
+            rows.add(DuffLedgerResponse.Row.subtotal("SCHOOL_SUBTOTAL", "학교(원) 계",
+                    prevSchool, schoolQty, schoolAmt));
+            rows.add(DuffLedgerResponse.Row.subtotal("MONTH_SUBTOTAL", "월 계", null, monthQty, monthAmt));
+        }
+
+        return new DuffLedgerResponse(partnerId, partner.getName(), from, to, rows, totalQty, totalAmt);
+    }
+
+    /**
+     * 시행월(yyyy-MM). BOM 시행예정일이 없으면 <b>비운다</b> —
+     * 레거시처럼 도서명을 잘라 만들면 이름 규칙이 어긋나는 순간 엉뚱한 값이 찍힌다(그쪽은 '##ERROR'였다).
+     */
+    private static String examMonth(LocalDate examDate) {
+        return (examDate == null) ? null
+                : String.format("%04d-%02d", examDate.getYear(), examDate.getMonthValue());
+    }
+
+    /** 성적처리 구분 → 화면 표기. 미지정은 '비처리'(37p와 같은 규칙). */
+    private static String procLabel(String procType) {
+        return "GRADED".equals(procType) ? "처리" : "비처리";
+    }
+
+    private static LocalDate toLocalDate(Object o) {
+        if (o == null) {
+            return null;
+        }
+        return (o instanceof java.sql.Date d) ? d.toLocalDate() : LocalDate.parse(o.toString());
+    }
+
+    private static Integer intOrNull(Object o) {
+        return (o == null) ? null : ((Number) o).intValue();
+    }
+
+    private static String str(Object o) {
+        return (o == null) ? null : o.toString();
     }
 
     /** 거래처 그룹 = 거래처코드 첫 글자(레거시 custCode.Substring(0,1)). 코드가 비면 빈 그룹. */

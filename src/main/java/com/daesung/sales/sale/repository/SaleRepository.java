@@ -171,6 +171,50 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     List<Object[]> netSalesBreakdown(@Param("fromDate") LocalDate fromDate,
                                      @Param("toDate") LocalDate toDate);
 
+    /**
+     * 외상매출장 '더프모만'(24p) 명세. 근거: 레거시 외상매출장조회.vb:603
+     * {@code Refresh_DataGridView_더프모만()}.
+     *
+     * <p>정본 24p: "'더프모만' 체크 시 그리드 컬럼 구조 자체가 학교(원)별/학년별/시행월별
+     * 세분화 구조로 <b>완전 전환</b>됨(조건부 스키마)".
+     *
+     * <p>★레거시는 여기서도 <b>문자열을 파싱</b>했고, 안 맞으면 {@code '##ERROR'}를 찍었다:
+     * <pre>
+     *   시행월 = LEFT(bookName, CHARINDEX('월', bookName))
+     *   학년   = CASE WHEN bookName LIKE '%고3%' THEN '고3' … ELSE '##ERROR'
+     *   처리   = CASE WHEN catName LIKE '%비처리%' … ELSE '##ERROR'
+     * </pre>
+     * 우리는 셋 다 필드로 갖고 있어 파싱하지 않는다 —
+     * 학년={@code products.grade}, 처리={@code sales.proc_type},
+     * 시행월={@code bom_items.exam_date}(V27, 그 상품·회차의 시행예정일).
+     *
+     * <p>모의고사 판별도 마찬가지다. 레거시는 {@code catCode LIKE 'M%A%'}처럼 코드 패턴으로 걸렀는데,
+     * 우리는 <b>대분류</b>로 거른다(연도·코드체계에 기대지 않는다).
+     *
+     * <p>소계(학교 계·월 계)는 서비스에서 조립한다. 반환 Object[]:
+     * [salesDate, schoolName, examDate, grade, procType, unitPrice, supplyRate, qty, amount].
+     */
+    @Query(value = """
+            SELECT s.sales_date, COALESCE(s.school_name, ''),
+                   (SELECT MIN(b.exam_date) FROM bom_items b
+                     WHERE b.parent_product_id = s.product_id
+                       AND b.round = s.book_round AND b.deleted_at IS NULL) AS exam_date,
+                   COALESCE(p.grade, ''), COALESCE(s.proc_type, ''),
+                   s.unit_price, s.supply_rate, s.qty, COALESCE(s.supply_amount, 0)
+            FROM sales s
+              JOIN products p ON p.id = s.product_id
+              LEFT JOIN sales_divisions d ON d.code = p.sales_division
+            WHERE s.canceled = false
+              AND d.major_category = 'MOCK_EXAM'
+              AND s.partner_id = :partnerId
+              AND s.sales_date BETWEEN :fromDate AND :toDate
+            ORDER BY EXTRACT(YEAR FROM s.sales_date), EXTRACT(MONTH FROM s.sales_date),
+                     COALESCE(s.school_name, ''), exam_date, p.grade, s.proc_type, s.id
+            """, nativeQuery = true)
+    List<Object[]> duffLedgerLines(@Param("partnerId") Long partnerId,
+                                   @Param("fromDate") LocalDate fromDate,
+                                   @Param("toDate") LocalDate toDate);
+
     /** 매출일괄등록 멱등: 이미 등록된 소스키인지. */
     boolean existsByBulkImportKey(String bulkImportKey);
 

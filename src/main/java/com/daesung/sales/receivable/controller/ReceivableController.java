@@ -11,6 +11,7 @@ import com.daesung.sales.receivable.dto.CarryforwardResult;
 import com.daesung.sales.receivable.dto.CollectionRequest;
 import com.daesung.sales.receivable.dto.CollectionLedgerResponse;
 import com.daesung.sales.receivable.dto.CollectionResponse;
+import com.daesung.sales.receivable.dto.DuffLedgerResponse;
 import com.daesung.sales.receivable.entity.CollectionType;
 import com.daesung.sales.receivable.service.ReceivableService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -215,6 +216,52 @@ public class ReceivableController {
             @Parameter(description = "종료일(yyyy-MM-dd, 미지정 시 오늘)") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate) {
         return ApiResponse.success(receivableService.arLedger(partnerId, fromDate, toDate));
+    }
+
+    @Operation(summary = "외상매출장 '더프모만'(24p)",
+            description = """
+                    모의고사 매출을 **학교(원)·시행월·학년·처리** 단위로 본다.
+                    정본 24p가 "'더프모만' 체크 시 그리드 컬럼 구조 자체가 완전 전환"이라 해서
+                    기본 외상매출장과 **다른 응답**으로 낸다 —
+                    한 응답에 두 스키마를 우겨넣으면 절반이 늘 비어 있는 DTO가 된다.
+
+                    ```
+                    [기본]   일자 · 구분 · 전표번호 · 적요 · 금액 · 잔액   ← GET /closing/ar-ledger
+                    [더프모] 일자 · 학교(원)명 · 시행월 · 학년 · 처리 · 정가 · 공급률 · 수량 · 금액
+                    ```
+                    기본 장부는 **채권 러닝밸런스**를 보는 화면이고 이쪽은 모의고사 매출 세부라 잔액이 없다.
+
+                    · 소계는 레거시 그대로 **학교(원) 계 → 월 계** 순으로 붙는다.
+                    · 모의고사 판별은 **대분류**로 한다. 레거시는 `catCode LIKE 'M%A%'`처럼
+                      코드 패턴으로 걸렀는데, 그러면 코드체계가 바뀔 때마다 깨진다.
+                    · ⚠️**시행월**은 그 상품·회차의 BOM 시행예정일에서 온다.
+                      레거시는 도서명을 잘라 만들었고 이름이 규칙에 안 맞으면 `##ERROR`가 찍혔다.
+                      우리는 파싱하지 않으므로 BOM에 시행예정일이 없으면 **비운다**.""")
+    @GetMapping("/ar-ledger/duff")
+    public ApiResponse<DuffLedgerResponse> duffLedger(
+            @Parameter(description = "거래처 id", required = true) @RequestParam Long partnerId,
+            @Parameter(description = "시작일(미지정 시 올해 1/1)") @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @Parameter(description = "종료일(미지정 시 오늘)") @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate) {
+        return ApiResponse.success(receivableService.duffLedger(partnerId, fromDate, toDate));
+    }
+
+    @Operation(summary = "외상매출장 '더프모만' 엑셀 다운로드")
+    @GetMapping("/ar-ledger/duff/export")
+    public ResponseEntity<byte[]> duffLedgerExport(
+            @RequestParam Long partnerId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate) {
+        List<Col> cols = List.of(
+                new Col("구분", "rowType"), new Col("소계명", "label"),
+                new Col("일자", "date"), new Col("학교(원)명", "schoolName"),
+                new Col("시행월", "examMonth"), new Col("학년", "grade"),
+                new Col("처리", "procType"), new Col("정가", "unitPrice"),
+                new Col("공급률", "supplyRate"), new Col("수량", "qty"), new Col("금액", "amount"));
+        byte[] xlsx = excel.toXlsx("외상매출장_더프모", cols,
+                receivableService.duffLedger(partnerId, fromDate, toDate).rows());
+        return excel.asDownload(xlsx, "외상매출장_더프모.xlsx");
     }
 
     @Operation(summary = "외상매출장 엑셀 다운로드", description = "단일 거래처 일자별 매출/반품/수금 명세 + 러닝밸런스.")
