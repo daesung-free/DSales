@@ -18,8 +18,14 @@ public record DashboardResponse(
             @Schema(description = "월(1~12)") int month,
             @Schema(description = "당월 목표금액") long target,
             @Schema(description = "누적 목표금액(1월~해당월 합)") long cumulativeTarget,
-            @Schema(description = "당월 실적(순매출)") long actual,
-            @Schema(description = "누적 실적(1월~해당월 합)") long cumulativeActual,
+            @Schema(description = """
+                    당월 실적(순매출). **아직 오지 않은 달은 null**(정본 20p "미도래 월은 실적 컬럼 공백 처리").
+                    0으로 채우면 차트가 연말까지 바닥으로 곤두박질친 것처럼 보인다.
+                    미래 달이라도 실적이 기록돼 있으면 그 값을 준다 — 있는 숫자를 숨기지는 않는다.""")
+            Long actual,
+            @Schema(description = "누적 실적(1월~해당월 합). 미도래 월에도 비우지 않는다 — "
+                    + "누적은 지금까지의 합이라 유지되는 게 맞고, 비우면 선그래프가 끊긴다")
+            long cumulativeActual,
             @Schema(description = "달성률 %(실적/목표), 목표 0이면 null") Double achievementPct,
             @Schema(description = "전년 동월 실적") long prevActual,
             @Schema(description = "전년比 성장률 %((실적−전년)/전년), 전년 0이면 null") Double growthPct

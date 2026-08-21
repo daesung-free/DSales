@@ -141,6 +141,36 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
                                                        @Param("partnerId") Long partnerId,
                                                        @Param("catCode") String catCode);
 
+    /**
+     * 기간 순매출을 <b>가장 잘게</b> 집계(19p 기본 통계 대시보드).
+     * 상품×거래처×대분류×거래처구분 단위로 내고, 축별 합계(상품별·거래처별·대분류별·구분별)는 서비스에서 접는다.
+     *
+     * <p>★순매출 식은 20p 목표대비({@link #monthlyNetSales})와 <b>같다</b> —
+     * {@code SALE 공급가 − RETURN 공급가}, 취소 제외. 정본 19p가
+     * "20페이지 매출상세대시보드와 원천데이터 공유"를 조건으로 달았으므로 식이 갈리면 안 된다.
+     *
+     * <p>축마다 쿼리를 따로 쓰지 않는 이유가 그것이다 — 네 벌로 갈라지면 언젠가 한 벌만 고쳐진다.
+     * 접는 일은 Java가 한다(행 수는 매출 조합 수라 대시보드에 충분히 작다).
+     *
+     * <p>반환 Object[]: [productId, productName, partnerId, partnerName, majorCategory, clientCategory, netAmount].
+     */
+    @Query(value = """
+            SELECT p.id, MAX(p.name), pt.id, MAX(pt.name),
+                   COALESCE(d.major_category, ''), COALESCE(pt.client_category, ''),
+                   COALESCE(SUM(CASE WHEN s.sales_category='SALE'   THEN s.supply_amount
+                                     WHEN s.sales_category='RETURN' THEN -s.supply_amount
+                                     ELSE 0 END),0) AS net_amt
+            FROM sales s
+              JOIN products p  ON p.id = s.product_id
+              JOIN partners pt ON pt.id = s.partner_id
+              LEFT JOIN sales_divisions d ON d.code = p.sales_division
+            WHERE s.canceled = false
+              AND s.sales_date BETWEEN :fromDate AND :toDate
+            GROUP BY p.id, pt.id, d.major_category, pt.client_category
+            """, nativeQuery = true)
+    List<Object[]> netSalesBreakdown(@Param("fromDate") LocalDate fromDate,
+                                     @Param("toDate") LocalDate toDate);
+
     /** 매출일괄등록 멱등: 이미 등록된 소스키인지. */
     boolean existsByBulkImportKey(String bulkImportKey);
 

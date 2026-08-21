@@ -1,5 +1,7 @@
 package com.daesung.sales.dashboard.service;
 
+import com.daesung.sales.dashboard.dto.DashboardOverviewResponse;
+import com.daesung.sales.product.entity.MajorCategory;
 import com.daesung.sales.dashboard.dto.DashboardResponse;
 import com.daesung.sales.dashboard.dto.TargetRequest;
 import com.daesung.sales.dashboard.dto.TargetResponse;
@@ -10,9 +12,11 @@ import com.daesung.sales.dashboard.entity.TargetScope;
 import com.daesung.sales.dashboard.repository.DashboardSnapshotRepository;
 import com.daesung.sales.dashboard.repository.SalesTargetRepository;
 import com.daesung.sales.sale.repository.SaleRepository;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -106,8 +110,18 @@ public class DashboardService {
             tTarget += target;
             tActual += act;
             tPrev += pv;
-            months.add(new DashboardResponse.MonthCell(m, target, tTarget, act, tActual,
-                    pct(act, target), pv, growth(act, pv)));
+            // 정본 20p "미도래 월은 실적 컬럼 공백 처리" — 0으로 채우면 차트가 연말까지
+            // 바닥으로 곤두박질친 것처럼 보인다. 단 미래 달이라도 실적이 기록돼 있으면 그 값을 준다
+            // (있는 숫자를 숨기지는 않는다).
+            // 정본 20p "미도래 월은 실적 컬럼 공백 처리" — 0으로 채우면 막대차트가
+            // 연말까지 바닥으로 곤두박질친 것처럼 보인다. 미래 달이라도 실적이 기록돼 있으면 그 값을 준다.
+            // 'ㅤ누적은 비우지 않는다 — 누적은 지금까지의 합이라 미래 칸에서도 유지되는 게 맞고,
+            //   비우면 선그래프가 끊긴다. 달성률·성장률은 당월 값이 없으면 계산이 성립하지 않아 함께 비운다.
+            boolean pending = isFutureMonth(year, m) && act == 0;
+            months.add(new DashboardResponse.MonthCell(m, target, tTarget,
+                    pending ? null : act, tActual,
+                    pending ? null : pct(act, target), pv,
+                    pending ? null : growth(act, pv)));
         }
 
         // 연간 목표가 등록돼 있으면 월 합계보다 그 값이 우선이다(월별을 안 넣고 연간만 넣는 운영).
@@ -118,6 +132,156 @@ public class DashboardService {
         DashboardResponse.YearSummary summary = new DashboardResponse.YearSummary(
                 yearTarget, tActual, pct(tActual, yearTarget), yearPrev, growth(tActual, yearPrev));
         return new DashboardResponse(year, sc, key, pid, computedAt(year, sc), months, summary);
+    }
+
+    /**
+     * 기본 통계 대시보드(19p). KPI + 제품별 목표대비 + 월 누적트렌드 + 거래처 비중 + 순매출 TOP5.
+     *
+     * <p>★순매출은 20p와 <b>같은 원천</b>을 쓴다(정본 19p가 "원천데이터 공유"를 조건으로 달았다).
+     * 월별 트렌드는 20p가 쓰는 {@link #monthlyMap}을 그대로 재사용하고,
+     * 축별 집계는 같은 식으로 만든 단일 쿼리 하나만 쓴다. 식이 갈리면 두 화면 숫자가 달라진다.
+     *
+     * @param month 기준 월(1~12). 당월 KPI와 누적 범위를 정한다.
+     */
+    @Transactional(readOnly = true)
+    public DashboardOverviewResponse overview(int year, int month) {
+        LocalDate yearStart = LocalDate.of(year, 1, 1);
+        LocalDate monthStart = LocalDate.of(year, month, 1);
+        LocalDate monthEnd = monthStart.withDayOfMonth(monthStart.lengthOfMonth());
+
+        // 월별 트렌드 — 20p가 쓰는 그 맵을 그대로 쓴다(스냅샷/실시간 폴백까지 공유).
+        Map<Integer, Long> monthly = monthlyMap(year, TargetScope.COMPANY, null);
+        List<DashboardOverviewResponse.TrendPoint> trend = new ArrayList<>();
+        long running = 0;
+        long cumulativeToMonth = 0;
+        for (int m = 1; m <= 12; m++) {
+            long v = monthly.getOrDefault(m, 0L);
+            running += v;
+            trend.add(new DashboardOverviewResponse.TrendPoint(m, v, running));
+            if (m <= month) {
+                cumulativeToMonth = running;
+            }
+        }
+        long monthNet = monthly.getOrDefault(month, 0L);
+
+        // 누적(1월~기준월)을 한 번만 읽고 축별로 접는다 — 순매출 식이 한 벌뿐이라는 뜻이다.
+        List<Object[]> breakdown = saleRepository.netSalesBreakdown(yearStart, monthEnd);
+        List<DashboardOverviewResponse.Share> products = fold(breakdown, 0, 1);
+        List<DashboardOverviewResponse.Share> partners = fold(breakdown, 2, 3);
+        List<DashboardOverviewResponse.Share> majors = fold(breakdown, 4, 4);
+
+        // 점유율 1위 상품군 — 이름을 코드에 박지 않는다(정본 예시는 '더프리미엄'이지만
+        // 그 상품군이 1위가 아니게 된 순간 카드가 거짓말을 한다).
+        DashboardOverviewResponse.Share top = majors.stream()
+                .filter(x -> x.netSales() > 0).findFirst().orElse(null);
+
+        // 특약점 당월 순매출 — 거래처구분 축에서 뽑는다.
+        long dealerMonth = saleRepository.netSalesBreakdown(monthStart, monthEnd).stream()
+                .filter(r -> DEALER.equals(str(r[5])))
+                .mapToLong(r -> num(r[6])).sum();
+
+        DashboardOverviewResponse.Kpi kpi = new DashboardOverviewResponse.Kpi(
+                monthNet, cumulativeToMonth,
+                (top == null) ? 0L : top.netSales(),
+                (top == null) ? null : majorLabel(top.name()),
+                (top == null) ? null : top.sharePct(),
+                dealerMonth);
+
+        return new DashboardOverviewResponse(year, month, kpi,
+                productTargets(year, products), trend,
+                partners, products.stream().limit(5).toList());
+    }
+
+    /** 거래처구분 '특약점'. 정본 19p KPI "특약점 당월매출". */
+    private static final String DEALER = "특약점";
+
+    /** 제품별 목표대비 — 목표가 등록된 상품만. 목표가 없는 상품까지 0으로 깔면 차트가 의미를 잃는다. */
+    private List<DashboardOverviewResponse.ProductTarget> productTargets(
+            int year, List<DashboardOverviewResponse.Share> productActuals) {
+        Map<String, Long> actualById = new HashMap<>();
+        Map<String, String> nameById = new HashMap<>();
+        for (DashboardOverviewResponse.Share p : productActuals) {
+            actualById.put(p.key(), p.netSales());
+            nameById.put(p.key(), p.name());
+        }
+
+        Map<Long, long[]> byProduct = new LinkedHashMap<>();   // [월목표합, 연간목표]
+        for (SalesTarget t : targetRepository.findByFiscalYearAndScope(year, TargetScope.PRODUCT)) {
+            if (t.getEntryType() != TargetEntryType.TARGET || t.getProductId() == null) {
+                continue;
+            }
+            long[] acc = byProduct.computeIfAbsent(t.getProductId(), k -> new long[2]);
+            if (t.isAnnual()) {
+                acc[1] = t.getTargetAmount();
+            } else {
+                acc[0] += t.getTargetAmount();
+            }
+        }
+
+        List<DashboardOverviewResponse.ProductTarget> out = new ArrayList<>();
+        for (Map.Entry<Long, long[]> e : byProduct.entrySet()) {
+            String key = String.valueOf(e.getKey());
+            // 연간 목표가 있으면 그 값이 우선(20p 요약과 같은 규칙).
+            long target = (e.getValue()[1] > 0) ? e.getValue()[1] : e.getValue()[0];
+            long actual = actualById.getOrDefault(key, 0L);
+            out.add(new DashboardOverviewResponse.ProductTarget(
+                    e.getKey(), nameById.get(key), target, actual, pct(actual, target)));
+        }
+        return out;
+    }
+
+    /**
+     * 잘게 집계된 행을 한 축으로 접고 비중을 매긴다. 큰 순으로 정렬한다(도넛·TOP5가 같은 순서를 쓴다).
+     *
+     * <p>비중의 분모는 <b>양수 합</b>이다 — 반품이 많아 순매출이 음수인 항목까지 분모에 넣으면
+     * 전체가 줄어 나머지 비중이 부풀려진다. 전체가 0이면 비중은 null(0%로 두면 "비중 없음"으로 오해된다).
+     *
+     * @param keyIdx  키로 쓸 컬럼 위치
+     * @param nameIdx 표시명으로 쓸 컬럼 위치(대분류처럼 키가 곧 이름이면 같은 값)
+     */
+    private static List<DashboardOverviewResponse.Share> fold(List<Object[]> rows, int keyIdx, int nameIdx) {
+        Map<String, long[]> sums = new LinkedHashMap<>();
+        Map<String, String> names = new HashMap<>();
+        for (Object[] r : rows) {
+            String key = str(r[keyIdx]);
+            if (key == null || key.isEmpty()) {
+                continue;   // 대분류·거래처구분이 비어 있는 행은 축에 올릴 이름이 없다
+            }
+            sums.computeIfAbsent(key, k -> new long[1])[0] += num(r[6]);
+            names.putIfAbsent(key, str(r[nameIdx]));
+        }
+        long total = sums.values().stream().mapToLong(v -> v[0]).filter(v -> v > 0).sum();
+        List<DashboardOverviewResponse.Share> out = new ArrayList<>();
+        sums.forEach((k, v) -> {
+            Double share = (total == 0) ? null : Math.round((double) v[0] / total * 100 * 10) / 10.0;
+            out.add(new DashboardOverviewResponse.Share(k, names.get(k), v[0], share));
+        });
+        out.sort((a, b) -> Long.compare(b.netSales(), a.netSales()));
+        return out;
+    }
+
+    /** 대분류 코드 → 한글명. 매핑에 없으면 원값 그대로(미분류 등). */
+    private static String majorLabel(String code) {
+        for (MajorCategory c : MajorCategory.values()) {
+            if (c.name().equals(code)) {
+                return c.label();
+            }
+        }
+        return code;
+    }
+
+    private static long num(Object o) {
+        return (o == null) ? 0L : ((Number) o).longValue();
+    }
+
+    private static String str(Object o) {
+        return (o == null) ? null : o.toString();
+    }
+
+    /** 아직 오지 않은 달인가(오늘 기준). 이번 달은 진행 중이라 '도래'로 본다. */
+    private static boolean isFutureMonth(int year, int month) {
+        LocalDate now = LocalDate.now();
+        return year > now.getYear() || (year == now.getYear() && month > now.getMonthValue());
     }
 
     /** 저장된 확정 실적(ACTUAL) 합. 이관하지 않은 과거연도의 전년비를 살리는 용도. */

@@ -29,6 +29,15 @@ public interface SalesTargetRepository extends JpaRepository<SalesTarget, Long> 
                                @Param("productId") Long productId,
                                @Param("entryType") TargetEntryType entryType);
 
+    /**
+     * 해당 연도·축의 <b>전 행</b>(상품이 무엇이든). 19p 제품별 목표대비처럼
+     * "상품 목표 전부"가 필요할 때 쓴다.
+     *
+     * <p>‼️{@link #findByYearAndScope}에 productId=null을 넘기면 <b>productId가 NULL인 행</b>만
+     * 나온다(그 조건이 "전체"가 아니라 "널인 것"이다). 상품 목표는 productId가 채워져 있어 하나도 안 걸린다.
+     */
+    List<SalesTarget> findByFiscalYearAndScope(int fiscalYear, TargetScope scope);
+
     /** 해당 연도·대상의 전 행(월별 + 연간). 대시보드가 월 셀과 연간 요약을 함께 조립한다. */
     @Query("""
             select t from SalesTarget t

@@ -1,6 +1,7 @@
 package com.daesung.sales.dashboard.controller;
 
 import com.daesung.sales.common.response.ApiResponse;
+import com.daesung.sales.dashboard.dto.DashboardOverviewResponse;
 import com.daesung.sales.dashboard.dto.DashboardResponse;
 import com.daesung.sales.dashboard.dto.TargetRequest;
 import com.daesung.sales.dashboard.dto.TargetResponse;
@@ -58,6 +59,30 @@ public class DashboardController {
             @RequestParam(required = false) String scopeKey,
             @Parameter(description = "상품 id(scope=PRODUCT)") @RequestParam(required = false) Long productId) {
         return ApiResponse.success(dashboardService.salesDashboard(year, scope, scopeKey, productId));
+    }
+
+    @Operation(summary = "기본 통계 대시보드(19p)",
+            description = """
+                    KPI 카드 + 제품별 목표대비 + 월별 누적트렌드 + 거래처별 비중 + 순매출 TOP5.
+
+                    · **20p와 원천이 같다.** 정본 19p가 "20페이지 매출상세대시보드와 원천데이터 공유"를
+                      조건으로 달았으므로 순매출 식(매출 공급가 − 반품 공급가, 취소 제외)을 한 곳에서 쓴다.
+                      월별 트렌드는 20p가 쓰는 계산을 그대로 재사용한다(스냅샷/실시간 폴백까지 동일).
+                    · **점유율 1위 상품군**은 계산해서 낸다. 정본 예시가 '더프리미엄'이지만
+                      이름을 코드에 박지 않는다 — 그 상품군이 1위가 아니게 된 순간 카드가 거짓말을 한다.
+                    · 제품별 목표대비는 **목표가 등록된 상품만** 나온다.
+                      목표 없는 상품까지 0으로 깔면 차트가 의미를 잃는다.
+                    · 누적은 1월~기준월이다.""")
+    @GetMapping("/overview")
+    public ApiResponse<DashboardOverviewResponse> overview(
+            @Parameter(description = "기준 연도(미지정 시 올해)", example = "2026")
+            @RequestParam(required = false) Integer year,
+            @Parameter(description = "기준 월 1~12(미지정 시 이번 달)", example = "6")
+            @RequestParam(required = false) Integer month) {
+        java.time.LocalDate now = java.time.LocalDate.now();
+        int y = (year != null) ? year : now.getYear();
+        int m = (month != null) ? month : now.getMonthValue();
+        return ApiResponse.success(dashboardService.overview(y, m));
     }
 
     @Operation(summary = "매출목표 목록",
