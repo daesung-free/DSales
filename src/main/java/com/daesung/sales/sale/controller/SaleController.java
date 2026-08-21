@@ -16,6 +16,8 @@ import com.daesung.sales.sale.dto.SaleResponse;
 import com.daesung.sales.sale.dto.SalesEntryRequest;
 import com.daesung.sales.sale.dto.SalesEntryResponse;
 import com.daesung.sales.sale.dto.SalesStatementResponse;
+import com.daesung.sales.sale.dto.StatementKind;
+import com.daesung.sales.sale.entity.SalesType;
 import com.daesung.sales.sale.dto.SalesUploadResponse;
 import com.daesung.sales.sale.dto.SalesSummaryResponse;
 import com.daesung.sales.sale.dto.TransactionStatementResponse;
@@ -198,9 +200,13 @@ public class SaleController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @Parameter(description = "종료일(yyyy-MM-dd)", required = true) @RequestParam(name = "toDate")
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
-            @Parameter(description = "회계구분(SALE/FREE/RETURN, 미지정=전체)") @RequestParam(required = false)
-            SalesCategory category) {
-        return ApiResponse.success(saleReportService.statement(from, to, category));
+            @Parameter(description = """
+                    구분 SALE(매출)/RETURN(반품)/TEACHER_USE(교사용)/GIFT(증정용). 미지정=전체.
+                    ‼️표준 '구분(상세)'(3종)와 값이 다르다 — 무상을 교사용·증정용으로 쪼갠 축이다(정본 15p).""")
+            @RequestParam(required = false) StatementKind kind,
+            @Parameter(description = "매출유형 NORMAL_SALES(일반매출)/CONSIGN_SALES(위탁매출). 미지정=전체")
+            @RequestParam(required = false) SalesType salesType) {
+        return ApiResponse.success(saleReportService.statement(from, to, kind, salesType));
     }
 
     @Operation(summary = "매출액명세서 엑셀 다운로드", description = "드라이브 '매출액정리' 형식(분류/도서별 수량·금액·세액·합계).")
@@ -208,13 +214,15 @@ public class SaleController {
     public ResponseEntity<byte[]> statementExport(
             @RequestParam(name = "fromDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(name = "toDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
-            @RequestParam(required = false) SalesCategory category) {
+            @RequestParam(required = false) StatementKind kind,
+            @RequestParam(required = false) SalesType salesType) {
         List<Col> cols = List.of(
                 new Col("구분", "rowType"), new Col("대분류", "majorName"),
                 new Col("분류코드", "catCode"), new Col("분류명", "catName"),
                 new Col("도서코드", "bookCode"), new Col("도서명", "bookName"), new Col("수량", "qty"),
                 new Col("금액", "amount"), new Col("세액", "tax"), new Col("합계", "total"));
-        byte[] xlsx = excel.toXlsx("매출액명세서", cols, saleReportService.statement(from, to, category).rows());
+        byte[] xlsx = excel.toXlsx("매출액명세서", cols,
+                saleReportService.statement(from, to, kind, salesType).rows());
         return excel.asDownload(xlsx, "매출액명세서_" + from + "_" + to + ".xlsx");
     }
 

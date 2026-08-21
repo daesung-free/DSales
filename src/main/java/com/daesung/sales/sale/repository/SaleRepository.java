@@ -31,6 +31,9 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
      * left인 이유: 세부구분이 없거나 마스터에 없는 상품도 매출은 실재하므로 빠지면 안 된다
      * (그런 행은 대분류 null → 서비스에서 '미분류'로 모인다).
      *
+     * <p>필터는 정본 15p 그대로 <b>구분(5종) + 매출유형(일반/위탁)</b>이다.
+     * 구분은 회계구분·출고유형이 섞인 축이라(교사용·증정용은 둘 다 무상) 두 파라미터로 받는다.
+     *
      * <p>행 순서는 rollup 조립용으로 catCode·code 오름차순이고, <b>대분류 순서는 서비스에서 정한다</b> —
      * 대분류를 SQL로 정렬하면 enum 이름 알파벳순(ETC, ETC_EXAM, MOCK_EXAM…)이 되어
      * 화면 순서(모의고사·교재·기타고사·특강·기타)와 어긋난다.
@@ -47,12 +50,16 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
             where s.canceled = false
               and s.salesDate between :from and :to
               and (:category is null or s.salesCategory = :category)
+              and (:shipmentType is null or s.shipmentType = :shipmentType)
+              and (:salesType is null or s.salesType = :salesType)
             group by d.majorCategory, p.catCode, p.catName, p.code, p.name
             order by p.catCode asc, p.code asc
             """)
     List<SalesStatementAgg> statementAgg(@Param("from") LocalDate from,
                                          @Param("to") LocalDate to,
-                                         @Param("category") SalesCategory category);
+                                         @Param("category") SalesCategory category,
+                                         @Param("shipmentType") ShipmentType shipmentType,
+                                         @Param("salesType") com.daesung.sales.sale.entity.SalesType salesType);
 
     /**
      * 거래명세서 라인(거래처×기간). 취소 제외, 지정 회계구분(들)만. 상품 fetch join으로 N+1 방지.

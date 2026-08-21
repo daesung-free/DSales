@@ -8,7 +8,9 @@ import java.util.List;
 public record SalesStatementResponse(
         @Schema(description = "조회 시작일") LocalDate from,
         @Schema(description = "조회 종료일") LocalDate to,
-        @Schema(description = "회계구분 필터(null=전체)") String category,
+        @Schema(description = "구분 필터 코드 SALE/RETURN/TEACHER_USE/GIFT(null=전체)") String kind,
+        @Schema(description = "구분 필터 명칭(매출/반품/교사용/증정용)") String kindName,
+        @Schema(description = "매출유형 필터 NORMAL_SALES/CONSIGN_SALES(null=전체)") String salesType,
         @Schema(description = "명세 행(상세→소계→분류계→총계 순)") List<SalesStatementRow> rows
 ) {
 }

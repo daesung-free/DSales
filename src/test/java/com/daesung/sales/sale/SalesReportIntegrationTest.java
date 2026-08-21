@@ -138,7 +138,7 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
     @Test
     @DisplayName("매출액명세서 — 분류 rollup + 합계=금액+세액")
     void 매출액명세서() {
-        JsonNode d = data(get("/sales/statement?fromDate=2026-06-01&toDate=2026-06-30&category=SALE"));
+        JsonNode d = data(get("/sales/statement?fromDate=2026-06-01&toDate=2026-06-30&kind=SALE"));
         JsonNode rows = d.path("rows");
         JsonNode a01 = rowWhere(rows, "rowType", "CAT_SUBTOTAL");  // 첫 소계 = A01
         assertThat(a01.path("catCode").asText()).isEqualTo("A2026A01");
@@ -149,6 +149,49 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
         assertThat(grand.path("amount").asLong()).isEqualTo(195_000);
         assertThat(grand.path("tax").asLong()).isEqualTo(19_500);  // 과세 10%
         assertThat(grand.path("total").asLong()).isEqualTo(214_500); // 금액+세액
+    }
+
+    @Test
+    @DisplayName("매출액명세서 구분 5종(15p) — 교사용·증정용이 '무상'으로 뭉치지 않는다")
+    void 매출액명세서_구분5종() {
+        String range = "/sales/statement?fromDate=2026-06-01&toDate=2026-06-30";
+
+        // 시드: 매출 39(10+20+5+4) · 교사용 3 · 반품 2
+        assertThat(grandQty(range)).as("전체").isEqualTo(39 + 3 + 2);
+        assertThat(grandQty(range + "&kind=SALE")).isEqualTo(39);
+        assertThat(grandQty(range + "&kind=RETURN")).isEqualTo(2);
+        assertThat(grandQty(range + "&kind=TEACHER_USE")).as("교사용만").isEqualTo(3);
+        // ‼️증정용은 교사용과 같은 회계구분(무상)이다. 회계구분으로만 걸렀다면 3이 나왔을 것 —
+        //   정본 15p가 둘을 나눠 보라고 한 이유가 이것이다.
+        assertThat(grandQty(range + "&kind=GIFT")).as("증정용은 따로").isZero();
+
+        // 응답이 무엇으로 걸렀는지 알려준다
+        JsonNode d = data(get(range + "&kind=TEACHER_USE"));
+        assertThat(d.path("kindName").asText()).isEqualTo("교사용");
+    }
+
+    @Test
+    @DisplayName("매출액명세서 매출유형 필터(15p) — 일반매출/위탁매출")
+    void 매출액명세서_매출유형() {
+        String range = "/sales/statement?fromDate=2026-06-01&toDate=2026-06-30";
+
+        // 시드는 전부 일반매출이다 → 일반=전체, 위탁=0
+        assertThat(grandQty(range + "&salesType=NORMAL_SALES")).isEqualTo(grandQty(range));
+        assertThat(grandQty(range + "&salesType=CONSIGN_SALES")).isZero();
+
+        // 구분과 함께 걸면 교집합
+        assertThat(grandQty(range + "&kind=SALE&salesType=NORMAL_SALES")).isEqualTo(39);
+        assertThat(grandQty(range + "&kind=SALE&salesType=CONSIGN_SALES")).isZero();
+    }
+
+    /** 명세서 총계 수량. 총계 행이 없으면(빈 결과) 0. */
+    private long grandQty(String url) {
+        for (JsonNode r : data(get(url)).path("rows")) {
+            if ("GRAND_TOTAL".equals(r.path("rowType").asText())) {
+                return r.path("qty").asLong();
+            }
+        }
+        return 0L;
     }
 
     @Test

@@ -17,6 +17,9 @@ import com.daesung.sales.sale.dto.NetSalesResponse;
 import com.daesung.sales.sale.dto.PartnerProductSalesAgg;
 import com.daesung.sales.product.entity.MajorCategory;
 import com.daesung.sales.sale.dto.SalesStatementAgg;
+import com.daesung.sales.sale.dto.StatementKind;
+import com.daesung.sales.sale.entity.SalesType;
+import com.daesung.sales.salestype.entity.ShipmentType;
 import com.daesung.sales.sale.dto.SalesStatementResponse;
 import com.daesung.sales.sale.dto.SalesStatementRow;
 import com.daesung.sales.sale.dto.SalesSummaryResponse;
@@ -143,15 +146,24 @@ public class SaleReportService {
     /**
      * 매출액명세서. 근거: 레거시 매출액명세서.vb rollup(대분류, catCode, bookCode).
      * flat 도서집계를 상세→소계(분류)→분류계(대분류)→총계 순 계층으로 조립.
-     * 합계=금액+세액(레거시 totalAmt2 미사용 규칙). category=null이면 전체(매출·무가·반품).
+     * 합계=금액+세액(레거시 totalAmt2 미사용 규칙).
+     *
+     * <p>필터는 정본 15p 그대로다 — <b>구분</b>(전체/매출/반품/교사용/증정용)과
+     * <b>매출유형</b>(일반매출/위탁매출). 둘 다 null이면 전체다.
      *
      * <p>★대분류는 세부구분 마스터에서 파생된 값이다(발주처 회신 2026-08-20).
      * 예전엔 {@code left(catCode,1)}로 분류코드 첫 글자를 그대로 대분류로 썼는데,
      * 화면에 'H'·'M' 같은 글자가 나왔고 분류코드 체계가 아직 없는 신규 데이터에서는 값 자체가 무의미했다.
      */
     @Transactional(readOnly = true)
-    public SalesStatementResponse statement(LocalDate from, LocalDate to, SalesCategory category) {
-        List<SalesStatementAgg> aggs = new ArrayList<>(saleRepository.statementAgg(from, to, category));
+    public SalesStatementResponse statement(LocalDate from, LocalDate to,
+                                           StatementKind kind, SalesType salesType) {
+        // 구분은 회계구분·출고유형이 섞인 축이다(정본 15p) — 교사용·증정용은 둘 다 무상이라
+        // 회계구분만으로는 갈라지지 않는다. 어느 쪽으로 거를지는 enum이 안다.
+        SalesCategory category = (kind == null) ? null : kind.category();
+        ShipmentType shipmentType = (kind == null) ? null : kind.shipmentType();
+        List<SalesStatementAgg> aggs = new ArrayList<>(
+                saleRepository.statementAgg(from, to, category, shipmentType, salesType));
         // ‼️rollup은 같은 대분류가 연속으로 붙어 있어야 성립한다. 대분류는 분류코드가 아니라
         //   세부구분에서 오므로, 서로 다른 분류코드가 같은 대분류에 속해 흩어져 있을 수 있다.
         //   정렬하지 않으면 같은 대분류의 '분류 계' 행이 여러 번 찍힌다.
@@ -212,7 +224,10 @@ public class SaleReportService {
         }
         rows.add(SalesStatementRow.grandTotal(gQty, gAmt, gTax));
 
-        return new SalesStatementResponse(from, to, category == null ? null : category.name(), rows);
+        return new SalesStatementResponse(from, to,
+                (kind == null) ? null : kind.name(),
+                (kind == null) ? null : kind.label(),
+                (salesType == null) ? null : salesType.name(), rows);
     }
 
     /** 정렬용 null 방어. 분류·도서 코드가 비어도 순서가 뒤집히지 않게 빈 문자열로 맞춘다. */
