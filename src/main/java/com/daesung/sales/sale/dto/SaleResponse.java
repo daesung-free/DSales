@@ -7,6 +7,7 @@ import io.swagger.v3.oas.annotations.media.Schema;
 import com.daesung.sales.sale.entity.SalesType;
 import com.daesung.sales.salestype.entity.SalesCategory;
 import com.daesung.sales.salestype.entity.ShipmentType;
+import com.daesung.sales.salestype.entity.TradeClass;
 import java.time.LocalDate;
 
 /** 매출 상세/조회 응답 DTO. 통합매출조회(12p) 컬럼 전부 노출. */
@@ -40,7 +41,13 @@ public record SaleResponse(
         Integer bookRound,        // 회차(12p)
         SalesType salesType,
         ShipmentType shipmentType,
-        SalesCategory salesCategory,
+        @Schema(description = """
+                거래분류 코드(표준 4축 중 첫째). 매출 원장에서는 SALES/FREE/RETURN만 나온다 —
+                INBOUND(입고)·DISPOSE(폐기)는 재고 원장의 거래다.
+                **구분(상세)에서 파생**되며 따로 저장하지 않는다(두 값이 어긋날 여지를 두지 않는다).""")
+        TradeClass tradeClass,
+        @Schema(description = "거래분류 명칭(매출/무상/반품)") String tradeClassName,
+        @Schema(description = "구분(상세) — 회계구분 SALE/FREE/RETURN") SalesCategory salesCategory,
         Integer unitPrice,
         Integer supplyRate,
         @Schema(description = """
@@ -73,7 +80,10 @@ public record SaleResponse(
                 (division == null) ? null : division.getName(),
                 major, (major == null) ? null : major.label(),
                 s.getProduct().getId(), s.getProduct().getCode(), s.getProduct().getName(), s.getBookRound(),
-                s.getSalesType(), s.getShipmentType(), s.getSalesCategory(),
+                s.getSalesType(), s.getShipmentType(),
+                TradeClass.of(s.getSalesCategory()),
+                (s.getSalesCategory() == null) ? null : TradeClass.of(s.getSalesCategory()).label(),
+                s.getSalesCategory(),
                 s.getUnitPrice(), s.getSupplyRate(), s.getDiscountAmount(), s.getQty(),
                 s.getSupplyAmount(), s.getTax(), s.getTotalAmount(),
                 s.isCanceled(),

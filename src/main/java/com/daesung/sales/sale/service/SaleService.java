@@ -27,6 +27,7 @@ import com.daesung.sales.sale.entity.SalesType;
 import com.daesung.sales.sale.repository.SaleRepository;
 import com.daesung.sales.salestype.entity.SalesCategory;
 import com.daesung.sales.salestype.entity.ShipmentType;
+import com.daesung.sales.salestype.entity.TradeClass;
 import com.daesung.sales.salestype.service.OutTypeLookupService;
 import com.daesung.sales.warehouse.entity.Warehouse;
 import com.daesung.sales.warehouse.repository.WarehouseRepository;
@@ -38,6 +39,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -372,18 +374,37 @@ public class SaleService {
         return response;
     }
 
-    /** 통합 매출 조회. */
+    /**
+     * 통합 매출 조회(7p 출고/반품조회 · 12p 통합매출조회 공용).
+     *
+     * <p><b>거래분류</b>(표준 4축 중 첫째)로도 거를 수 있다. 매출 원장에 대응이 없는 값
+     * (입고·폐기 — 재고 원장의 거래다)으로 거르면 <b>빈 결과</b>를 준다.
+     * 조건을 무시하고 전체를 주면 담당자가 '폐기'로 걸렀는데 매출이 잔뜩 나오는 꼴이 된다.
+     */
     @Transactional(readOnly = true)
     public PageResponse<SaleResponse> search(LocalDate from, LocalDate to, SalesCategory salesCategory,
+                                             TradeClass tradeClass,
                                              ShipmentType shipmentType, Long partnerId,
                                              boolean includeCanceled, Pageable pageable) {
+        SalesCategory category = salesCategory;
+        if (tradeClass != null) {
+            SalesCategory mapped = tradeClass.toSalesCategory();
+            if (mapped == null) {
+                return PageResponse.of(Page.empty(pageable));   // 입고·폐기는 매출이 아니다
+            }
+            if (category != null && category != mapped) {
+                return PageResponse.of(Page.empty(pageable));   // 두 축이 서로 어긋나는 조합
+            }
+            category = mapped;
+        }
         // 세부구분 마스터는 몇 줄이라 한 번에 읽어 맵으로 쓴다 — 행마다 조회하면 목록 한 장에 수백 번이 된다.
+        final SalesCategory effectiveCategory = category;
         Map<String, SalesDivision> divisions = new HashMap<>();
         for (SalesDivision d : salesDivisionRepository.findAll()) {
             divisions.put(d.getCode(), d);
         }
         return PageResponse.of(
-                saleRepository.search(from, to, salesCategory, shipmentType, partnerId, includeCanceled, pageable)
+                saleRepository.search(from, to, effectiveCategory, shipmentType, partnerId, includeCanceled, pageable)
                         .map(s -> SaleResponse.from(s, divisions.get(s.getProduct().getSalesDivision()))));
     }
 

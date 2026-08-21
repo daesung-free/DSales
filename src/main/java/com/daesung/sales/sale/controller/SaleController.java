@@ -25,6 +25,7 @@ import com.daesung.sales.sale.service.SaleService;
 import com.daesung.sales.sale.service.SalesUploadService;
 import com.daesung.sales.salestype.entity.SalesCategory;
 import com.daesung.sales.salestype.entity.ShipmentType;
+import com.daesung.sales.salestype.entity.TradeClass;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -61,21 +62,39 @@ public class SaleController {
     private final SalesUploadService salesUploadService;
     private final ExcelExportUtil excel;
 
-    @Operation(summary = "통합 매출 조회",
-            description = "기간·회계구분·출고유형·거래처로 조회. 기본은 취소건 제외(includeCanceled=true면 포함)")
+    @Operation(summary = "통합 매출 조회(7p 출고/반품조회 · 12p 통합매출조회)",
+            description = """
+                    기간·거래처와 **표준 구분값 축**으로 조회한다. 기본은 취소건 제외.
+
+                    발주처 확정 4축(2026-08-05)과 파라미터 대응 —
+                    | 축 | 값 | 파라미터 |
+                    |---|---|---|
+                    | 거래분류(5) | 매출/무상/반품/입고/폐기 | `tradeClass` |
+                    | 구분(상세)(3) | 매출/무상/반품 | `salesCategory` |
+                    | 출고유형(6) | 정상출고/위탁출고/증정용/교사용/반품/취소 | `shipmentType` |
+                    | 창고(2) | 물류창고/위탁창고 | 응답 `warehouseName` |
+
+                    · 매출 원장의 거래분류는 **구분(상세)에서 파생**된다 — 따로 저장하지 않아 둘이 어긋날 수 없다.
+                    · `tradeClass=INBOUND`(입고)·`DISPOSE`(폐기)는 **재고 원장**의 거래라
+                      이 조회에서는 **빈 결과**를 준다. 조건을 무시하고 전체를 주면
+                      '폐기'로 걸렀는데 매출이 잔뜩 나오는 꼴이 된다.""")
     @GetMapping
     public ApiResponse<PageResponse<SaleResponse>> list(
             @Parameter(description = "시작일(yyyy-MM-dd)") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @Parameter(description = "종료일(yyyy-MM-dd)") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
-            @Parameter(description = "회계구분(SALE/FREE/RETURN)") @RequestParam(required = false) SalesCategory salesCategory,
+            @Parameter(description = "구분(상세) — 회계구분 SALE/FREE/RETURN")
+            @RequestParam(required = false) SalesCategory salesCategory,
+            @Parameter(description = "거래분류 SALES(매출)/FREE(무상)/RETURN(반품)/INBOUND(입고)/DISPOSE(폐기). "
+                    + "입고·폐기는 재고 원장 거래라 이 조회에서는 빈 결과")
+            @RequestParam(required = false) TradeClass tradeClass,
             @Parameter(description = "출고유형(6종)") @RequestParam(required = false) ShipmentType shipmentType,
             @Parameter(description = "거래처 id") @RequestParam(required = false) Long partnerId,
             @Parameter(description = "취소건 포함 여부(기본 false)") @RequestParam(defaultValue = "false") boolean includeCanceled,
             @ParameterObject PageRequestDto pageReq) {
-        return ApiResponse.success(saleService.search(
-                startDate, endDate, salesCategory, shipmentType, partnerId, includeCanceled, pageReq.toPageable()));
+        return ApiResponse.success(saleService.search(startDate, endDate, salesCategory, tradeClass,
+                shipmentType, partnerId, includeCanceled, pageReq.toPageable()));
     }
 
     @Operation(summary = "수기 매출 등록(일반)",
