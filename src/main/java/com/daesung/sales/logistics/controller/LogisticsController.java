@@ -43,6 +43,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class LogisticsController {
 
     private final DsreGateway dsreGateway;
+    private final com.daesung.sales.logistics.service.WorkTypeService workTypeService;
     private final LogisCostBulkService logisCostBulkService;
 
     @Operation(summary = "출고 물류비 계산(신청 단위)",
@@ -119,14 +120,23 @@ public class LogisticsController {
         return ApiResponse.success(logisCostBulkService.bulkUpdate(req));
     }
 
-    @Operation(summary = "물류단가 등록/수정",
-            description = "시행코드(dtl_cd)별 단가 upsert(있으면 수정, 없으면 등록). DSRE2에 직접 write-back.")
+    @Operation(summary = "물류단가 등록/수정(개별)",
+            description = """
+                    시행코드(dtl_cd)별 단가 upsert(있으면 수정, 없으면 등록). DSRE2에 직접 write-back.
+
+                    ★**이 경로로 고친 행은 '예외'로 등록된다** — 이후 작업구분 기준단가
+                    일괄 반영이 그 행을 건너뛴다(36p: "예외 처리된 항목에는 영향을 주지 않아야").
+                    담당자가 일부러 다른 값을 넣은 행이 일괄적용 한 번에 조용히 덮이면
+                    그 상품이 잘못된 단가로 청구된다.
+
+                    예외를 풀려면 `DELETE /masters/work-types/overrides/{dtlCd}`.""")
     @PutMapping("/rates/{dtlCd}")
     public ApiResponse<Void> upsertRate(
             @Parameter(description = "시행코드(DTL_CD)", example = "10") @PathVariable int dtlCd,
             @Valid @RequestBody LogisCostUpsertRequest req) {
         dsreGateway.upsertLogisCost(dtlCd, req.paper(), req.omr(), req.etc(), req.label(),
                 req.basic(), req.trade(), req.packtype(), req.bSpare());
+        workTypeService.markOverride(dtlCd);
         return ApiResponse.success(null);
     }
 
