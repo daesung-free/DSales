@@ -122,9 +122,14 @@ public class JdbcDsreGateway implements DsreGateway {
     //   FUNC_REQINWON_GET_PACKTYPE*는 신청(REQ_CD) 단위 값이라, 자재 행마다 곱해 더하면
     //   자재 종류 수만큼 부풀려진다. 레거시가 rownum 트릭으로 "신청당 1회"를 만든 것도 같은 이유다.
     //   여기서는 신청이 GROUP BY에 들어 있으므로 MAX()로 한 번만 집는다.
+    //
+    // ★거래처 <b>코드는 신청에서</b>, 이름만 거래처 마스터에서 가져온다.
+    //   마스터에 없는 코드가 실재한다(복제본 실측: 7월 1,600건 중 638건 미매칭).
+    //   조인 결과의 코드를 쓰면 그런 신청이 전부 코드 NULL이 되어, 거래처 축으로 묶을 때
+    //   서로 다른 거래처가 한 덩어리로 뭉친다. 이름은 못 붙여도 코드로는 갈라져야 한다.
     private static final String OUT_DETAIL_SQL = """
             SELECT req.REQ_DATE, req.REQ_CD, pi.PROD_CD, pi.PROD_NM,
-                   pd.GRADE, req.DTL_CD, pd.DTL_NM, cu.CUST_CD, cu.CUST_NM,
+                   pd.GRADE, req.DTL_CD, pd.DTL_NM, req.CUST_CD, cu.CUST_NM,
               COALESCE(SUM(lc.REQCNT),0) mat_qty,
               COALESCE(SUM(CASE WHEN c.NAME NOT IN ('OMR','단행본','책자','라벨') THEN lc.REQCNT ELSE 0 END),0) paper_qty,
               COALESCE(SUM(CASE WHEN c.NAME NOT IN ('OMR','단행본','책자','라벨') THEN lc.REQCNT*cost.PAPER ELSE 0 END),0) paper_amt,
@@ -149,8 +154,8 @@ public class JdbcDsreGateway implements DsreGateway {
               AND (? IS NULL OR req.APPLY_GN = ?)
               AND (? = 1 OR req.STATE != 'C')
             GROUP BY req.REQ_DATE, req.REQ_CD, pi.PROD_CD, pi.PROD_NM,
-                     pd.GRADE, req.DTL_CD, pd.DTL_NM, cu.CUST_CD, cu.CUST_NM
-            ORDER BY pi.PROD_CD, pd.GRADE DESC, req.DTL_CD DESC, cu.CUST_CD, req.REQ_DATE
+                     pd.GRADE, req.DTL_CD, pd.DTL_NM, req.CUST_CD, cu.CUST_NM
+            ORDER BY pi.PROD_CD, pd.GRADE DESC, req.DTL_CD DESC, req.CUST_CD, req.REQ_DATE
             """;
 
     @Override
