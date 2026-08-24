@@ -36,6 +36,22 @@ public record LogisCostDetailRow(
         @Schema(description = "인원(신청 단위 1회 산정)") int inwon,
         @Schema(description = "기본작업비(인원×BASIC)") long basicAmount,
         @Schema(description = "출고비(인원×TRADE)") long tradeAmount,
-        @Schema(description = "금액합계(자재금액+기본작업비+출고비)") long totalAmount
+        @Schema(description = "금액합계(자재금액+기본작업비+출고비)") long totalAmount,
+        @Schema(description = "구분(APPLY_GN) S=일반/A=사고") String applyGn,
+        @Schema(description = "발송 후 취소 여부(STATE='C')") boolean canceled
 ) {
+    /**
+     * 이 행이 요청한 구분·취소조건에 해당하는가.
+     *
+     * <p>★필터를 SQL이 아니라 여기서 하는 이유: <b>마감된 달은 저장해 둔 스냅샷을 읽는다</b>.
+     * SQL에서 걸러 버리면 라이브는 SQL 조건, 스냅샷은 자바 조건으로 <b>판정이 두 벌</b>이 되어
+     * 같은 달인데 마감 전후로 숫자가 달라질 수 있다. 한 곳에서만 판정한다.
+     */
+    public boolean matches(LogisMode mode, boolean includeCancel) {
+        if (!includeCancel && canceled) {
+            return false;
+        }
+        String want = mode.applyGnValue();
+        return want == null || want.equals(applyGn);
+    }
 }

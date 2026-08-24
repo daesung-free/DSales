@@ -1,9 +1,12 @@
 package com.daesung.sales.logistics.service;
 
+import com.daesung.sales.common.audit.CurrentAuditor;
 import com.daesung.sales.dsre.gateway.DsreGateway;
 import com.daesung.sales.dsre.gateway.LogisCostDetailRow;
 import com.daesung.sales.dsre.gateway.LogisMode;
 import com.daesung.sales.logistics.dto.LogisCostDetailResponse;
+import com.daesung.sales.logistics.entity.LogisCostSnapshot;
+import com.daesung.sales.logistics.repository.LogisCostSnapshotRepository;
 import com.daesung.sales.logistics.dto.LogisCostDetailResponse.Grain;
 import com.daesung.sales.logistics.dto.LogisCostDetailResponse.Row;
 import java.time.LocalDate;
@@ -15,6 +18,7 @@ import java.util.Objects;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 물류 작업비 명세(28p) 조립 — 행 + 소계.
@@ -31,11 +35,19 @@ import org.springframework.stereotype.Service;
 public class LogisCostDetailService {
 
     private final DsreGateway dsreGateway;
+    private final LogisCostSnapshotRepository snapshotRepository;
+    private final CurrentAuditor currentAuditor;
 
     public LogisCostDetailResponse outboundDetail(LocalDate from, LocalDate to, LogisMode mode,
                                                   boolean includeCancel, Grain grain) {
         Grain g = (grain == null) ? Grain.PARTNER : grain;   // 레거시 기본은 '상세보기' 꺼짐
-        List<LogisCostDetailRow> src = dsreGateway.outboundDetail(from, to, mode, includeCancel);
+
+        // 원천: 마감월이면 굳혀 둔 값, 아니면 실시간 계산.
+        // 필터·접기는 그 뒤로 <b>완전히 같은 코드</b>를 탄다 — 두 경로가 갈리면
+        // 마감 전후로 같은 달 숫자가 달라진다.
+        Loaded loaded = loadRows(from, to);
+        List<LogisCostDetailRow> raw = loaded.rows();
+        List<LogisCostDetailRow> src = raw.stream().filter(r -> r.matches(mode, includeCancel)).toList();
 
         // 1) 요청한 축으로 접는다. 신청 축이면 원본 그대로, 거래처 축이면 신청을 합친다.
         Map<String, Acc> folded = new LinkedHashMap<>();
@@ -93,7 +105,74 @@ public class LogisCostDetailService {
         }
         rows.add(grand.toRow("TOTAL", "총 계"));
 
-        return new LogisCostDetailResponse(from, to, mode.name(), g, rows, grand.totalAmount);
+        return new LogisCostDetailResponse(from, to, mode.name(), g,
+                loaded.allFrozen(), rows, grand.totalAmount);
+    }
+
+    /**
+     * 원천 선택 — 조회 기간이 <b>전부 굳어 있는 달</b>이면 저장분, 아니면 실시간.
+     *
+     * <p>기간이 여러 달에 걸치면 달마다 갈린다. 굳은 달은 저장분, 열린 달은 실시간으로 섞어 낸다 —
+     * 그래야 "6월은 확정, 7월은 아직"인 기간 조회가 맞는 숫자를 낸다.
+     */
+    private Loaded loadRows(LocalDate from, LocalDate to) {
+        List<LogisCostDetailRow> out = new ArrayList<>();
+        boolean allFrozen = true;
+        java.time.YearMonth cur = java.time.YearMonth.from(from);
+        java.time.YearMonth end = java.time.YearMonth.from(to);
+        while (!cur.isAfter(end)) {
+            List<LogisCostSnapshot> snap =
+                    snapshotRepository.findByPeriodYearAndPeriodMonth(cur.getYear(), cur.getMonthValue());
+            if (!snap.isEmpty()) {
+                snap.forEach(x -> out.add(x.toRow()));
+            } else {
+                allFrozen = false;   // 한 달이라도 안 굳었으면 이 조회는 확정분이 아니다
+                // 조회 기간의 양끝은 달 전체가 아닐 수 있어 요청 범위로 잘라 준다.
+                LocalDate mf = maxDate(cur.atDay(1), from);
+                LocalDate mt = minDate(cur.atEndOfMonth(), to);
+                out.addAll(dsreGateway.outboundDetail(mf, mt));
+            }
+            cur = cur.plusMonths(1);
+        }
+        return new Loaded(out, allFrozen);
+    }
+
+    /** 원천 로딩 결과 — 행과 "전부 굳어 있는가". */
+    private record Loaded(List<LogisCostDetailRow> rows, boolean allFrozen) {
+    }
+
+    /**
+     * 그 달 물류작업비를 굳힌다(월마감 시 호출). 근거: 발주처 회신 "과거 데이터 고정".
+     *
+     * <p>이미 굳어 있으면 <b>다시 굳히지 않는다</b> — 재마감으로 값이 바뀌면 고정의 뜻이 없다.
+     * 다시 계산하려면 마감을 풀어야 하고, 그때 저장분이 지워진다.
+     *
+     * @return 저장한 행 수
+     */
+    @Transactional
+    public int freeze(int year, int month) {
+        if (snapshotRepository.existsByPeriodYearAndPeriodMonth(year, month)) {
+            return 0;
+        }
+        java.time.YearMonth ym = java.time.YearMonth.of(year, month);
+        List<LogisCostDetailRow> rows = dsreGateway.outboundDetail(ym.atDay(1), ym.atEndOfMonth());
+        String actor = currentAuditor.username();
+        rows.forEach(r -> snapshotRepository.save(LogisCostSnapshot.of(year, month, r, actor)));
+        return rows.size();
+    }
+
+    /** 마감 해제 시 저장분을 지운다 — 다시 마감하면 그 시점 단가로 새로 굳는다. */
+    @Transactional
+    public void unfreeze(int year, int month) {
+        snapshotRepository.deleteByPeriodYearAndPeriodMonth(year, month);
+    }
+
+    private static LocalDate maxDate(LocalDate a, LocalDate b) {
+        return a.isAfter(b) ? a : b;
+    }
+
+    private static LocalDate minDate(LocalDate a, LocalDate b) {
+        return a.isBefore(b) ? a : b;
     }
 
     private static String nz(String v) {

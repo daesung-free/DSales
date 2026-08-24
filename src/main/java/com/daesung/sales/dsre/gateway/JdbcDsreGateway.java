@@ -123,6 +123,10 @@ public class JdbcDsreGateway implements DsreGateway {
     //   자재 종류 수만큼 부풀려진다. 레거시가 rownum 트릭으로 "신청당 1회"를 만든 것도 같은 이유다.
     //   여기서는 신청이 GROUP BY에 들어 있으므로 MAX()로 한 번만 집는다.
     //
+    // ★구분(APPLY_GN)·취소(STATE)로 <b>걸러서 내지 않는다</b> — 행에 담아 보내고 자바에서 판정한다.
+    //   마감된 달은 저장해 둔 스냅샷을 읽는데, SQL에서 걸러 버리면 라이브는 SQL 조건,
+    //   스냅샷은 자바 조건으로 판정이 두 벌이 되어 마감 전후로 숫자가 달라질 수 있다.
+    //
     // ★거래처 <b>코드는 신청에서</b>, 이름만 거래처 마스터에서 가져온다.
     //   마스터에 없는 코드가 실재한다(복제본 실측: 7월 1,600건 중 638건 미매칭).
     //   조인 결과의 코드를 쓰면 그런 신청이 전부 코드 NULL이 되어, 거래처 축으로 묶을 때
@@ -140,7 +144,8 @@ public class JdbcDsreGateway implements DsreGateway {
                                 WHEN c.NAME='라벨' THEN lc.REQCNT*cost.LABEL ELSE 0 END),0) etc_amt,
               MAX(CASE WHEN cost.PACKTYPE=3 THEN FUNC_REQINWON_GET_PACKTYPE2(req.REQ_CD)
                        ELSE FUNC_REQINWON_GET_PACKTYPE1(req.REQ_CD) END) inwon,
-              MAX(cost.BASIC) basic, MAX(cost.TRADE) trade
+              MAX(cost.BASIC) basic, MAX(cost.TRADE) trade,
+              MAX(req.APPLY_GN) apply_gn, MAX(req.STATE='C') canceled
             FROM tbl_logis_cnt lc
               JOIN tbl_resource_info r ON lc.RES_CD=r.RES_CD
               JOIN tbl_materials_info m ON r.MAT_CD=m.MAT_CD
@@ -151,18 +156,13 @@ public class JdbcDsreGateway implements DsreGateway {
               JOIN tbl_product_info pi ON pi.PROD_CD=pd.PROD_CD
               LEFT JOIN tbl_cust_info cu ON cu.CUST_CD=req.CUST_CD
             WHERE lc.RES_GN='R' AND req.REQ_DATE BETWEEN ? AND ?
-              AND (? IS NULL OR req.APPLY_GN = ?)
-              AND (? = 1 OR req.STATE != 'C')
             GROUP BY req.REQ_DATE, req.REQ_CD, pi.PROD_CD, pi.PROD_NM,
                      pd.GRADE, req.DTL_CD, pd.DTL_NM, req.CUST_CD, cu.CUST_NM
             ORDER BY pi.PROD_CD, pd.GRADE DESC, req.DTL_CD DESC, req.CUST_CD, req.REQ_DATE
             """;
 
     @Override
-    public List<LogisCostDetailRow> outboundDetail(LocalDate from, LocalDate to,
-                                                   LogisMode mode, boolean includeCancel) {
-        String applyGn = mode.applyGnValue();
-        int cancelFlag = includeCancel ? 1 : 0;
+    public List<LogisCostDetailRow> outboundDetail(LocalDate from, LocalDate to) {
         String f = from.format(YYYYMMDD), t = to.format(YYYYMMDD);
         return dsreJdbcTemplate.query(OUT_DETAIL_SQL, (rs, i) -> {
             int inwon = rs.getInt("inwon");
@@ -178,8 +178,9 @@ public class JdbcDsreGateway implements DsreGateway {
                     rs.getLong("paper_qty"), rs.getLong("paper_amt"),
                     rs.getLong("omr_qty"), rs.getLong("omr_amt"),
                     rs.getLong("etc_qty"), rs.getLong("etc_amt"),
-                    inwon, basicAmt, tradeAmt, matAmt + basicAmt + tradeAmt);
-        }, f, t, applyGn, applyGn, cancelFlag);
+                    inwon, basicAmt, tradeAmt, matAmt + basicAmt + tradeAmt,
+                    rs.getString("apply_gn"), rs.getBoolean("canceled"));
+        }, f, t);
     }
 
     /** DSRE2 날짜는 yyyyMMdd 문자열이다(varchar). 형식이 어긋나면 null — 행을 버리지는 않는다. */
