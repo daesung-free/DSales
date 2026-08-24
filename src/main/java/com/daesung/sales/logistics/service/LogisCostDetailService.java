@@ -45,8 +45,7 @@ public class LogisCostDetailService {
         // 원천: 마감월이면 굳혀 둔 값, 아니면 실시간 계산.
         // 필터·접기는 그 뒤로 <b>완전히 같은 코드</b>를 탄다 — 두 경로가 갈리면
         // 마감 전후로 같은 달 숫자가 달라진다.
-        Loaded loaded = loadRows(from, to);
-        List<LogisCostDetailRow> raw = loaded.rows();
+        List<LogisCostDetailRow> raw = loadRows(from, to);
         List<LogisCostDetailRow> src = raw.stream().filter(r -> r.matches(mode, includeCancel)).toList();
 
         // 1) 요청한 축으로 접는다. 신청 축이면 원본 그대로, 거래처 축이면 신청을 합친다.
@@ -105,8 +104,7 @@ public class LogisCostDetailService {
         }
         rows.add(grand.toRow("TOTAL", "총 계"));
 
-        return new LogisCostDetailResponse(from, to, mode.name(), g,
-                loaded.allFrozen(), rows, grand.totalAmount);
+        return new LogisCostDetailResponse(from, to, mode.name(), g, rows, grand.totalAmount);
     }
 
     /**
@@ -115,9 +113,8 @@ public class LogisCostDetailService {
      * <p>기간이 여러 달에 걸치면 달마다 갈린다. 굳은 달은 저장분, 열린 달은 실시간으로 섞어 낸다 —
      * 그래야 "6월은 확정, 7월은 아직"인 기간 조회가 맞는 숫자를 낸다.
      */
-    private Loaded loadRows(LocalDate from, LocalDate to) {
+    private List<LogisCostDetailRow> loadRows(LocalDate from, LocalDate to) {
         List<LogisCostDetailRow> out = new ArrayList<>();
-        boolean allFrozen = true;
         java.time.YearMonth cur = java.time.YearMonth.from(from);
         java.time.YearMonth end = java.time.YearMonth.from(to);
         while (!cur.isAfter(end)) {
@@ -126,7 +123,6 @@ public class LogisCostDetailService {
             if (!snap.isEmpty()) {
                 snap.forEach(x -> out.add(x.toRow()));
             } else {
-                allFrozen = false;   // 한 달이라도 안 굳었으면 이 조회는 확정분이 아니다
                 // 조회 기간의 양끝은 달 전체가 아닐 수 있어 요청 범위로 잘라 준다.
                 LocalDate mf = maxDate(cur.atDay(1), from);
                 LocalDate mt = minDate(cur.atEndOfMonth(), to);
@@ -134,11 +130,7 @@ public class LogisCostDetailService {
             }
             cur = cur.plusMonths(1);
         }
-        return new Loaded(out, allFrozen);
-    }
-
-    /** 원천 로딩 결과 — 행과 "전부 굳어 있는가". */
-    private record Loaded(List<LogisCostDetailRow> rows, boolean allFrozen) {
+        return out;
     }
 
     /**

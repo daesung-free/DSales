@@ -24,12 +24,6 @@ public record LogisCostDetailResponse(
         @Schema(description = "조회 종료일") LocalDate toDate,
         @Schema(description = "구분 ALL/NORMAL/ACCIDENT") String mode,
         @Schema(description = "묶는 축 REQUEST(신청)/PARTNER(거래처)") Grain grain,
-        @Schema(description = """
-                **확정분인가**. true면 마감 때 굳혀 둔 값이라 단가를 바꿔도 안 변한다.
-                false면 조회 시점에 다시 계산한 값이다(마감 전이거나, 마감했지만
-                DSRE 연동이 꺼져 있어 굳히지 못한 달).
-                기간이 여러 달에 걸치면 **전부 굳어 있을 때만** true다.""")
-        boolean confirmed,
         @Schema(description = "명세 + 소계") List<Row> rows,
         @Schema(description = "총 금액합계") long totalAmount
 ) {

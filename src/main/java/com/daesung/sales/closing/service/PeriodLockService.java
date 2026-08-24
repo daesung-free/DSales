@@ -45,11 +45,9 @@ public class PeriodLockService {
      * 물류비는 조회할 때마다 다시 계산되므로, 굳혀 두지 않으면 나중에 단가를 고쳤을 때
      * 이미 청구가 끝난 달의 금액까지 바뀐다.
      *
-     * <p>⚠️DSRE 연동이 꺼져 있으면 <b>굳히지 못하고 넘어간다</b>. 마감을 막지는 않는다 —
-     * 월마감의 본질은 매출·수금·세무의 잠금이고, 물류 연동이 꺼졌다는 이유로
-     * 재무 마감이 멈추는 것이 더 나쁘다.
-     * 대신 조용히 넘어가지 않는다: 굳지 않은 달은 물류비 조회 응답의
-     * {@code confirmed=false}로 드러나 화면이 "확정분이 아니다"를 알 수 있다.
+     * <p>⚠️DSRE 연동이 꺼진 개발·테스트 환경에서는 굳히지 못하고 넘어간다.
+     * 운영에서는 연동이 켜져 있는 것이 전제라 이 경우가 생기지 않는다 —
+     * "굳히지 못한 마감"이라는 상태를 업무 규칙으로 만들지 않는다.
      */
     @Transactional
     public PeriodLockResponse lock(int year, int month, String memo) {
@@ -86,8 +84,7 @@ public class PeriodLockService {
      * 마감 시 물류작업비를 굳힌다. 서비스가 {@code @ConditionalOnProperty}라
      * DSRE 연동이 꺼지면 빈이 없고, 그때는 굳히지 않고 넘어간다.
      *
-     * <p>굳지 않은 달은 물류비 조회가 {@code confirmed=false}로 알려 준다 —
-     * 막지는 않되 조용하지도 않게 한다.
+     * <p>연동이 꺼진 개발·테스트 환경에서만 생기는 경우다. 운영에서는 켜져 있는 것이 전제다.
      */
     private void freezeLogisCost(int year, int month) {
         logisCostDetailService.ifAvailable(svc -> svc.freeze(year, month));
