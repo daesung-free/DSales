@@ -9,6 +9,7 @@ import com.daesung.sales.logistics.dto.LogisCostBulkRequest;
 import com.daesung.sales.logistics.dto.LogisCostBulkResult;
 import com.daesung.sales.logistics.service.LogisCostBulkService;
 import com.daesung.sales.dsre.gateway.LogisMode;
+import com.daesung.sales.logistics.dto.LogisCostDetailResponse;
 import com.daesung.sales.dsre.gateway.OutboundLogisCost;
 import com.daesung.sales.dsre.gateway.PeriodLogisCost;
 import com.daesung.sales.logistics.dto.LogisCostUpsertRequest;
@@ -43,6 +44,8 @@ import org.springframework.web.bind.annotation.RestController;
 public class LogisticsController {
 
     private final DsreGateway dsreGateway;
+    private final com.daesung.sales.logistics.service.LogisCostDetailService logisCostDetailService;
+    private final com.daesung.sales.common.excel.ExcelExportUtil excel;
     private final com.daesung.sales.logistics.service.WorkTypeService workTypeService;
     private final LogisCostBulkService logisCostBulkService;
 
@@ -70,6 +73,72 @@ public class LogisticsController {
             @Parameter(description = "취소분 포함 여부", example = "false")
             @RequestParam(defaultValue = "false") boolean includeCancel) {
         return ApiResponse.success(dsreGateway.calcOutboundPeriod(from, to, mode, includeCancel));
+    }
+
+    @Operation(summary = "출고 물류비 명세(28p 그리드)",
+            description = """
+                    화면에 뿌릴 **행 목록 + 소계**. 총계만 주던 `/outbound/period`와 짝이다.
+
+                    정본 28p 데이터 항목이 처음부터 행 단위였다 —
+                    접수일자·상품명·학년·시행코드/명·거래처코드/명·자재합·시험지합/금액·
+                    OMR합/금액·기타비/금액·인원·기본작업비·출고비·금액합계.
+
+                    · **grain**으로 묶는 축을 고른다(레거시 '상세보기' 체크박스):
+                      `REQUEST`=신청번호까지 펼침 / `PARTNER`=거래처로 묶음(기본).
+                      두 모드가 **같은 쿼리 하나**를 접어 만든다 — 쿼리를 나누면 계산식이 두 벌이 된다.
+                    · 소계는 레거시 ROLLUP 그대로 **시행 계 → 학년 계 → 상품 계 → 총 계**.
+                    · ⚠️인원은 신청 단위로 1회 산정된다. 거래처 축에서는 그 거래처의
+                      여러 신청 인원이 합쳐진다(의도된 동작).""")
+    @GetMapping("/outbound/detail")
+    public ApiResponse<LogisCostDetailResponse> outboundDetail(
+            @Parameter(description = "시작일", example = "2026-01-01") @RequestParam
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @Parameter(description = "종료일", example = "2026-12-31") @RequestParam
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @Parameter(description = "구분(전체/일반/사고)", example = "ALL")
+            @RequestParam(required = false, defaultValue = "ALL") LogisMode mode,
+            @Parameter(description = "발송 후 취소 포함 여부")
+            @RequestParam(required = false, defaultValue = "false") boolean includeCancel,
+            @Parameter(description = "묶는 축 REQUEST(신청)/PARTNER(거래처, 기본)")
+            @RequestParam(required = false) LogisCostDetailResponse.Grain grain) {
+        return ApiResponse.success(
+                logisCostDetailService.outboundDetail(fromDate, toDate, mode, includeCancel, grain));
+    }
+
+    @Operation(summary = "출고 물류비 명세 엑셀 다운로드")
+    @GetMapping("/outbound/detail/export")
+    public org.springframework.http.ResponseEntity<byte[]> outboundDetailExport(
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @RequestParam(required = false, defaultValue = "ALL") LogisMode mode,
+            @RequestParam(required = false, defaultValue = "false") boolean includeCancel,
+            @RequestParam(required = false) LogisCostDetailResponse.Grain grain) {
+        var cols = java.util.List.of(
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("구분", "rowType"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("소계명", "label"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("접수일자", "reqDate"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("신청번호", "reqCd"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("상품코드", "productCode"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("상품명", "productName"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("학년", "grade"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("시행코드", "dtlCd"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("시행명", "detailName"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("거래처코드", "partnerCode"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("거래처명", "partnerName"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("자재합", "materialQty"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("시험지합", "paperQty"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("시험지금액", "paperAmount"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("OMR합", "omrQty"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("OMR금액", "omrAmount"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("기타합", "etcQty"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("기타금액", "etcAmount"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("인원", "inwon"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("기본작업비", "basicAmount"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("출고비", "tradeAmount"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("금액합계", "totalAmount"));
+        byte[] xlsx = excel.toXlsx("물류작업비", cols,
+                logisCostDetailService.outboundDetail(fromDate, toDate, mode, includeCancel, grain).rows());
+        return excel.asDownload(xlsx, "물류작업비_" + fromDate + "_" + toDate + ".xlsx");
     }
 
     @Operation(summary = "기간 회수 물류비 집계",

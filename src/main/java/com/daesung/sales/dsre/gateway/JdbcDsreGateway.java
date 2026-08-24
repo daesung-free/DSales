@@ -114,6 +114,81 @@ public class JdbcDsreGateway implements DsreGateway {
               GROUP BY req.REQ_CD ) t
             """;
 
+    // ── 출고 물류비 명세 행(28p 그리드) — 물류비계산2.vb 그리드 ────────────────────
+    // 정본 28p가 요구하는 컬럼(접수일자·상품·학년·시행·거래처·자재/시험지/OMR/기타·인원·작업비·합계)을
+    // 상품×학년×시행×신청×거래처 단위로 낸다.
+    //
+    // ★인원을 이 GROUP BY 안에서 SUM 하지 않는 이유
+    //   FUNC_REQINWON_GET_PACKTYPE*는 신청(REQ_CD) 단위 값이라, 자재 행마다 곱해 더하면
+    //   자재 종류 수만큼 부풀려진다. 레거시가 rownum 트릭으로 "신청당 1회"를 만든 것도 같은 이유다.
+    //   여기서는 신청이 GROUP BY에 들어 있으므로 MAX()로 한 번만 집는다.
+    private static final String OUT_DETAIL_SQL = """
+            SELECT req.REQ_DATE, req.REQ_CD, pi.PROD_CD, pi.PROD_NM,
+                   pd.GRADE, req.DTL_CD, pd.DTL_NM, cu.CUST_CD, cu.CUST_NM,
+              COALESCE(SUM(lc.REQCNT),0) mat_qty,
+              COALESCE(SUM(CASE WHEN c.NAME NOT IN ('OMR','단행본','책자','라벨') THEN lc.REQCNT ELSE 0 END),0) paper_qty,
+              COALESCE(SUM(CASE WHEN c.NAME NOT IN ('OMR','단행본','책자','라벨') THEN lc.REQCNT*cost.PAPER ELSE 0 END),0) paper_amt,
+              COALESCE(SUM(CASE WHEN c.NAME='OMR' THEN lc.REQCNT ELSE 0 END),0) omr_qty,
+              COALESCE(SUM(CASE WHEN c.NAME='OMR' THEN lc.REQCNT*cost.OMR ELSE 0 END),0) omr_amt,
+              COALESCE(SUM(CASE WHEN c.NAME IN ('단행본','책자','라벨') THEN lc.REQCNT ELSE 0 END),0) etc_qty,
+              COALESCE(SUM(CASE WHEN c.NAME IN ('단행본','책자') THEN lc.REQCNT*cost.ETC
+                                WHEN c.NAME='라벨' THEN lc.REQCNT*cost.LABEL ELSE 0 END),0) etc_amt,
+              MAX(CASE WHEN cost.PACKTYPE=3 THEN FUNC_REQINWON_GET_PACKTYPE2(req.REQ_CD)
+                       ELSE FUNC_REQINWON_GET_PACKTYPE1(req.REQ_CD) END) inwon,
+              MAX(cost.BASIC) basic, MAX(cost.TRADE) trade
+            FROM tbl_logis_cnt lc
+              JOIN tbl_resource_info r ON lc.RES_CD=r.RES_CD
+              JOIN tbl_materials_info m ON r.MAT_CD=m.MAT_CD
+              JOIN tbl_comon_info c ON m.MAT_GN=c.CMD_CD
+              JOIN tbl_request_info req ON lc.REQ_CD=req.REQ_CD
+              JOIN tbl_logis_cost cost ON cost.DTL_CD=req.DTL_CD
+              JOIN tbl_product_dtl pd ON pd.DTL_CD=req.DTL_CD
+              JOIN tbl_product_info pi ON pi.PROD_CD=pd.PROD_CD
+              LEFT JOIN tbl_cust_info cu ON cu.CUST_CD=req.CUST_CD
+            WHERE lc.RES_GN='R' AND req.REQ_DATE BETWEEN ? AND ?
+              AND (? IS NULL OR req.APPLY_GN = ?)
+              AND (? = 1 OR req.STATE != 'C')
+            GROUP BY req.REQ_DATE, req.REQ_CD, pi.PROD_CD, pi.PROD_NM,
+                     pd.GRADE, req.DTL_CD, pd.DTL_NM, cu.CUST_CD, cu.CUST_NM
+            ORDER BY pi.PROD_CD, pd.GRADE DESC, req.DTL_CD DESC, cu.CUST_CD, req.REQ_DATE
+            """;
+
+    @Override
+    public List<LogisCostDetailRow> outboundDetail(LocalDate from, LocalDate to,
+                                                   LogisMode mode, boolean includeCancel) {
+        String applyGn = mode.applyGnValue();
+        int cancelFlag = includeCancel ? 1 : 0;
+        String f = from.format(YYYYMMDD), t = to.format(YYYYMMDD);
+        return dsreJdbcTemplate.query(OUT_DETAIL_SQL, (rs, i) -> {
+            int inwon = rs.getInt("inwon");
+            long basicAmt = (long) inwon * rs.getInt("basic");
+            long tradeAmt = (long) inwon * rs.getInt("trade");
+            long matAmt = rs.getLong("paper_amt") + rs.getLong("omr_amt") + rs.getLong("etc_amt");
+            return new LogisCostDetailRow(
+                    parseYmd(rs.getString("REQ_DATE")), rs.getInt("REQ_CD"),
+                    rs.getString("PROD_CD"), rs.getString("PROD_NM"),
+                    rs.getString("GRADE"), rs.getInt("DTL_CD"), rs.getString("DTL_NM"),
+                    rs.getString("CUST_CD"), rs.getString("CUST_NM"),
+                    rs.getLong("mat_qty"),
+                    rs.getLong("paper_qty"), rs.getLong("paper_amt"),
+                    rs.getLong("omr_qty"), rs.getLong("omr_amt"),
+                    rs.getLong("etc_qty"), rs.getLong("etc_amt"),
+                    inwon, basicAmt, tradeAmt, matAmt + basicAmt + tradeAmt);
+        }, f, t, applyGn, applyGn, cancelFlag);
+    }
+
+    /** DSRE2 날짜는 yyyyMMdd 문자열이다(varchar). 형식이 어긋나면 null — 행을 버리지는 않는다. */
+    private static LocalDate parseYmd(String v) {
+        if (v == null || v.length() < 8) {
+            return null;
+        }
+        try {
+            return LocalDate.parse(v.substring(0, 8), YYYYMMDD);
+        } catch (java.time.format.DateTimeParseException e) {
+            return null;
+        }
+    }
+
     @Override
     public PeriodLogisCost calcOutboundPeriod(LocalDate from, LocalDate to, LogisMode mode, boolean includeCancel) {
         // 필터를 SQL 조각으로 이어붙이지 않고 바인딩 값으로 넘긴다(게이트규칙: 파라미터 바인딩 전수 적용).

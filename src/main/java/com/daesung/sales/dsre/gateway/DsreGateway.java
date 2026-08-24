@@ -21,6 +21,14 @@ public interface DsreGateway {
                                        LogisMode mode, boolean includeCancel);
 
     /**
+     * 출고 물류비 <b>명세 행</b>(28p 그리드). 상품×학년×시행×신청×거래처 단위.
+     * 총계({@link #calcOutboundPeriod})와 달리 화면에 뿌릴 행을 낸다 —
+     * 정본 28p 데이터 항목이 처음부터 행 단위였다.
+     */
+    java.util.List<LogisCostDetailRow> outboundDetail(java.time.LocalDate from, java.time.LocalDate to,
+                                                      LogisMode mode, boolean includeCancel);
+
+    /**
      * 기간 회수 물류비 집계(총계, 자재금액만). 근거: 물류비계산2.vb InData.
      * @param mode ALL(전체)/NORMAL(반품 tbl_wol_dtl_b)/ACCIDENT(사고 tbl_wol_dtl)
      */
