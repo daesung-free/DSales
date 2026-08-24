@@ -118,8 +118,6 @@ public class InventoryTxn extends BaseEntity {
     @Column(name = "logis_cost_target", nullable = false)
     private boolean logisCostTarget;
 
-    @Column(name = "work_cost")
-    private Long workCost;
 
     /** 조립 작업비 기록. 단가표·BOM이 나중에 바뀌어도 이미 끝난 작업 비용은 변하지 않는다. */
     /** 물류작업비 대상 표시(입고 시). */
@@ -127,9 +125,6 @@ public class InventoryTxn extends BaseEntity {
         this.logisCostTarget = target;
     }
 
-    public void applyWorkCost(long workCost) {
-        this.workCost = workCost;
-    }
 
     public static InventoryTxn bom(Product product, Warehouse warehouse, int qty,
                                    TxnType txnType, LocalDate tradeDate, String memo) {

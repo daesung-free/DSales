@@ -21,8 +21,6 @@ import com.daesung.sales.inventory.repository.InventoryRepository;
 import com.daesung.sales.inventory.repository.InventoryTxnRepository;
 import com.daesung.sales.partner.entity.Partner;
 import com.daesung.sales.partner.repository.PartnerRepository;
-import com.daesung.sales.logistics.entity.MaterialRate;
-import com.daesung.sales.logistics.repository.MaterialRateRepository;
 import com.daesung.sales.product.entity.BomItem;
 import com.daesung.sales.product.entity.Product;
 import com.daesung.sales.product.repository.BomItemRepository;
@@ -51,7 +49,6 @@ public class InventoryService {
     private final WarehouseRepository warehouseRepository;
     private final PartnerRepository partnerRepository;
     private final BomItemRepository bomItemRepository;
-    private final MaterialRateRepository materialRateRepository;
 
     /** 일반 입고. 품목마다 (1) 재고이벤트 INBOUND 기록 + (2) 재고 잔량 가산을 한 트랜잭션으로. */
     @Transactional
@@ -189,19 +186,15 @@ public class InventoryService {
         boolean assemble = req.direction() == BomDirection.ASSEMBLE;
         TxnType txnType = assemble ? TxnType.BOM_ASSEMBLE : TxnType.BOM_DISASSEMBLE;
 
-        // 조립 작업비(자동계산). 해체는 포장 작업이 없어 대상이 아니다.
-        // 발주처 확정: "물류비용등록에 등록된 단가 기준으로 시스템이 자동 계산".
-        long workCost = assemble ? calcAssemblyCost(boms, req.workQty()) : 0L;
+        // ⚠️조립 시점 작업비 계산은 없다(발주처 회신 2026-08-21 철회) —
+        //   "조립·해체 시점에는 별도 정산하지 않고, 실제 출고되는 수량만큼만
+        //    출고 시점에 출고 작업비에 포함해 청구하는 현행 방식으로 운영".
 
         // 완제품: 조립 +, 해체 −
         int parentDelta = assemble ? req.workQty() : -req.workQty();
         int parentBal = applyDelta(parent, warehouse, parentDelta);
         InventoryTxn parentTxn = InventoryTxn.bom(
                 parent, warehouse, parentDelta, txnType, req.processedDate(), req.memo());
-        if (assemble) {
-            // 완제품 이벤트에 1건으로 기록한다 — 구성품마다 나누면 합계를 다시 맞춰야 한다.
-            parentTxn.applyWorkCost(workCost);
-        }
         inventoryTxnRepository.save(parentTxn);
         BomWorkResponse.Line parentLine = new BomWorkResponse.Line(
                 parent.getId(), parent.getCode(), parentDelta, parentBal);
@@ -217,37 +210,9 @@ public class InventoryService {
         }
 
         return new BomWorkResponse(warehouse.getId(), warehouse.getName(), req.direction(),
-                parentLine, compLines, workCost);
+                parentLine, compLines);
     }
 
-    /**
-     * 세트 조립 작업비 = Σ(자재 소요수량 × 작업수량 × 자재단가).
-     *
-     * <p>단가는 (자재구분, 작업구분) 조합으로 찾고, 없으면 작업구분 공통 단가(packType=0)로 떨어진다 —
-     * 단가표를 작업구분마다 다 채우지 않아도 계산이 되게 하기 위함이다.
-     * 자재구분이 지정되지 않은 구성품은 단가를 특정할 수 없어 0으로 둔다(작업비 없음).
-     */
-    private long calcAssemblyCost(List<BomItem> boms, int workQty) {
-        long total = 0L;
-        for (BomItem b : boms) {
-            if (b.getMaterialType() == null) {
-                continue;   // 자재구분 미지정 → 단가를 특정할 수 없다
-            }
-            int packType = (b.getPackType() == null) ? MaterialRate.COMMON_PACK_TYPE : b.getPackType();
-            Integer rate = materialRateRepository
-                    .findByMaterialTypeAndPackType(b.getMaterialType(), packType)
-                    .map(MaterialRate::getUnitRate)
-                    .orElseGet(() -> materialRateRepository
-                            .findByMaterialTypeAndPackType(b.getMaterialType(), MaterialRate.COMMON_PACK_TYPE)
-                            .map(MaterialRate::getUnitRate)
-                            .orElse(null));
-            if (rate == null) {
-                continue;   // 단가 미등록 → 0. 등록되면 이후 작업부터 반영된다
-            }
-            total += (long) b.getRatio() * workQty * rate;
-        }
-        return total;
-    }
 
     /** 폐기. 품목마다 재고 즉시 차감(음수재고 방지) + DISPOSE 이벤트. 폐기번호(P) 채번. 한 트랜잭션. */
     @Transactional
