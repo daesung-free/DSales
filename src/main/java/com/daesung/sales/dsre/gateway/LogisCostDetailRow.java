@@ -38,7 +38,8 @@ public record LogisCostDetailRow(
         @Schema(description = "출고비(인원×TRADE)") long tradeAmount,
         @Schema(description = "금액합계(자재금액+기본작업비+출고비)") long totalAmount,
         @Schema(description = "구분(APPLY_GN) S=일반/A=사고") String applyGn,
-        @Schema(description = "발송 후 취소 여부(STATE='C')") boolean canceled
+        @Schema(description = "발송 후 취소 여부(STATE='C')") boolean canceled,
+        @Schema(description = "수기 등록 행인가(28p 에디팅). 자동계산분은 false") boolean manual
 ) {
     /**
      * 이 행이 요청한 구분·취소조건에 해당하는가.

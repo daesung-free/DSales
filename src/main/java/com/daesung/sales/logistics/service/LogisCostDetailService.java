@@ -6,6 +6,7 @@ import com.daesung.sales.dsre.gateway.LogisCostDetailRow;
 import com.daesung.sales.dsre.gateway.LogisMode;
 import com.daesung.sales.logistics.dto.LogisCostDetailResponse;
 import com.daesung.sales.logistics.entity.LogisCostSnapshot;
+import com.daesung.sales.logistics.repository.LogisCostManualRepository;
 import com.daesung.sales.logistics.repository.LogisCostSnapshotRepository;
 import com.daesung.sales.logistics.dto.LogisCostDetailResponse.Grain;
 import com.daesung.sales.logistics.dto.LogisCostDetailResponse.Row;
@@ -36,6 +37,7 @@ public class LogisCostDetailService {
 
     private final DsreGateway dsreGateway;
     private final LogisCostSnapshotRepository snapshotRepository;
+    private final LogisCostManualRepository manualRepository;
     private final CurrentAuditor currentAuditor;
 
     public LogisCostDetailResponse outboundDetail(LocalDate from, LocalDate to, LogisMode mode,
@@ -130,6 +132,11 @@ public class LogisCostDetailService {
             }
             cur = cur.plusMonths(1);
         }
+        // 수기 등록분(28p 에디팅)을 합친다. 자동계산분과 같은 타입이라 이후 필터·접기·소계가
+        // 그대로 잡힌다 — 합산 코드를 따로 두지 않는다("소계/누계/합계/총계 정상 반영" 요구).
+        // 스냅샷에 넣지 않는 이유: 수기 행은 우리 DB에 있고, 마감월은 수정이 막혀 있어
+        // 그 잠금이 곧 불변성 보장이다(두 벌로 복사해 두면 원본과 어긋날 여지가 생긴다).
+        manualRepository.findByReqDateBetween(from, to).forEach(m -> out.add(m.toRow()));
         return out;
     }
 

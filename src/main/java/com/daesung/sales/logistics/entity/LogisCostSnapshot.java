@@ -148,6 +148,6 @@ public class LogisCostSnapshot {
         return new LogisCostDetailRow(reqDate, reqCd, productCode, productName, grade,
                 dtlCd, detailName, partnerCode, partnerName,
                 materialQty, paperQty, paperAmount, omrQty, omrAmount, etcQty, etcAmount,
-                inwon, basicAmount, tradeAmount, totalAmount, applyGn, canceled);
+                inwon, basicAmount, tradeAmount, totalAmount, applyGn, canceled, false);
     }
 }

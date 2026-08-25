@@ -61,6 +61,9 @@ public class SecurityConfig {
                         // 물류단가 수정: 물류
                         .requestMatchers(HttpMethod.PUT, "/api/v1/logistics-costs/**").hasAnyRole("LOGISTICS", "ADMIN")
                         .requestMatchers(HttpMethod.DELETE, "/api/v1/logistics-costs/**").hasAnyRole("LOGISTICS", "ADMIN")
+                        // 물류비 수기 등록·복사(28p 에디팅): 물류가 쓰는 화면이다.
+                        // POST 규칙이 없으면 아래 deny-by-default 안전망에 걸려 관리자도 막힌다.
+                        .requestMatchers(HttpMethod.POST, "/api/v1/logistics-costs/**").hasAnyRole("LOGISTICS", "ADMIN")
                         // 거래명세서 발급 → 발송준비중 전환: 물류(명세서를 출력하는 주체) + 관리자.
                         // ★DSRE2 운영 DB의 STATE를 직접 바꾸는 유일한 경로라 역할을 좁게 잡는다.
                         .requestMatchers(HttpMethod.POST, "/api/v1/orders/**").hasAnyRole("LOGISTICS", "ADMIN")

@@ -179,7 +179,7 @@ public class JdbcDsreGateway implements DsreGateway {
                     rs.getLong("omr_qty"), rs.getLong("omr_amt"),
                     rs.getLong("etc_qty"), rs.getLong("etc_amt"),
                     inwon, basicAmt, tradeAmt, matAmt + basicAmt + tradeAmt,
-                    rs.getString("apply_gn"), rs.getBoolean("canceled"));
+                    rs.getString("apply_gn"), rs.getBoolean("canceled"), false);
         }, f, t);
     }
 
