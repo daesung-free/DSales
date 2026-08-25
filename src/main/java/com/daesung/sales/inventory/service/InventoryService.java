@@ -11,6 +11,7 @@ import com.daesung.sales.inventory.dto.InboundRequest;
 import com.daesung.sales.inventory.dto.InboundResponse;
 import com.daesung.sales.inventory.entity.InboundType;
 import com.daesung.sales.inventory.dto.StockLedgerRow;
+import com.daesung.sales.warehouse.entity.WarehouseType;
 import com.daesung.sales.inventory.dto.TransferRequest;
 import com.daesung.sales.inventory.dto.TransferResponse;
 import com.daesung.sales.inventory.entity.BomDirection;
@@ -242,12 +243,15 @@ public class InventoryService {
      */
     @Transactional(readOnly = true)
     public List<StockLedgerRow> stockLedger(LocalDate fromDate, LocalDate toDate,
-                                            Long productId, Long warehouseId) {
+                                            Long productId, Long warehouseId,
+                                            WarehouseType warehouseType) {
         LocalDate from = (fromDate != null) ? fromDate : LocalDate.now().withDayOfYear(1);
         LocalDate to = (toDate != null) ? toDate : LocalDate.now();
 
         List<StockLedgerRow> result = new ArrayList<>();
-        for (Object[] r : inventoryTxnRepository.stockLedger(from, to, productId, warehouseId)) {
+        // 창고구분은 enum 이름 그대로 저장돼 있다(MAIN/CONSIGN). null이면 전체.
+        String whType = (warehouseType == null) ? null : warehouseType.name();
+        for (Object[] r : inventoryTxnRepository.stockLedger(from, to, productId, warehouseId, whType)) {
             long closing = num(r[15]);
             long cached = num(r[16]);
             result.add(new StockLedgerRow(

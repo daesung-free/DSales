@@ -58,6 +58,7 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
               LEFT JOIN inventory inv ON inv.product_id = t.product_id AND inv.warehouse_id = t.warehouse_id
             WHERE (CAST(:productId AS SIGNED) IS NULL OR t.product_id = :productId)
               AND (CAST(:warehouseId AS SIGNED) IS NULL OR t.warehouse_id = :warehouseId)
+              AND (:warehouseType IS NULL OR w.type = :warehouseType)
               AND p.ledger_visible = TRUE
             GROUP BY t.product_id, p.code, p.name, t.warehouse_id, w.name
             ORDER BY p.code, w.name
@@ -65,7 +66,8 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
     List<Object[]> stockLedger(@Param("fromDate") LocalDate fromDate,
                                @Param("toDate") LocalDate toDate,
                                @Param("productId") Long productId,
-                               @Param("warehouseId") Long warehouseId);
+                               @Param("warehouseId") Long warehouseId,
+                               @Param("warehouseType") String warehouseType);
 
     /**
      * 도서입출고현황의 매입측(상품별 입고/취소) + 재고. 근거: 레거시 도서입출고현황.vb 입고/취소 버킷.

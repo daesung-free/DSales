@@ -117,7 +117,8 @@ public class ConsignmentService {
             Product p = co.getProduct();
             lines.add(new ConsignPendingResponse.Line(
                     co.getId(), co.getSourceOutNo(), p.getId(), p.getCode(), p.getName(),
-                    co.getTotalQty(), co.getSettledQty(), co.getRemainingQty(), co.getStatus()));
+                    co.getOriginalQty(), co.getTotalQty(), co.getReturnedQty(),
+                    co.getSettledQty(), co.getRemainingQty(), co.getStatus()));
         }
         return new ConsignPendingResponse(partner.getId(), partner.getName(), lines);
     }

@@ -74,8 +74,13 @@ public class InventoryController {
             @Parameter(description = "종료일(yyyy-MM-dd, 미지정 시 오늘)") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @Parameter(description = "상품 id 필터") @RequestParam(required = false) Long productId,
-            @Parameter(description = "창고 id 필터") @RequestParam(required = false) Long warehouseId) {
-        return ApiResponse.success(inventoryService.stockLedger(fromDate, toDate, productId, warehouseId));
+            @Parameter(description = "창고 id 필터") @RequestParam(required = false) Long warehouseId,
+            @Parameter(description = """
+                    창고구분 MAIN(물류창고)/CONSIGN(위탁창고). 미지정=전체.
+                    발주처 요청(2026-08-21): 전체 합산만 보면 **위탁 미결잔여가 실제로 어느 창고에
+                    남아 있는지** 알 수 없다.""")
+            @RequestParam(required = false) com.daesung.sales.warehouse.entity.WarehouseType warehouseType) {
+        return ApiResponse.success(inventoryService.stockLedger(fromDate, toDate, productId, warehouseId, warehouseType));
     }
 
     @Operation(summary = "제품수불부 엑셀 다운로드", description = "이월/입고/이고/조립해체/폐기/매출/무상/교사용/반품/조정/현재재고.")
@@ -83,7 +88,8 @@ public class InventoryController {
     public ResponseEntity<byte[]> ledgerExport(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
-            @RequestParam(required = false) Long productId, @RequestParam(required = false) Long warehouseId) {
+            @RequestParam(required = false) Long productId, @RequestParam(required = false) Long warehouseId,
+            @RequestParam(required = false) com.daesung.sales.warehouse.entity.WarehouseType warehouseType) {
         List<Col> cols = List.of(
                 new Col("도서코드", "productCode"), new Col("도서명", "productName"), new Col("창고", "warehouseName"),
                 new Col("이월", "opening"), new Col("입고", "inbound"), new Col("이고", "transfer"),
@@ -91,7 +97,7 @@ public class InventoryController {
                 new Col("무상", "free"), new Col("교사용", "teacher"), new Col("반품", "salesReturn"),
                 new Col("조정", "adjust"), new Col("현재재고", "closing"));
         byte[] xlsx = excel.toXlsx("제품수불부", cols,
-                inventoryService.stockLedger(fromDate, toDate, productId, warehouseId));
+                inventoryService.stockLedger(fromDate, toDate, productId, warehouseId, warehouseType));
         return excel.asDownload(xlsx, "제품수불부.xlsx");
     }
 }

@@ -46,8 +46,20 @@ public class ConsignmentOut extends BaseEntity {
     @JoinColumn(name = "partner_id", nullable = false)
     private Partner partner;
 
+    /**
+     * 아직 살아 있는 출고량. 불변식 {@code total = settled + remaining}을 지키려고
+     * 반품하면 함께 줄어든다 — "처음 얼마 나갔나"는 {@link #originalQty}가 갖는다.
+     */
     @Column(name = "total_qty", nullable = false)
     private int totalQty;
+
+    /** 처음 출고한 수량(불변). 반품해도 줄지 않는다. 원출고 = 정산 + 반품 + 미결잔여. */
+    @Column(name = "original_qty", nullable = false)
+    private int originalQty;
+
+    /** 반품 누적. 이게 없으면 반품 뒤에 "처음부터 그만큼만 나간 것"처럼 보인다. */
+    @Column(name = "returned_qty", nullable = false)
+    private int returnedQty;
 
     @Column(name = "settled_qty", nullable = false)
     private int settledQty;
@@ -70,6 +82,8 @@ public class ConsignmentOut extends BaseEntity {
         c.product = product;
         c.partner = partner;
         c.totalQty = totalQty;
+        c.originalQty = totalQty;
+        c.returnedQty = 0;
         c.settledQty = 0;
         c.remainingQty = totalQty;
         c.status = ConsignmentStatus.OPEN;
@@ -95,6 +109,7 @@ public class ConsignmentOut extends BaseEntity {
         }
         this.totalQty -= qty;
         this.remainingQty -= qty;
+        this.returnedQty += qty;   // 원출고 = 정산 + 반품 + 미결잔여 가 읽히도록 누적
         if (this.remainingQty == 0) {
             this.status = ConsignmentStatus.CLOSED;
         } else if (this.settledQty > 0) {
