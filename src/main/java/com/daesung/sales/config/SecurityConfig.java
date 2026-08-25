@@ -20,7 +20,11 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 
 /**
  * 보안 설정(RBAC). stateless JWT. 로그인·Swagger는 공개, 그 외 인증 필수.
- * 역할별 세부 권한 매트릭스(마감=재무 등)는 발주처 확정 후 경로/@PreAuthorize로 확장.
+ *
+ * <p>★<b>권한 판정은 이 파일에 없다.</b> 화면별 권한 표(V52)를 읽는
+ * {@code DynamicAuthorizationManager}가 판정한다 — 발주처 요구가
+ * "관리자가 운영 중 화면/필드 단위 권한을 자유롭게 조정"이라 코드에 박을 수 없다.
+ * 여기 남은 것은 <b>표 밖에 있어야 하는 것</b>뿐이다: 공개 경로와, 표 자체를 바꾸는 경로.
  */
 @Configuration
 @EnableWebSecurity
@@ -28,7 +32,10 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 public class SecurityConfig {
 
     @Bean
-    public SecurityFilterChain securityFilterChain(HttpSecurity http, JwtProvider jwtProvider) throws Exception {
+    public SecurityFilterChain securityFilterChain(
+            HttpSecurity http, JwtProvider jwtProvider,
+            com.daesung.sales.permission.service.DynamicAuthorizationManager dynamicAuthorizationManager)
+            throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
                 .cors(Customizer.withDefaults())
@@ -42,49 +49,16 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**",
                                 "/actuator/health").permitAll()
-                        // 계정 생성은 관리자만
+                        // 계정 생성·권한 관리는 관리자만(권한 표 자체를 바꾸는 경로라 표 밖에 둔다 —
+                        // 표를 잘못 고쳐 스스로를 잠그면 되돌릴 길이 없어진다)
                         .requestMatchers("/api/v1/auth/users").hasRole("ADMIN")
-                        // ── 쓰기(변경) = 도메인 역할. ★기본안 — 정확한 매트릭스는 발주처 확정 대기 ──
-                        // 기초관리(마스터): 관리자
-                        .requestMatchers(HttpMethod.POST, "/api/v1/masters/**").hasRole("ADMIN")
-                        .requestMatchers(HttpMethod.PUT, "/api/v1/masters/**").hasRole("ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/v1/masters/**").hasRole("ADMIN")
-                        // 재고/물류: 물류
-                        .requestMatchers(HttpMethod.POST, "/api/v1/stock/**", "/api/v1/disposals/**")
-                                .hasAnyRole("LOGISTICS", "ADMIN")
-                        // 매출/위탁: 영업
-                        .requestMatchers(HttpMethod.POST, "/api/v1/sales/**", "/api/v1/consignment/**")
-                                .hasAnyRole("SALES", "ADMIN")
-                        // 매출목표(대시보드) 등록: 영업/재무
-                        .requestMatchers(HttpMethod.POST, "/api/v1/dashboard/**")
-                                .hasAnyRole("SALES", "FINANCE", "ADMIN")
-                        // 물류단가 수정: 물류
-                        .requestMatchers(HttpMethod.PUT, "/api/v1/logistics-costs/**").hasAnyRole("LOGISTICS", "ADMIN")
-                        .requestMatchers(HttpMethod.DELETE, "/api/v1/logistics-costs/**").hasAnyRole("LOGISTICS", "ADMIN")
-                        // 물류비 수기 등록·복사(28p 에디팅): 물류가 쓰는 화면이다.
-                        // POST 규칙이 없으면 아래 deny-by-default 안전망에 걸려 관리자도 막힌다.
-                        .requestMatchers(HttpMethod.POST, "/api/v1/logistics-costs/**").hasAnyRole("LOGISTICS", "ADMIN")
-                        // 거래명세서 발급 → 발송준비중 전환: 물류(명세서를 출력하는 주체) + 관리자.
-                        // ★DSRE2 운영 DB의 STATE를 직접 바꾸는 유일한 경로라 역할을 좁게 잡는다.
-                        .requestMatchers(HttpMethod.POST, "/api/v1/orders/**").hasAnyRole("LOGISTICS", "ADMIN")
-                        // 작업요청서 출력·발송정보 입력: 물류(실제 작업 주체) + 관리자
-                        .requestMatchers(HttpMethod.POST, "/api/v1/logistics/**").hasAnyRole("LOGISTICS", "ADMIN")
-                        .requestMatchers(HttpMethod.PUT, "/api/v1/logistics/**").hasAnyRole("LOGISTICS", "ADMIN")
-                        // 마감/채권/세무: 재무 — 쓰기·조회 모두(민감 재무데이터라 VIEWER 제외). ★기본안, 발주처 조정 가능
-                        .requestMatchers("/api/v1/closing/**").hasAnyRole("FINANCE", "ADMIN")
-                        // 배치 수동 실행: 재무(담보만기 알림이 25p 재무팀 요구사항) + 관리자
-                        .requestMatchers(HttpMethod.POST, "/api/v1/batch/**").hasAnyRole("FINANCE", "ADMIN")
-                        // 알림 확인 처리: 본인이 본 팝업을 닫는 동작이라 인증만
-                        .requestMatchers(HttpMethod.PUT, "/api/v1/notifications/**").authenticated()
-                        // 로그아웃(POST)은 인증만
-                        .requestMatchers(HttpMethod.POST, "/api/v1/auth/logout").authenticated()
-                        // ★안전망(deny-by-default): 위에서 역할이 명시되지 않은 쓰기(POST/PUT/DELETE)는 거부.
-                        //   향후 신규 쓰기 엔드포인트가 규칙 없이 추가돼도 VIEWER가 접근하지 못하게 방지.
-                        .requestMatchers(HttpMethod.POST, "/api/v1/**").denyAll()
-                        .requestMatchers(HttpMethod.PUT, "/api/v1/**").denyAll()
-                        .requestMatchers(HttpMethod.DELETE, "/api/v1/**").denyAll()
-                        // 그 외(마스터·매출·재고 조회 등 GET) = 인증된 사용자면 허용(VIEWER 포함)
-                        .anyRequest().authenticated())
+                        .requestMatchers("/api/v1/permissions/**").hasRole("ADMIN")
+                        // ── 그 외 전부: 권한 표에서 판정한다 ──────────────────────────────
+                        // 예전엔 여기에 경로별 hasRole(...)이 스무 줄 나열돼 있었다.
+                        // 발주처 요구(2026-08-21 ①)가 "화면/필드 단위 권한을 관리자가 운영 중
+                        // 자유롭게 조정"이라, 코드에 박아 두면 배포 없이는 못 바꾼다.
+                        // 화면에 붙지 않은 경로의 쓰기는 매니저가 거부한다(deny-by-default 유지).
+                        .anyRequest().access(dynamicAuthorizationManager))
                 // 미인증=401(로그인 필요), 인증됐으나 권한부족=403.
                 // ★setStatus 사용(sendError 아님) — sendError는 ERROR 재디스패치를 유발,
                 //   그 재디스패치엔 JWT 필터(OncePerRequestFilter)가 안 돌아 익명 재평가로 401이 덮어씀.

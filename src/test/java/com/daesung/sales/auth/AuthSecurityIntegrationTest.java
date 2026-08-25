@@ -24,12 +24,14 @@ class AuthSecurityIntegrationTest extends IntegrationTestSupport {
     void seedUser() {
         // 관리자 권한으로 전용 테스트 계정 생성(family-revoke를 admin과 격리)
         exchangeRaw(HttpMethod.POST, "/auth/users", Map.of(
-                "username", "reuse-user", "password", "Reuse1234!", "name", "재사용테스트", "role", "VIEWER"),
+                "username", "reuse-user", "password", "Reuse1234!", "name", "재사용테스트", "role", "SALES"),
                 token(), null);
         // RBAC 검증용 역할별 계정
+        // ★조회전용(VIEWER) 역할은 없앴다(발주처 확정: 역할 4종).
+        //   "조회만 되는 상태"는 이제 권한 표에서 그 화면을 READ로 둔 결과로 나타난다.
         createUser("rbac-finance", "FINANCE");
         createUser("rbac-sales", "SALES");
-        createUser("rbac-viewer", "VIEWER");
+        createUser("rbac-logis", "LOGISTICS");
     }
 
     private void createUser(String username, String role) {
@@ -49,31 +51,37 @@ class AuthSecurityIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("RBAC — 마감/세무는 FINANCE, 매출등록은 SALES, 조회는 공통")
+    @DisplayName("RBAC — 판정이 권한 표(V52)에서 나온다")
     void rbac매트릭스() throws Exception {
         String finance = loginToken("rbac-finance");
         String sales = loginToken("rbac-sales");
-        String viewer = loginToken("rbac-viewer");
+        String logis = loginToken("rbac-logis");
 
-        // 마감/세무 조회: FINANCE 200, VIEWER 403(민감 재무데이터)
+        // 마감/세무: 재무 WRITE, 물류 NONE(비노출이라 조회도 막힌다)
         assertThat(status(HttpMethod.GET, "/closing/revenue-report", null, finance)).isEqualTo(200);
-        assertThat(status(HttpMethod.GET, "/closing/revenue-report", null, viewer)).isEqualTo(403);
+        assertThat(status(HttpMethod.GET, "/closing/revenue-report", null, logis)).isEqualTo(403);
 
-        // 매출등록(POST): SALES 계열만. VIEWER 403(권한부족, 바디 무관)
-        assertThat(status(HttpMethod.POST, "/sales/entries", Map.of(), viewer)).isEqualTo(403);
+        // 매출등록(쓰기): 영업 WRITE, 재무는 READ라 막힌다
+        //   — 발주처 확정 "재무×매출관리는 조회만, 편집은 관리자 계정으로".
+        assertThat(status(HttpMethod.POST, "/sales/entries", Map.of(), finance)).isEqualTo(403);
 
-        // 마스터 쓰기(POST): ADMIN만. SALES 403
+        // 같은 재무 계정이 매출 '조회'는 된다 — READ와 WRITE가 갈린다는 증거
+        assertThat(status(HttpMethod.GET, "/sales/statement?fromDate=2026-06-01&toDate=2026-06-30",
+                null, finance)).isEqualTo(200);
+
+        // 기초관리 쓰기: 관리자만. 영업은 READ
         assertThat(status(HttpMethod.POST, "/masters/clients",
                 Map.of("code", "X", "name", "X", "type", "NORMAL"), sales)).isEqualTo(403);
 
-        // 매출목표(대시보드) 등록: 영업/재무만. VIEWER 403
-        assertThat(status(HttpMethod.POST, "/dashboard/targets", Map.of(), viewer)).isEqualTo(403);
-        // 물류단가 수정: 물류만. VIEWER 403
-        assertThat(status(HttpMethod.PUT, "/logistics-costs/rates/1", Map.of(), viewer)).isEqualTo(403);
+        // 물류단가 수정: 물류 WRITE, 영업은 READ
+        assertThat(status(HttpMethod.PUT, "/logistics-costs/rates/1", Map.of(), sales)).isEqualTo(403);
 
-        // 일반 조회는 VIEWER도 200
-        assertThat(status(HttpMethod.GET, "/sales/statement?fromDate=2026-06-01&toDate=2026-06-30", null, viewer))
-                .isEqualTo(200);
+        // 입고/대체등록: 물류 WRITE, 영업 NONE(2단계 표에서 영업 N)
+        assertThat(status(HttpMethod.POST, "/stock/inbound", Map.of(), sales)).isEqualTo(403);
+
+        // ★제품수불부는 물류가 본다 — /stock/ledger 패턴이 /stock 보다 앞이라
+        //   입고등록 권한(물류 WRITE)과 별개로 잡힌다. 순서가 어긋나면 이 검증이 깨진다.
+        assertThat(status(HttpMethod.GET, "/stock/ledger", null, logis)).isEqualTo(200);
 
         // /auth/me 역할 반영
         var me = om.readTree(exchangeRaw(HttpMethod.GET, "/auth/me", null, finance, null).getBody());

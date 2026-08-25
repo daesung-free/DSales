@@ -7,6 +7,8 @@ import com.daesung.sales.audit.entity.StatusEntityType;
 import com.daesung.sales.audit.service.StatusHistoryService;
 import com.daesung.sales.common.audit.CurrentAuditor;
 import com.daesung.sales.common.exception.BusinessException;
+import com.daesung.sales.permission.entity.UserPermissionFlag;
+import com.daesung.sales.permission.service.PermissionService;
 import com.daesung.sales.common.exception.ErrorCode;
 import java.time.LocalDate;
 import java.util.List;
@@ -23,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class PeriodLockService {
 
     private final PeriodLockRepository periodLockRepository;
+    private final PermissionService permissionService;
     private final org.springframework.beans.factory.ObjectProvider<
             com.daesung.sales.logistics.service.LogisCostDetailService> logisCostDetailService;
     private final StatusHistoryService statusHistoryService;
@@ -51,6 +54,7 @@ public class PeriodLockService {
      */
     @Transactional
     public PeriodLockResponse lock(int year, int month, String memo) {
+        assertFlag(UserPermissionFlag.PERIOD_LOCK, "마감 확정");
         freezeLogisCost(year, month);
         PeriodLock pl = getOrCreate(year, month);
         boolean before = pl.isLocked();   // ★바꾸기 전에 읽는다
@@ -70,6 +74,7 @@ public class PeriodLockService {
      */
     @Transactional
     public PeriodLockResponse unlock(int year, int month, String reason) {
+        assertFlag(UserPermissionFlag.PERIOD_UNLOCK, "마감 해제");
         logisCostDetailService.ifAvailable(s -> s.unfreeze(year, month));
         PeriodLock pl = getOrCreate(year, month);
         boolean before = pl.isLocked();
@@ -78,6 +83,22 @@ public class PeriodLockService {
         statusHistoryService.record(StatusEntityType.PERIOD_LOCK, pl.getId(), "locked",
                 before, false, reason);
         return PeriodLockResponse.from(pl);
+    }
+
+    /**
+     * 사용자 개별 권한(3단계) 검사. 근거: 발주처 「사용자권한_구조 설계 예시」 3단계 —
+     * "④·⑤ 항목처럼 특정 담당자에게만 부여하는 권한은, 역할이 아니라
+     * 사용자 ID 단위 Y/N 필드로 관리자가 직접 지정."
+     *
+     * <p>마감 확정과 해제를 <b>따로</b> 둔다 — 해제는 이미 닫은 장부를 다시 여는 것이라
+     * 확정보다 민감하다. 같은 권한으로 묶으면 확정만 맡기고 싶은 담당자에게
+     * 해제 권한까지 딸려 간다.
+     */
+    private void assertFlag(String flagKey, String what) {
+        if (!permissionService.hasFlag(currentAuditor.username(), flagKey)) {
+            throw new BusinessException(ErrorCode.FORBIDDEN,
+                    what + " 권한이 없습니다. 관리자에게 요청하세요.");
+        }
     }
 
     /**
