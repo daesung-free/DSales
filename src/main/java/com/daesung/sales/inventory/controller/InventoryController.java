@@ -8,6 +8,7 @@ import com.daesung.sales.inventory.dto.BomWorkResponse;
 import com.daesung.sales.inventory.dto.InboundRequest;
 import com.daesung.sales.inventory.dto.InboundResponse;
 import com.daesung.sales.inventory.dto.StockLedgerRow;
+import com.daesung.sales.inventory.dto.StockSettlementRow;
 import com.daesung.sales.inventory.dto.TransferRequest;
 import com.daesung.sales.inventory.dto.TransferResponse;
 import com.daesung.sales.inventory.service.InventoryService;
@@ -99,5 +100,43 @@ public class InventoryController {
         byte[] xlsx = excel.toXlsx("제품수불부", cols,
                 inventoryService.stockLedger(fromDate, toDate, productId, warehouseId, warehouseType));
         return excel.asDownload(xlsx, "제품수불부.xlsx");
+    }
+
+    @Operation(summary = "제품수불부 결산내역(연초~기준일 누적)",
+            description = """
+                    기준일자 연도 1월 1일부터 기준일까지의 수불 전체내역. 분류 소계·총계 포함.
+                    레거시 제품수불부 「결산내역」 체크박스와 같은 뷰다 —
+                    화면 안내문 원문 "&lt;결산내역&gt; 체크시 기준일자 연도 1월1일부터 기준일자 까지의
+                    제품수불 전체내역을 보여줍니다".
+                    ★시작일은 받지 않는다(연초 고정). 분류 필터도 없다(레거시는 결산 시 분류 콤보를 잠근다).
+                    창고는 합산하되 창고구분 필터는 남긴다.""")
+    @GetMapping("/ledger/settlement")
+    public ApiResponse<List<StockSettlementRow>> settlement(
+            @Parameter(description = "기준일(yyyy-MM-dd, 미지정 시 오늘). 시작일은 이 날짜의 연도 1/1로 고정")
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate baseDate,
+            @Parameter(description = "상품 id 필터") @RequestParam(required = false) Long productId,
+            @Parameter(description = "창고구분 MAIN/CONSIGN. 미지정=전체")
+            @RequestParam(required = false) com.daesung.sales.warehouse.entity.WarehouseType warehouseType) {
+        return ApiResponse.success(inventoryService.stockSettlement(baseDate, productId, warehouseType));
+    }
+
+    @Operation(summary = "제품수불부 결산내역 엑셀 다운로드",
+            description = "연초~기준일 누적 + 분류 소계·총계.")
+    @GetMapping("/ledger/settlement/export")
+    public ResponseEntity<byte[]> settlementExport(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate baseDate,
+            @RequestParam(required = false) Long productId,
+            @RequestParam(required = false) com.daesung.sales.warehouse.entity.WarehouseType warehouseType) {
+        List<Col> cols = List.of(
+                new Col("구분", "rowType"), new Col("분류코드", "catCode"), new Col("분류명", "catName"),
+                new Col("도서코드", "productCode"), new Col("도서명", "productName"),
+                new Col("이월", "opening"), new Col("입고", "inbound"), new Col("이고", "transfer"),
+                new Col("조립해체", "bom"), new Col("폐기", "dispose"), new Col("매출", "sale"),
+                new Col("무상", "free"), new Col("교사용", "teacher"), new Col("반품", "salesReturn"),
+                new Col("조정", "adjust"), new Col("재고", "closing"));
+        byte[] xlsx = excel.toXlsx("제품수불부결산", cols,
+                inventoryService.stockSettlement(baseDate, productId, warehouseType));
+        return excel.asDownload(xlsx, "제품수불부_결산내역.xlsx");
     }
 }

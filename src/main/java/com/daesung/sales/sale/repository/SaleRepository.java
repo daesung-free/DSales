@@ -315,24 +315,35 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
                                        @Param("partnerId") Long partnerId);
 
     /**
-     * 콘텐츠구분 순매출: 상품별 매출/무상/반품 집계 + 콘텐츠구분. 취소 제외.
+     * 콘텐츠구분 순매출: 상품별 매출/무상/반품 집계 + 콘텐츠구분 + 상품분류. 취소 제외.
      * 외부콘텐츠 이익은 서비스에서 매입원가(입고 unit_cost 평균)와 결합.
      * contentType: null=전체, 'SELF'/'EXTERNAL'.
-     * 반환 Object[]: [productId, code, name, contentType, saleQty, saleAmt, freeAmt, returnQty, returnAmt].
+     *
+     * <p>★교사용은 <b>증정용을 포함</b>한다 — 정본 16p "교사용(증정용포함)".
+     * 둘 다 회계구분 FREE라 한 칸으로 합친다(레거시처럼 무가/유가로 가르지 않는다).
+     *
+     * <p>★세액은 매출−반품으로 순액을 낸다. 매출 세액만 보면 반품된 건의 세액이 남아
+     * 22p·38p 신고액과 어긋난다.
+     *
+     * <p>반환 Object[]: [productId, code, name, contentType, catCode, catName,
+     * saleQty, saleAmt, saleTax, freeQty, freeAmt, returnQty, returnAmt, returnTax].
      */
     @Query(value = """
-            SELECT s.product_id, p.code, p.name, p.content_type,
+            SELECT s.product_id, p.code, p.name, p.content_type, p.cat_code, p.cat_name,
               COALESCE(SUM(CASE WHEN s.sales_category='SALE' THEN s.qty ELSE 0 END),0) sale_qty,
               COALESCE(SUM(CASE WHEN s.sales_category='SALE' THEN s.supply_amount ELSE 0 END),0) sale_amt,
+              COALESCE(SUM(CASE WHEN s.sales_category='SALE' THEN s.tax ELSE 0 END),0) sale_tax,
+              COALESCE(SUM(CASE WHEN s.sales_category='FREE' THEN s.qty ELSE 0 END),0) free_qty,
               COALESCE(SUM(CASE WHEN s.sales_category='FREE' THEN s.supply_amount ELSE 0 END),0) free_amt,
               COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN s.qty ELSE 0 END),0) return_qty,
-              COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN s.supply_amount ELSE 0 END),0) return_amt
+              COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN s.supply_amount ELSE 0 END),0) return_amt,
+              COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN s.tax ELSE 0 END),0) return_tax
             FROM sales s JOIN products p ON p.id = s.product_id
             WHERE s.canceled = false
               AND s.sales_date BETWEEN :fromDate AND :toDate
               AND (CAST(:contentType AS CHAR) IS NULL OR p.content_type = :contentType)
-            GROUP BY s.product_id, p.code, p.name, p.content_type
-            ORDER BY p.code
+            GROUP BY s.product_id, p.code, p.name, p.content_type, p.cat_code, p.cat_name
+            ORDER BY p.cat_code, p.code
             """, nativeQuery = true)
     List<Object[]> netSalesByProduct(@Param("fromDate") LocalDate fromDate,
                                      @Param("toDate") LocalDate toDate,

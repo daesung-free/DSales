@@ -179,10 +179,14 @@ public class SaleController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @RequestParam(required = false) String contentType) {
         List<Col> cols = List.of(
+                new Col("분류코드", "catCode"), new Col("분류명", "catName"),
                 new Col("상품코드", "productCode"), new Col("상품명", "productName"), new Col("콘텐츠구분", "contentType"),
-                new Col("매출수량", "saleQty"), new Col("매출액", "saleAmount"), new Col("무상액", "freeAmount"),
-                new Col("반품수량", "returnQty"), new Col("반품액", "returnAmount"),
-                new Col("순매출수량", "netQty"), new Col("순매출액", "netAmount"),
+                new Col("매출수량", "saleQty"), new Col("매출 공급가액", "saleAmount"),
+                new Col("교사용수량", "freeQty"), new Col("교사용 공급가액", "freeAmount"),
+                new Col("반품수량", "returnQty"), new Col("반품률(%)", "returnRate"), new Col("반품액", "returnAmount"),
+                new Col("순매출수량", "netQty"), new Col("순매출 공급가액", "netAmount"),
+                new Col("순매출 세액", "netTax"), new Col("순매출 총금액", "netTotal"),
+                new Col("매입 입고수량", "inboundQty"),
                 new Col("매입단가", "purchaseUnitCost"), new Col("매입액", "purchaseAmount"),
                 new Col("이익", "profit"), new Col("이익률(%)", "marginPct"));
         byte[] xlsx = excel.toXlsx("순매출조회", cols, saleReportService.netSales(fromDate, toDate, contentType).rows());

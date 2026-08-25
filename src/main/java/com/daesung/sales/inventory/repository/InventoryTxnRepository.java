@@ -23,6 +23,26 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
             """, nativeQuery = true)
     List<Object[]> avgInboundCostByProduct();
 
+    /**
+     * 상품별 <b>매입 입고수량</b>(기간). 근거: 정본 16p 데이터 항목 "입고/매입반품/매입액".
+     *
+     * <p>★단가(위 가중평균)와 달리 이것은 <b>기간으로 자른다</b>. 화면이 묻는 것은
+     * "이 기간에 얼마나 들여왔나"이고, 단가는 "지금까지 평균 얼마에 들여왔나"라서
+     * 자르는 기준이 다르다. 같은 기준으로 맞추면 기간 내 입고가 없는 달에 단가가 0이 되어
+     * 이익이 매출 전액으로 부풀어 오른다.
+     *
+     * <p>반환 Object[]: [productId, inboundQty, inboundAmount].
+     */
+    @Query(value = """
+            SELECT product_id, COALESCE(SUM(qty), 0), COALESCE(SUM(qty * COALESCE(unit_cost, 0)), 0)
+            FROM inventory_txn
+            WHERE txn_type = 'INBOUND' AND inbound_type = 'PURCHASE'
+              AND trade_date BETWEEN :fromDate AND :toDate
+            GROUP BY product_id
+            """, nativeQuery = true)
+    List<Object[]> purchaseInboundByProduct(@Param("fromDate") LocalDate fromDate,
+                                            @Param("toDate") LocalDate toDate);
+
     /** 특정 전표(refNo)로 생성된 출고/반품 이벤트(매출취소 역분개용). product·warehouse 즉시 로드. */
     @Query("select t from InventoryTxn t join fetch t.product join fetch t.warehouse"
             + " where t.refNo = :refNo and t.shipmentType is not null")
@@ -68,6 +88,46 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
                                @Param("productId") Long productId,
                                @Param("warehouseId") Long warehouseId,
                                @Param("warehouseType") String warehouseType);
+
+    /**
+     * 제품수불부 <b>결산내역</b> 집계(분류×상품, 창고 합산). 근거: 정본 11p "결산내역(연초~기준일 누적)" +
+     * 레거시 제품수불부 「결산내역」 체크박스.
+     *
+     * <p>버킷 구성은 {@link #stockLedger}와 같다. 다른 것은 두 가지뿐이다 —
+     * <b>창고로 나누지 않고</b>(레거시엔 창고 축이 없다) <b>분류코드로 묶는다</b>(rollup 대상).
+     * 창고구분 필터는 남긴다(2026-08-21 회신 「위탁 미결잔여가 어느 창고에 있는지」).
+     *
+     * <p>기간의 시작(연초)은 호출부가 정한다 — 이 쿼리는 받은 fromDate를 그대로 쓴다.
+     *
+     * <p>반환 Object[]: [catCode, catName, productId, code, name,
+     *   opening, inbound, transfer, bom, dispose, sale, free, teacher, salesReturn, adjust, closing].
+     */
+    @Query(value = """
+            SELECT p.cat_code, p.cat_name, t.product_id, p.code, p.name,
+              COALESCE(SUM(CASE WHEN t.trade_date < :fromDate THEN t.qty ELSE 0 END), 0) AS opening,
+              COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.txn_type = 'INBOUND' THEN t.qty ELSE 0 END), 0) AS inbound,
+              COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.txn_type = 'TRANSFER' THEN t.qty ELSE 0 END), 0) AS transfer,
+              COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.txn_type IN ('BOM_ASSEMBLE','BOM_DISASSEMBLE') THEN t.qty ELSE 0 END), 0) AS bom,
+              COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.txn_type = 'DISPOSE' THEN t.qty ELSE 0 END), 0) AS dispose,
+              COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.shipment_type = 'NORMAL_SHIP' THEN t.qty ELSE 0 END), 0) AS sale,
+              COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.shipment_type = 'GIFT' THEN t.qty ELSE 0 END), 0) AS free,
+              COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.shipment_type = 'TEACHER_USE' THEN t.qty ELSE 0 END), 0) AS teacher,
+              COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.shipment_type = 'RETURN' THEN t.qty ELSE 0 END), 0) AS sales_return,
+              COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.txn_type = 'ADJUST' THEN t.qty ELSE 0 END), 0) AS adjust,
+              COALESCE(SUM(CASE WHEN t.trade_date <= :toDate THEN t.qty ELSE 0 END), 0) AS closing
+            FROM inventory_txn t
+              JOIN products p ON p.id = t.product_id
+              JOIN warehouses w ON w.id = t.warehouse_id
+            WHERE (CAST(:productId AS SIGNED) IS NULL OR t.product_id = :productId)
+              AND (:warehouseType IS NULL OR w.type = :warehouseType)
+              AND p.ledger_visible = TRUE
+            GROUP BY p.cat_code, p.cat_name, t.product_id, p.code, p.name
+            ORDER BY p.cat_code, p.code
+            """, nativeQuery = true)
+    List<Object[]> stockSettlement(@Param("fromDate") LocalDate fromDate,
+                                   @Param("toDate") LocalDate toDate,
+                                   @Param("productId") Long productId,
+                                   @Param("warehouseType") String warehouseType);
 
     /**
      * 도서입출고현황의 매입측(상품별 입고/취소) + 재고. 근거: 레거시 도서입출고현황.vb 입고/취소 버킷.

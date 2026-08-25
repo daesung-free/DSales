@@ -84,6 +84,15 @@ public class SaleReportService {
     /**
      * 콘텐츠구분 순매출. SELF=매출−반품, EXTERNAL=매출−매입=이익(매입원가=매입입고 unit_cost 가중평균).
      * 기간 미지정 시 올해 1/1~오늘. contentType: null/전체, SELF, EXTERNAL.
+     *
+     * <p>정본 16p 데이터 항목을 다 싣는다 — 상품분류, 교사용(증정용포함) 수량,
+     * 순매출 세액·총금액, 외부콘텐츠 매입 입고수량.
+     *
+     * <p>★<b>교사용은 순매출에서 빼지 않는다</b>. 정본 16p 설명문은 "매출−교사용−반품=순매출"이라
+     * 적혀 있지만, 교사용은 회계구분 FREE라 애초에 매출액(SALE)에 들어 있지 않다 —
+     * 한 번 더 빼면 무상으로 나간 만큼 순매출이 <b>음수 쪽으로</b> 밀린다.
+     * 레거시도 교사용을 빼지 않는다(제품수불부 {@code 순매출수량=매출+유가+반품}).
+     * 그래서 교사용은 <b>따로 보여주기만</b> 하고 순매출 식에서는 건드리지 않는다.
      */
     @Transactional(readOnly = true)
     public NetSalesResponse netSales(LocalDate fromDate, LocalDate toDate, String contentType) {
@@ -92,45 +101,60 @@ public class SaleReportService {
         String filter = (contentType == null || contentType.isBlank())
                 ? null : contentType.trim().toUpperCase(Locale.ROOT);
 
-        // 상품별 매입원가(입고 가중평균)
+        // 상품별 매입원가(입고 가중평균 — 기간 무관)와 매입 입고수량(기간 내)
         Map<Long, Long> avgCost = new HashMap<>();
         for (Object[] r : inventoryTxnRepository.avgInboundCostByProduct()) {
             avgCost.put(num(r[0]), num(r[1]));
         }
+        Map<Long, Long> inbound = new HashMap<>();
+        for (Object[] r : inventoryTxnRepository.purchaseInboundByProduct(from, to)) {
+            inbound.put(num(r[0]), num(r[1]));
+        }
 
         List<NetSalesResponse.Row> rows = new ArrayList<>();
-        long tSaleQ = 0, tSaleA = 0, tFreeA = 0, tRetQ = 0, tRetA = 0, tPurch = 0;
+        long tSaleQ = 0, tSaleA = 0, tSaleTax = 0, tFreeQ = 0, tFreeA = 0;
+        long tRetQ = 0, tRetA = 0, tRetTax = 0, tPurch = 0, tInQ = 0;
         boolean anyExternal = false;
         for (Object[] r : saleRepository.netSalesByProduct(from, to, filter)) {
             long pid = num(r[0]);
             String ct = (String) r[3];
-            long saleQty = num(r[4]), saleAmt = num(r[5]), freeAmt = num(r[6]), retQty = num(r[7]), retAmt = num(r[8]);
+            long saleQty = num(r[6]), saleAmt = num(r[7]), saleTax = num(r[8]);
+            long freeQty = num(r[9]), freeAmt = num(r[10]);
+            long retQty = num(r[11]), retAmt = num(r[12]), retTax = num(r[13]);
             long netQty = saleQty - retQty;
             long netAmt = saleAmt - retAmt;
+            long netTax = saleTax - retTax;
 
-            Long unitCost = null, purchase = null, profit = null;
+            Long inQty = null, unitCost = null, purchase = null, profit = null;
             Double margin = null;
             if ("EXTERNAL".equals(ct)) {
                 anyExternal = true;
+                inQty = inbound.getOrDefault(pid, 0L);
                 unitCost = avgCost.getOrDefault(pid, 0L);
                 purchase = unitCost * netQty;
                 profit = netAmt - purchase;
                 margin = (netAmt != 0) ? Math.round((double) profit / netAmt * 100 * 10) / 10.0 : null;
                 tPurch += purchase;
+                tInQ += inQty;
             }
-            rows.add(new NetSalesResponse.Row(pid, (String) r[1], (String) r[2], ct,
-                    saleQty, saleAmt, freeAmt, retQty, returnRate(retQty, saleQty), retAmt, netQty, netAmt,
-                    unitCost, purchase, profit, margin));
-            tSaleQ += saleQty; tSaleA += saleAmt; tFreeA += freeAmt; tRetQ += retQty; tRetA += retAmt;
+            rows.add(new NetSalesResponse.Row(pid, (String) r[4], (String) r[5], (String) r[1], (String) r[2], ct,
+                    saleQty, saleAmt, freeQty, freeAmt, retQty, returnRate(retQty, saleQty), retAmt,
+                    netQty, netAmt, netTax, netAmt + netTax,
+                    inQty, unitCost, purchase, profit, margin));
+            tSaleQ += saleQty; tSaleA += saleAmt; tSaleTax += saleTax;
+            tFreeQ += freeQty; tFreeA += freeAmt;
+            tRetQ += retQty; tRetA += retAmt; tRetTax += retTax;
         }
 
         long tNetAmt = tSaleA - tRetA;
+        long tNetTax = tSaleTax - tRetTax;
         Long totalPurchase = anyExternal ? tPurch : null;
         Long totalProfit = anyExternal ? (tNetAmt - tPurch) : null;
         Double totalMargin = (anyExternal && tNetAmt != 0) ? Math.round((double) totalProfit / tNetAmt * 100 * 10) / 10.0 : null;
-        NetSalesResponse.Row total = new NetSalesResponse.Row(null, "합계", null, null,
-                tSaleQ, tSaleA, tFreeA, tRetQ, returnRate(tRetQ, tSaleQ), tRetA, tSaleQ - tRetQ, tNetAmt,
-                null, totalPurchase, totalProfit, totalMargin);
+        NetSalesResponse.Row total = new NetSalesResponse.Row(null, null, null, "합계", null, null,
+                tSaleQ, tSaleA, tFreeQ, tFreeA, tRetQ, returnRate(tRetQ, tSaleQ), tRetA,
+                tSaleQ - tRetQ, tNetAmt, tNetTax, tNetAmt + tNetTax,
+                anyExternal ? tInQ : null, null, totalPurchase, totalProfit, totalMargin);
         return new NetSalesResponse(from, to, filter, rows, total);
     }
 

@@ -11,6 +11,7 @@ import com.daesung.sales.inventory.dto.InboundRequest;
 import com.daesung.sales.inventory.dto.InboundResponse;
 import com.daesung.sales.inventory.entity.InboundType;
 import com.daesung.sales.inventory.dto.StockLedgerRow;
+import com.daesung.sales.inventory.dto.StockSettlementRow;
 import com.daesung.sales.warehouse.entity.WarehouseType;
 import com.daesung.sales.inventory.dto.TransferRequest;
 import com.daesung.sales.inventory.dto.TransferResponse;
@@ -267,6 +268,63 @@ public class InventoryService {
         }
         return result;
     }
+
+    /**
+     * 제품수불부 <b>결산내역</b>(연초~기준일 누적). 근거: 정본 11p 데이터 항목 +
+     * 레거시 제품수불부 「결산내역」 체크박스.
+     *
+     * <p>★기간을 받지 않는다 — <b>기준일 하나만</b> 받고 시작일은 그 해 1월 1일로 못 박는다.
+     * 레거시가 체크박스를 켜는 순간 하는 일이 정확히 그것이다
+     * ({@code DateTimePicker_Start.Value = 기준일.ToString("yyyy.01.01")}).
+     * 시작일을 호출부가 고를 수 있게 두면 "결산"이라는 이름이 거짓말이 된다.
+     *
+     * <p>분류 필터도 두지 않는다. 레거시는 결산내역을 켜면 분류 콤보를 <b>비활성</b>시킨다
+     * ({@code ComboBox_CatList.Enabled = False}) — 결산은 전 분류를 놓고 소계·총계를 보는 화면이다.
+     */
+    @Transactional(readOnly = true)
+    public List<StockSettlementRow> stockSettlement(LocalDate baseDate, Long productId,
+                                                    WarehouseType warehouseType) {
+        LocalDate to = (baseDate != null) ? baseDate : LocalDate.now();
+        LocalDate from = to.withDayOfYear(1);
+        String whType = (warehouseType == null) ? null : warehouseType.name();
+
+        List<StockSettlementRow> rows = new ArrayList<>();
+        long[] cat = new long[BUCKETS];      // 분류 소계
+        long[] grand = new long[BUCKETS];    // 총계
+        String curCat = null;
+        boolean catOpen = false;
+
+        for (Object[] r : inventoryTxnRepository.stockSettlement(from, to, productId, whType)) {
+            String catCode = (String) r[0];
+            if (catOpen && !java.util.Objects.equals(catCode, curCat)) {
+                rows.add(StockSettlementRow.catSubtotal(curCat, cat));
+                catOpen = false;
+            }
+            if (!catOpen) {
+                curCat = catCode;
+                cat = new long[BUCKETS];
+                catOpen = true;
+            }
+
+            long[] b = new long[BUCKETS];
+            for (int i = 0; i < BUCKETS; i++) {
+                b[i] = num(r[5 + i]);
+                cat[i] += b[i];
+                grand[i] += b[i];
+            }
+            rows.add(StockSettlementRow.detail(catCode, (String) r[1], num(r[2]),
+                    (String) r[3], (String) r[4], b));
+        }
+        if (catOpen) {
+            rows.add(StockSettlementRow.catSubtotal(curCat, cat));
+        }
+        // ‼️행이 하나도 없어도 총계는 낸다 — 빈 화면과 "0으로 결산됐다"는 다른 말이다.
+        rows.add(StockSettlementRow.total(grand));
+        return rows;
+    }
+
+    /** 결산 버킷 수(이월·입고·이고·조립해체·폐기·매출·무상·교사용·반품·조정·재고). */
+    private static final int BUCKETS = 11;
 
     private static long num(Object o) {
         return (o == null) ? 0L : ((Number) o).longValue();
