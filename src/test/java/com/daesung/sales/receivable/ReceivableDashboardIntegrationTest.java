@@ -96,6 +96,67 @@ class ReceivableDashboardIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("외상매출장(24p) — 도서 단위 명세다. 전표 한 줄이 아니다")
+    void 외상매출장_도서단위() {
+        String sfx = "-AL" + (System.nanoTime() % 1_000_000L);
+        Long sup = createId("/masters/clients", Map.of("code", "ALS" + sfx, "name", "인쇄", "type", "NORMAL"));
+        Long pt = createId("/masters/clients", Map.of("code", "ALP" + sfx, "name", "장부처", "type", "NORMAL"));
+        Long wh = createId("/masters/warehouses", Map.of("code", "ALW" + sfx, "name", "창고", "type", "MAIN"));
+        Long pr = createId("/masters/products", Map.of("code", "ALB" + sfx, "name", "국어교재",
+                "contentType", "SELF", "price", 10000, "taxFree", false,
+                "catCode", "H2050H01", "catName", "교재분류"));
+        post("/stock/inbound", Map.of("processedDate", "2050-01-01", "supplierClientId", sup,
+                "destinationWarehouseId", wh,
+                "items", List.of(Map.of("productId", pr, "unitCost", 3000, "qty", 500))));
+
+        // 매출 10권(공급률 75, 세액 7500) + 교사용 2권(공급률 50) + 증정 3권(공급률 0)
+        post("/sales/entries", Map.of("salesDate", "2050-03-10", "partnerId", pt, "warehouseId", wh,
+                "items", List.of(
+                        Map.of("productId", pr, "shipmentType", "NORMAL_SHIP", "qty", 10,
+                                "unitPrice", 10000, "supplyRate", 75, "tax", 7500,
+                                "schoolName", "강남대성학원", "round", 3),
+                        Map.of("productId", pr, "shipmentType", "TEACHER_USE", "qty", 2,
+                                "unitPrice", 10000, "supplyRate", 50),
+                        Map.of("productId", pr, "shipmentType", "GIFT", "qty", 3,
+                                "unitPrice", 10000, "supplyRate", 0))));
+
+        JsonNode lines = data(get("/closing/ar-ledger?partnerId=" + pt
+                + "&fromDate=2050-01-01&toDate=2050-12-31")).path("lines");
+
+        JsonNode sale = null;
+        JsonNode teacher = null;
+        JsonNode gift = null;
+        for (JsonNode l : lines) {
+            if (l.hasNonNull("saleQty")) {
+                sale = l;
+            } else if (l.hasNonNull("teacherQty")) {
+                teacher = l;
+            } else if ("증정".equals(l.path("kind").asText())) {
+                gift = l;
+            }
+        }
+
+        // 매출 행: 도서 정보가 칸으로 펼쳐진다(예전엔 적요 한 칸에 뭉개져 있었다)
+        assertThat(sale).isNotNull();
+        assertThat(sale.path("catName").asText()).isEqualTo("교재분류");
+        assertThat(sale.path("supplyRate").asInt()).isEqualTo(75);
+        assertThat(sale.path("saleQty").asLong()).isEqualTo(10);
+        assertThat(sale.path("saleAmount").asLong()).isEqualTo(75_000);
+        assertThat(sale.path("tax").asLong()).isEqualTo(7_500);
+        // 도서명에 회차·학교가 붙는다 — 같은 책이 여러 줄 나오므로 이름만으로는 못 가린다
+        assertThat(sale.path("productName").asText()).contains("[3회]").contains("<강남대성학원>");
+
+        // 교사용 행: 무가 중 공급률이 있는 것만
+        assertThat(teacher).isNotNull();
+        assertThat(teacher.path("teacherQty").asLong()).isEqualTo(2);
+        assertThat(teacher.hasNonNull("saleQty")).as("한 행에는 그 구분 칸만 찬다").isFalse();
+
+        // ‼️증정(공급률 0)은 교사용이 아니다 — 합치면 교사용 수량이 부풀려진다
+        assertThat(gift).isNotNull();
+        assertThat(gift.hasNonNull("teacherQty")).isFalse();
+    }
+
+    @Test
     @DisplayName("매출 대시보드 — 목표대비 실적·달성률(상품별 격리)")
     void 대시보드_목표대비() {
         Long supplier = createId("/masters/clients", Map.of("code", "DB-SUP", "name", "입고공급사3", "type", "NORMAL"));

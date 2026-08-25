@@ -205,8 +205,8 @@ public class ReceivableController {
         return excel.asDownload(xlsx, "미수금현황.xlsx");
     }
 
-    @Operation(summary = "외상매출장 조회(거래처 상세)",
-            description = "단일 거래처의 기초이월 + 기간 내 매출/반품/수금 명세 + 일자별 누계(러닝밸런스). "
+    @Operation(summary = "외상매출장 조회(24p, 거래처 상세)",
+            description = "단일 거래처의 기초이월 + 기간 내 매출/교사용/반품/수금 **도서 단위 명세** + 일자별 누계. "
                     + "기간 미지정 시 올해 1/1~오늘.")
     @GetMapping("/ar-ledger")
     public ApiResponse<ArLedgerResponse> arLedger(
@@ -272,7 +272,13 @@ public class ReceivableController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate) {
         List<Col> cols = List.of(
                 new Col("일자", "date"), new Col("구분", "kind"), new Col("전표번호", "refNo"),
-                new Col("적요", "description"), new Col("금액", "amount"), new Col("잔액", "balance"));
+                new Col("분류코드", "catCode"), new Col("분류명", "catName"),
+                new Col("도서코드", "productCode"), new Col("도서명", "productName"),
+                new Col("공급률", "supplyRate"),
+                new Col("매출수량", "saleQty"), new Col("매출금액", "saleAmount"), new Col("세액", "tax"),
+                new Col("교사용수량", "teacherQty"), new Col("교사용금액", "teacherAmount"),
+                new Col("반품수량", "returnQty"), new Col("반품금액", "returnAmount"),
+                new Col("수금액", "collectAmount"), new Col("잔액", "balance"));
         byte[] xlsx = excel.toXlsx("외상매출장", cols, receivableService.arLedger(partnerId, fromDate, toDate).lines());
         return excel.asDownload(xlsx, "외상매출장.xlsx");
     }

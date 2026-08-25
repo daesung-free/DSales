@@ -385,20 +385,26 @@ public class ReceivableService {
             }
             rows.add(new ArStatusResponse.Row(pid, p.getCode(), p.getName(),
                     opening, s[1], s[2], s[3], s[0], collected, balance,
-                    assureAmount, ratio, p.getAssureExpiry(), level));
+                    assureAmount, ratio, p.getAssureExpiry(), p.getAssureNote(), level));
 
             tOpen += opening; tSale += s[1]; tRet += s[2]; tTax += s[3]; tGen += s[0];
             tColl += collected; tBal += balance;
         }
         rows.sort((a, b) -> a.partnerCode().compareTo(b.partnerCode()));
         ArStatusResponse.Row total = new ArStatusResponse.Row(null, "합계", null,
-                tOpen, tSale, tRet, tTax, tGen, tColl, tBal, null, null, null, null);
+                tOpen, tSale, tRet, tTax, tGen, tColl, tBal, null, null, null, null, null);
         return new ArStatusResponse(from, to, rows, total);
     }
 
     /**
-     * 외상매출장(단일 거래처 러닝밸런스). 기초이월(시작일 직전 잔액) + 기간 내 매출/반품/수금 명세 + 일자별 누계.
-     * 누계 = 이월 + Σ(채권 증감). 매출/교사용/증정 +total, 반품 −total, 수금 −collAmt.
+     * 외상매출장(24p) — <b>도서 단위 명세</b> + 러닝밸런스.
+     * 근거: 레거시 외상매출장조회.vb {@code Refresh_DataGridView()} + 정본 24p 데이터 항목.
+     *
+     * <p>기초이월(시작일 직전 잔액) + 기간 내 매출/교사용/반품/수금 명세 + 일자별 누계.
+     * 누계 = 이월 + Σ(채권 증감). 매출·교사용 +, 반품·수금 −.
+     *
+     * <p>★교사용은 <b>무가 중 공급률이 있는 것</b>만이다(레거시 {@code 무상 AND supRate<>0}).
+     * 공급률 0인 무가는 증정이라 채권과 무관하고, 합쳐 두면 교사용 수량이 부풀려진다.
      */
     @Transactional(readOnly = true)
     public ArLedgerResponse arLedger(Long partnerId, LocalDate fromDate, LocalDate toDate) {
@@ -411,17 +417,41 @@ public class ReceivableService {
         long opening = balanceAsOf(partnerId, from.minusDays(1));
 
         // 매출/반품 라인 + 수금 라인을 일자순으로 병합(같은 날은 매출 먼저).
-        record Entry(LocalDate date, int ord, String kind, String refNo, String desc, long amount) {}
+        // ★행은 도서 단위다(레거시 UNION 구조). 한 행에는 그 구분의 칸만 찬다 —
+        //   매출 행이면 매출수량·금액·세액이 차고 교사용·반품·수금 칸은 비어 있다.
+        record Entry(LocalDate date, int ord, ArLedgerResponse.Line line, long amount) {}
         List<Entry> entries = new ArrayList<>();
+
         for (Sale s : saleRepository.findLedgerLines(partnerId, from, to)) {
-            long total = (s.getTotalAmount() == null) ? 0L : s.getTotalAmount();
-            long amount = (s.getSalesCategory() == SalesCategory.RETURN) ? -total : total;
-            entries.add(new Entry(s.getSalesDate(), 0, saleKind(s), s.getSalesNo(),
-                    s.getProduct().getCode() + " " + s.getProduct().getName(), amount));
+            long supply = nz(s.getSupplyAmount());
+            long tax = nz(s.getTax());
+            long total = nz(s.getTotalAmount());
+            SalesCategory cat = s.getSalesCategory();
+            boolean isReturn = cat == SalesCategory.RETURN;
+            // ‼️교사용은 '무가 중 공급률이 있는 것'만이다(레거시: 무상 AND supRate<>0).
+            //   공급률 0인 무가는 증정이라 채권과 무관하다 — 합치면 교사용 수량이 부풀려진다.
+            boolean isTeacher = cat == SalesCategory.FREE
+                    && s.getSupplyRate() != null && s.getSupplyRate() != 0;
+            boolean isSale = cat == SalesCategory.SALE;
+
+            long amount = isReturn ? -total : (isSale || isTeacher ? total : 0L);
+            entries.add(new Entry(s.getSalesDate(), 0, new ArLedgerResponse.Line(
+                    s.getSalesDate(), saleKind(s), s.getSalesNo(),
+                    s.getProduct().getCatCode(), s.getProduct().getCatName(),
+                    s.getProduct().getCode(), bookLabel(s),
+                    s.getSupplyRate(),
+                    isSale ? (long) s.getQty() : null, isSale ? supply : null, isSale ? tax : null,
+                    isTeacher ? (long) s.getQty() : null, isTeacher ? total : null,
+                    isReturn ? -(long) s.getQty() : null, isReturn ? -total : null,
+                    null, amount, 0L), amount));
         }
+
         for (Collection c : collectionRepository.findLedgerLines(partnerId, from, to)) {
-            entries.add(new Entry(c.getCollDate(), 1, "수금", c.getCollectionNo(),
-                    collLabel(c.getCollType()), -c.getCollAmt()));
+            entries.add(new Entry(c.getCollDate(), 1, new ArLedgerResponse.Line(
+                    c.getCollDate(), "수금", c.getCollectionNo(),
+                    null, null, null, collLabel(c.getCollType()), null,
+                    null, null, null, null, null, null, null,
+                    c.getCollAmt(), -c.getCollAmt(), 0L), -c.getCollAmt()));
         }
         entries.sort(Comparator.comparing(Entry::date).thenComparingInt(Entry::ord));
 
@@ -429,9 +459,38 @@ public class ReceivableService {
         long running = opening;
         for (Entry e : entries) {
             running += e.amount();
-            lines.add(new ArLedgerResponse.Line(e.date(), e.kind(), e.refNo(), e.desc(), e.amount(), running));
+            ArLedgerResponse.Line l = e.line();
+            // 누계는 정렬이 끝난 뒤에야 정해지므로 여기서 채운다.
+            lines.add(new ArLedgerResponse.Line(l.date(), l.kind(), l.refNo(),
+                    l.catCode(), l.catName(), l.productCode(), l.productName(), l.supplyRate(),
+                    l.saleQty(), l.saleAmount(), l.tax(),
+                    l.teacherQty(), l.teacherAmount(), l.returnQty(), l.returnAmount(),
+                    l.collectAmount(), l.amount(), running));
         }
         return new ArLedgerResponse(partner.getId(), partner.getName(), from, to, opening, running, lines);
+    }
+
+    /**
+     * 도서명 표기. 레거시 그대로 회차·학교를 붙인다 —
+     * {@code 도서명 [3회] <강남대성학원>}. 같은 책이 회차·학교별로 여러 줄 나오므로
+     * 이름만으로는 어느 줄인지 가릴 수 없다(외상매출장조회.vb:200~203).
+     */
+    private static String bookLabel(Sale s) {
+        String name = s.getProduct().getName();
+        Integer round = s.getBookRound();
+        String school = s.getSchoolName();
+        StringBuilder sb = new StringBuilder(name == null ? "" : name);
+        if (round != null && round != 0) {
+            sb.append(" [").append(round).append("회]");
+        }
+        if (school != null && !school.isBlank()) {
+            sb.append(" <").append(school).append(">");
+        }
+        return sb.toString();
+    }
+
+    private static long nz(Long v) {
+        return (v == null) ? 0L : v;
     }
 
     /** 특정 시점까지의 채권 잔액 = 이월(당해 스냅샷) + 당해 1/1~시점 채권발생 − 수금. */

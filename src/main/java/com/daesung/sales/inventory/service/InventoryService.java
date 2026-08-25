@@ -197,8 +197,10 @@ public class InventoryService {
         InventoryTxn parentTxn = InventoryTxn.bom(
                 parent, warehouse, parentDelta, txnType, req.processedDate(), req.memo());
         inventoryTxnRepository.save(parentTxn);
+        // 완제품 행: 비율·자재구분은 구성품에만 있는 값이라 비운다.
         BomWorkResponse.Line parentLine = new BomWorkResponse.Line(
-                parent.getId(), parent.getCode(), parentDelta, parentBal);
+                parent.getId(), parent.getCode(), parent.getName(),
+                null, null, null, parentDelta, parentBal);
 
         // 구성품: 조립 −(비율×수량), 해체 +(비율×수량)
         List<BomWorkResponse.Line> compLines = new ArrayList<>();
@@ -207,11 +209,14 @@ public class InventoryService {
             int compDelta = (assemble ? -1 : 1) * b.getRatio() * req.workQty();
             int compBal = applyDelta(child, warehouse, compDelta);
             inventoryTxnRepository.save(InventoryTxn.bom(child, warehouse, compDelta, txnType, req.processedDate(), req.memo()));
-            compLines.add(new BomWorkResponse.Line(child.getId(), child.getCode(), compDelta, compBal));
+            compLines.add(new BomWorkResponse.Line(child.getId(), child.getCode(), child.getName(),
+                    b.getRatio(),
+                    (b.getMaterialType() == null) ? null : b.getMaterialType().name(),
+                    b.getPackType(), compDelta, compBal));
         }
 
         return new BomWorkResponse(warehouse.getId(), warehouse.getName(), req.direction(),
-                parentLine, compLines);
+                parentLine, req.workQty(), compLines);
     }
 
 

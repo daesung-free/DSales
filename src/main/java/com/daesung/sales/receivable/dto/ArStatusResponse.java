@@ -26,6 +26,7 @@ public record ArStatusResponse(
             @Schema(description = "담보금액(여신한도)") Long assureAmount,
             @Schema(description = "담보비율(%)=잔액/담보×100, 담보 없으면 null") Double assureRatio,
             @Schema(description = "담보 만기") LocalDate assureExpiry,
+            @Schema(description = "담보 내용(정본 25p 데이터 항목 '담보(금액,만기,내용)')") String assureNote,
             @Schema(description = "담보 경고등급(OVER≥100/WARN≥70/WATCH>50/NORMAL/null)") String assureLevel
     ) {
     }
