@@ -54,8 +54,18 @@ public interface DsreGateway {
     /** 회수단가(dtl_cd=0) 수정(PAPER/OMR/ETC만). 없으면 생성. */
     void updateReturnRate(int paper, int omr, int etc);
 
-    /** 매출일괄등록 대상(미처리 state='A') 조회. 신청일자 기간 필터. */
+    /** 매출일괄등록(교재) 대상(미처리 state='A') 조회. 신청일자 기간 필터. */
     java.util.List<BooklistImportRow> readPendingBooklist(java.time.LocalDate from, java.time.LocalDate to);
+
+    /**
+     * 매출일괄등록(14p, 더프) 대상 조회. 근거: 레거시 {@code 매출가져오기.vb:415}.
+     * 지사신청분(apply_gn='S')만. 인원 4종을 다 실어 오고 청구 판정은 호출부(Java)가 한다.
+     *
+     * @param onlyComplete true면 발송완료(state='D')만 — 레거시 체크박스 {@code CheckBox_OnlyComplete}
+     * @param mode         처리구분 모드. <b>정가(단가) 조인에 관여</b>하므로 조회 필터가 아니라 인자다
+     */
+    java.util.List<DuffSalesRow> readDuffSales(java.time.LocalDate from, java.time.LocalDate to,
+                                               boolean onlyComplete, DuffChargeMode mode);
 
     /** write-back: 해당 (신청×분류×도서)를 처리완료(state='T')로. 중복방지. */
     void markBooklistDone(int reqCd, String lstCd, String dtlCd);

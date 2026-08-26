@@ -361,6 +361,121 @@ public class JdbcDsreGateway implements DsreGateway {
                 reqCd, lstCd, dtlCd);
     }
 
+    // ── 매출일괄등록(14p, 더프) ───────────────────────────────────────────────────
+    // 근거: 레거시 매출가져오기.vb:415. 지사신청분(apply_gn='S')만.
+    //
+    // ★레거시와 다르게 한 곳: 단가·청구인원·총금액을 SQL에서 계산하지 않는다.
+    //   레거시는 화면 콤보값(처리구분)을 SQL 문자열에 끼워 넣어 CASE를 만든다
+    //   ({IIf(ComboBox_처리구분.Text = "처리", True, False)}). 조건마다 다른 쿼리가 나가고,
+    //   미리보기와 실제 등록이 서로 다른 문자열을 쓰게 된다.
+    //   여기서는 인원 4종을 다 실어 보내고 판정은 Java 한 곳에서 한다.
+    //
+    // ★단 정가 조인만은 SQL에 남는다 — tbl_product_amt가 처리/비처리(proc_gn)별로
+    //   단가를 따로 갖고 있어 조인 시점에 어느 쪽을 볼지 정해야 한다.
+    //   문자열을 붙이는 대신 바인딩 파라미터 하나를 CASE로 받는다.
+    //
+    // 그룹 축은 레거시 그대로다(거래처·학교·학년·분류·과목·처리구분·청구구분·단가).
+    // 레거시 주석 원문: "신청과목수로 하면 인문/자연 때문에 6/5로 나뉘는 경우가 생겨 단가로 그룹".
+    private static final String DUFF_SQL = """
+            SELECT
+              MAX(처리순번) 처리순번, MAX(신청일자) 신청일자, MAX(매출코드) 매출코드,
+              거래처코드, MAX(도시명) 도시명, MAX(거래처명) 거래처명, MAX(거래처풀네임) 거래처풀네임,
+              학교코드, MAX(학교명) 학교명, 학년,
+              분류코드, MAX(분류명) 분류명, 과목코드, MAX(과목명) 과목명,
+              처리구분, 청구구분, MAX(신청과목수) 신청과목수,
+              SUM(신청인원) 신청인원, SUM(처리인원) 처리인원,
+              SUM(비처리인원) 비처리인원, SUM(등록인원) 등록인원,
+              MAX(정가) 정가, MAX(공급률) 공급률, MAX(할인액) 할인액
+            FROM (
+              SELECT
+                mInfo.req_cd 처리순번, mInfo.req_date 신청일자,
+                cInfo.machul_cd 매출코드, mInfo.cust_cd 거래처코드,
+                cInfo.city_nm 도시명, cInfo.cust_nm 거래처명, cInfo.cust_fnm 거래처풀네임,
+                mInfo.mgr_cd 학교코드, schInfo.sch_nm 학교명, pDtl.grade 학년,
+                pInfo.prod_cd 분류코드, pInfo.prod_nm 분류명,
+                mInfo.dtl_cd 과목코드, pDtl.dtl_nm 과목명,
+                sCnt.cnt 신청과목수,
+                Func_reqinwon_get(mInfo.req_cd) 신청인원,
+                IF(rRtnSum.pSum IS NULL, IFNULL(rRtn.pSum,0), rRtnSum.pSum) 처리인원,
+                Func_reqinwon_get(mInfo.req_cd) + IFNULL(rCancel.cancelCnt,0)
+                  - IF(rRtnSum.pSum IS NULL, IFNULL(rRtn.pSum,0), rRtnSum.pSum) 비처리인원,
+                IFNULL(uCnt.cnt,0) 등록인원,
+                amt.amt 정가, mInfo.proc_yn2 처리구분,
+                sRef.charge_gn 청구구분, sRef.amtsusu 공급률, sRef.dissusu 할인액
+              FROM (
+                SELECT req_cd, dtl_cd, cust_cd, mgr_cd, req_date, proc_yn2
+                FROM tbl_request_info
+                WHERE req_date BETWEEN ? AND ?
+                  AND apply_gn='S'
+                  AND (? = 0 OR state='D')
+              ) mInfo
+              LEFT JOIN (
+                SELECT req_cd, MAX(cnt) cnt FROM (
+                  SELECT req_cd, seq, COUNT(res_cd) cnt FROM tbl_request_cnt
+                  WHERE cnt > 0 GROUP BY req_cd, seq
+                ) T GROUP BY req_cd
+              ) sCnt ON mInfo.req_cd = sCnt.req_cd
+              LEFT JOIN tbl_mgrcd_cnt uCnt
+                ON mInfo.dtl_cd = uCnt.dtl_cd AND mInfo.mgr_cd = uCnt.mgr_cd
+              LEFT JOIN tbl_product_amt amt
+                ON mInfo.dtl_cd = amt.dtl_cd
+               AND amt.proc_gn = CASE ?
+                     WHEN 'Y' THEN 'Y'
+                     WHEN 'N' THEN 'N'
+                     ELSE IF(mInfo.proc_yn2='N','N','Y')
+                   END
+               AND IF(sCnt.cnt IS NULL, 5, sCnt.cnt) >= amt.substcnt
+               AND IF(sCnt.cnt IS NULL, 5, sCnt.cnt) <= amt.subedcnt
+              LEFT JOIN tbl_product_dtl  pDtl  ON mInfo.dtl_cd  = pDtl.dtl_cd
+              LEFT JOIN tbl_product_info pInfo ON pDtl.prod_cd  = pInfo.prod_cd
+              LEFT JOIN tbl_school_ref   sRef  ON mInfo.mgr_cd  = sRef.mgr_cd
+                                              AND pInfo.prod_cd = sRef.prod_cd
+              LEFT JOIN (SELECT req_cd, SUM(IFNULL(proCnt,0)) pSum
+                           FROM tbl_request_rtn GROUP BY req_cd) rRtn
+                ON mInfo.req_cd = rRtn.req_cd
+              LEFT JOIN (SELECT req_cd, SUM(IFNULL(proc_y_Cnt,0)) pSum
+                           FROM tbl_request_rtnSum GROUP BY req_cd) rRtnSum
+                ON mInfo.req_cd = rRtnSum.req_cd
+              LEFT JOIN (SELECT req_cd, SUM(IFNULL(cancelCnt,0)) cancelCnt
+                           FROM tbl_request_cancel GROUP BY req_cd) rCancel
+                ON mInfo.req_cd = rCancel.req_cd
+              LEFT JOIN (
+                SELECT mgr_cd, sch_nm FROM tbl_school_info
+                UNION
+                SELECT mgr_cd, hak_nm FROM tbl_hakwon_info
+              ) schInfo ON mInfo.mgr_cd = schInfo.mgr_cd
+              LEFT JOIN tbl_cust_info cInfo ON mInfo.cust_cd = cInfo.cust_cd
+            ) t
+            GROUP BY 거래처코드, 학교코드, 학년, 분류코드, 과목코드, 처리구분, 청구구분,
+                     IF(할인액 > 0, 정가 - 할인액, 정가 * 공급률 / 100)
+            ORDER BY 처리순번, 거래처코드, 학교코드, 과목코드
+            """;
+
+    @Override
+    public List<DuffSalesRow> readDuffSales(LocalDate from, LocalDate to, boolean onlyComplete,
+                                            DuffChargeMode mode) {
+        return dsreJdbcTemplate.query(DUFF_SQL,
+                (rs, i) -> new DuffSalesRow(
+                        rs.getInt("처리순번"),
+                        rs.getString("신청일자") == null ? null
+                                : LocalDate.parse(rs.getString("신청일자"), YYYYMMDD),
+                        rs.getString("매출코드"), rs.getString("거래처코드"),
+                        rs.getString("거래처명"), rs.getString("거래처풀네임"), rs.getString("도시명"),
+                        rs.getString("학교코드"), rs.getString("학교명"), rs.getString("학년"),
+                        rs.getString("분류코드"), rs.getString("분류명"),
+                        rs.getString("과목코드"), rs.getString("과목명"),
+                        rs.getInt("신청과목수"), rs.getString("처리구분"), rs.getString("청구구분"),
+                        rs.getInt("신청인원"), rs.getInt("처리인원"),
+                        rs.getInt("비처리인원"), rs.getInt("등록인원"),
+                        rs.getInt("정가"), rs.getInt("공급률"), rs.getInt("할인액"),
+                        null),
+                from.format(YYYYMMDD), to.format(YYYYMMDD),
+                onlyComplete ? 1 : 0,
+                // 단가구분 — 이건 Java로 뺄 수 없다. tbl_product_amt가 처리/비처리별로
+                // 단가를 따로 갖고 있어 조인 시점에 정해져야 한다. 값은 바인딩으로 넘긴다.
+                mode.rateCode());
+    }
+
     /**
      * 학교관리 가져오기 원본. tbl_cust_ref(지사↔학교/학원)를 기준으로 거래처·학교 정보를 붙인다.
      * 학교(MGR_GN='S')는 tbl_school_info, 학원('A')은 tbl_hakwon_info에서 이름을 가져온다.
