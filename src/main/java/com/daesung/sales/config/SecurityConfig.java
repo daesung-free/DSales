@@ -53,6 +53,11 @@ public class SecurityConfig {
                         // 표를 잘못 고쳐 스스로를 잠그면 되돌릴 길이 없어진다)
                         .requestMatchers("/api/v1/auth/users").hasRole("ADMIN")
                         .requestMatchers("/api/v1/permissions/**").hasRole("ADMIN")
+                        // 자기 계정 관련은 역할과 무관하게 인증만 되면 허용.
+                        // ‼️로그아웃은 쓰기(POST)라, 권한 표에 /auth/** 화면이 없으면
+                        //   deny-by-default에 걸려 403이 된다 — 로그인한 사람이 로그아웃을
+                        //   못 하는 상태였다(전 API 점검에서 잡힘). 권한으로 통제할 대상이 아니다.
+                        .requestMatchers("/api/v1/auth/logout", "/api/v1/auth/me").authenticated()
                         // ── 그 외 전부: 권한 표에서 판정한다 ──────────────────────────────
                         // 예전엔 여기에 경로별 hasRole(...)이 스무 줄 나열돼 있었다.
                         // 발주처 요구(2026-08-21 ①)가 "화면/필드 단위 권한을 관리자가 운영 중

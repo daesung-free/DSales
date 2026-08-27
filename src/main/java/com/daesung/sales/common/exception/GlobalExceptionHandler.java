@@ -56,6 +56,27 @@ public class GlobalExceptionHandler {
                         "지원하지 않는 메서드입니다: " + e.getMethod())));
     }
 
+    /**
+     * 지원하지 않는 Content-Type → 415.
+     *
+     * <p>바로 위 405와 <b>같은 부류</b>인데 여기만 빠져 있었다. 파일 업로드
+     * (매출 엑셀 업로드·송장 일괄 업로드)는 multipart만 받는데, JSON으로 호출하면
+     * 마지막 Exception 핸들러까지 흘러 <b>500 "서버 오류"</b>가 나갔다.
+     * 클라이언트 실수가 서버 장애로 보이고 ERROR 로그까지 남는다(전 API 점검에서 실제로 잡힘).
+     *
+     * <p>어떤 타입을 받는지 함께 알려준다 — 415만 던지면 프론트가 뭘 보내야 할지 모른다.
+     */
+    @ExceptionHandler(org.springframework.web.HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ApiResponse<Void>> handleMediaTypeNotSupported(
+            org.springframework.web.HttpMediaTypeNotSupportedException e) {
+        String supported = e.getSupportedMediaTypes().stream()
+                .map(Object::toString).collect(java.util.stream.Collectors.joining(", "));
+        String detail = "지원하지 않는 Content-Type입니다: " + e.getContentType()
+                + (supported.isBlank() ? "" : " (지원: " + supported + ")");
+        return ResponseEntity.status(ErrorCode.UNSUPPORTED_MEDIA_TYPE.getStatus())
+                .body(ApiResponse.fail(ErrorResponse.of(ErrorCode.UNSUPPORTED_MEDIA_TYPE, detail)));
+    }
+
     /** 존재하지 않는 경로/리소스 → 404. */
     @ExceptionHandler(NoResourceFoundException.class)
     public ResponseEntity<ApiResponse<Void>> handleNotFound(NoResourceFoundException e) {
