@@ -9,6 +9,7 @@ import com.daesung.sales.inventory.dto.BomWorkResponse;
 import com.daesung.sales.inventory.dto.InboundRequest;
 import com.daesung.sales.inventory.dto.InboundResponse;
 import com.daesung.sales.inventory.dto.StockLedgerRow;
+import com.daesung.sales.inventory.dto.StockRecordRow;
 import com.daesung.sales.inventory.dto.StockSettlementRow;
 import com.daesung.sales.inventory.dto.TransferRequest;
 import com.daesung.sales.inventory.dto.TransferResponse;
@@ -63,6 +64,35 @@ public class InventoryController {
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<BomWorkResponse> bom(@Valid @RequestBody BomWorkRequest req) {
         return ApiResponse.success(inventoryService.bom(req));
+    }
+
+    @Operation(summary = "입고/대체 내역 조회(8p·9p)",
+            description = """
+                    등록된 **입고·단순이고·세트조립/해체**를 최근순으로. 기간·도서·창고·구분으로 좁힌다.
+
+                    ★**등록만 되고 조회가 없었다.** 전부 재고를 움직이는 작업인데 되짚어 볼
+                    방법이 없으면, 재고가 안 맞을 때 언제 무엇이 들어오고 옮겨졌는지 알 수 없다.
+
+                    수불부(`/stock/ledger`)는 **합계**를 주고 이건 **낱건**을 준다 —
+                    합계가 이상할 때 그 안을 들여다보는 용도라 둘 다 필요하다.
+
+                    ★수량 부호는 **그대로** 준다. 이고는 출발(−)·도착(+) 두 줄이고
+                    세트작업도 완제품(+)·구성품(−)으로 갈린다 — 방향이 곧 정보다.
+
+                    출고·폐기·반품·실사는 제외한다(각자 화면이 따로 있다).""")
+    @GetMapping("/records")
+    public ApiResponse<List<StockRecordRow>> records(
+            @Parameter(description = "처리일 시작(yyyy-MM-dd). 미지정=전체") @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @Parameter(description = "처리일 종료(yyyy-MM-dd). 미지정=전체") @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @Parameter(description = "도서(상품) id 필터") @RequestParam(required = false) Long productId,
+            @Parameter(description = "창고 id 필터") @RequestParam(required = false) Long warehouseId,
+            @Parameter(description = "작업구분 INBOUND(입고)/TRANSFER(단순이고)/"
+                    + "BOM_ASSEMBLE(세트조립)/BOM_DISASSEMBLE(세트해체). 미지정=전체")
+            @RequestParam(required = false) com.daesung.sales.inventory.entity.TxnType kind) {
+        return ApiResponse.success(
+                inventoryService.stockRecords(fromDate, toDate, productId, warehouseId, kind));
     }
 
     @Operation(summary = "제품수불부 조회",

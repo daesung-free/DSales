@@ -12,6 +12,7 @@ import com.daesung.sales.inventory.dto.InboundRequest;
 import com.daesung.sales.inventory.dto.InboundResponse;
 import com.daesung.sales.inventory.entity.InboundType;
 import com.daesung.sales.inventory.dto.StockLedgerRow;
+import com.daesung.sales.inventory.dto.StockRecordRow;
 import com.daesung.sales.inventory.dto.StockSettlementRow;
 import com.daesung.sales.warehouse.entity.WarehouseType;
 import com.daesung.sales.inventory.dto.TransferRequest;
@@ -268,6 +269,34 @@ public class InventoryService {
                     closing, cached, closing == cached));
         }
         return result;
+    }
+
+    /** 입고/대체 내역이 다루는 재고이벤트 — 입고·이고·세트조립·세트해체. */
+    private static final java.util.List<TxnType> RECORD_KINDS = java.util.List.of(
+            TxnType.INBOUND, TxnType.TRANSFER, TxnType.BOM_ASSEMBLE, TxnType.BOM_DISASSEMBLE);
+
+    /**
+     * 입고/대체 내역 조회(8p·9p). 등록만 되고 조회가 없던 것을 채운다.
+     *
+     * <p>★수량 부호를 <b>그대로</b> 준다. 폐기는 "12권 버렸다"라 양수로 뒤집었지만,
+     * 여기서는 방향이 곧 정보다 — 이고는 출발(−)·도착(+) 두 줄이고
+     * 세트작업도 완제품(+)·구성품(−)으로 갈린다. 절댓값으로 바꾸면 그 구분이 사라진다.
+     *
+     * @param kind 작업구분 필터(TxnType). null이면 네 종류 전부
+     */
+    @Transactional(readOnly = true)
+    public List<StockRecordRow> stockRecords(LocalDate fromDate, LocalDate toDate,
+                                             Long productId, Long warehouseId, TxnType kind) {
+        java.util.List<TxnType> kinds = (kind == null) ? RECORD_KINDS : java.util.List.of(kind);
+        return inventoryTxnRepository
+                .findStockRecords(kinds, fromDate, toDate, productId, warehouseId).stream()
+                .map(t -> new StockRecordRow(
+                        t.getId(), t.getTradeDate(), StockRecordRow.kindOf(t.getTxnType()),
+                        t.getWarehouse().getId(), t.getWarehouse().getName(),
+                        t.getProduct().getId(), t.getProduct().getCode(), t.getProduct().getName(),
+                        t.getProduct().getCatCode(), t.getProduct().getCatName(),
+                        t.getQty(), t.getInboundType(), t.getUnitCost(), t.getRefNo(), t.getMemo()))
+                .toList();
     }
 
     /**

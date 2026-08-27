@@ -68,6 +68,30 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
                                      @Param("productId") Long productId,
                                      @Param("warehouseId") Long warehouseId);
 
+    /**
+     * 입고/대체 내역(8p·9p 조회). 재고를 움직이는 <b>입고·이고·세트작업</b>만 최근순으로.
+     *
+     * <p>★출고·폐기·반품·실사는 뺀다 — 그건 각자 화면이 따로 있다(매출조회·폐기조회·수불부).
+     * 한 목록에 다 담으면 "입고/대체 등록" 화면인데 매출까지 섞여 보인다.
+     *
+     * <p>{@code kinds}가 비어 있으면 네 종류 전부. 화면의 작업모드 탭(일반입고/단순이고/세트)에 대응.
+     */
+    @Query("""
+            select t from InventoryTxn t
+              join fetch t.product join fetch t.warehouse
+             where t.txnType in :kinds
+               and (cast(:fromDate as date) is null or t.tradeDate >= :fromDate)
+               and (cast(:toDate as date) is null or t.tradeDate <= :toDate)
+               and (:productId is null or t.product.id = :productId)
+               and (:warehouseId is null or t.warehouse.id = :warehouseId)
+             order by t.tradeDate desc, t.id desc
+            """)
+    List<InventoryTxn> findStockRecords(@Param("kinds") java.util.Collection<com.daesung.sales.inventory.entity.TxnType> kinds,
+                                        @Param("fromDate") LocalDate fromDate,
+                                        @Param("toDate") LocalDate toDate,
+                                        @Param("productId") Long productId,
+                                        @Param("warehouseId") Long warehouseId);
+
     /** 특정 전표(refNo)로 생성된 출고/반품 이벤트(매출취소 역분개용). product·warehouse 즉시 로드. */
     @Query("select t from InventoryTxn t join fetch t.product join fetch t.warehouse"
             + " where t.refNo = :refNo and t.shipmentType is not null")
