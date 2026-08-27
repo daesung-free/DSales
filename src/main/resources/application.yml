@@ -35,8 +35,12 @@ logging:
 # 예: DAESUNG_SUPPLIER_BIZ-NO=... (2법인 지원은 후속: default/consign 분리)
 daesung:
   supplier:
+    # ‼️비어 있으면 계산서·거래명세서의 공급자 칸이 빈 채로 나간다(홈택스 제출 불가).
+    #   기동 시 SupplierConfigCheck가 경고한다. 배포에서는 환경변수로 반드시 주입할 것.
+    #   발행 법인은 대성학력개발연구소 1개로 확정(정본 2탭) — 상호는 기본값으로 둔다.
+    #   사업자번호·주소 등 실값은 정본에 없어 비워 둔다(임의로 채우면 잘못된 신고서가 나간다).
     biz-no: ""
-    name: ""
+    name: "대성학력개발연구소"
     boss-name: ""
     addr: ""
     biz-status: ""

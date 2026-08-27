@@ -43,6 +43,31 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
     List<Object[]> purchaseInboundByProduct(@Param("fromDate") LocalDate fromDate,
                                             @Param("toDate") LocalDate toDate);
 
+    /**
+     * 폐기 내역(10p 조회). 재고이벤트 DISPOSE를 최근순으로.
+     *
+     * <p>★별도 폐기 테이블을 만들지 않는다 — 재고는 {@code inventory_txn}이 유일 진실이고
+     * 폐기 원장을 따로 두면 둘이 어긋날 수 있다(§재고 정의 단일화).
+     *
+     * <p>수량은 원장에 <b>음수</b>로 들어 있다(재고를 깎으므로). 화면에는 양수로 보여야 하니
+     * 부호는 서비스에서 뒤집는다 — 쿼리에서 뒤집으면 "원장 값"과 "보이는 값"이
+     * 어디서 갈렸는지 추적이 어려워진다.
+     */
+    @Query("""
+            select t from InventoryTxn t
+              join fetch t.product join fetch t.warehouse
+             where t.txnType = com.daesung.sales.inventory.entity.TxnType.DISPOSE
+               and (cast(:fromDate as date) is null or t.tradeDate >= :fromDate)
+               and (cast(:toDate as date) is null or t.tradeDate <= :toDate)
+               and (:productId is null or t.product.id = :productId)
+               and (:warehouseId is null or t.warehouse.id = :warehouseId)
+             order by t.tradeDate desc, t.id desc
+            """)
+    List<InventoryTxn> findDisposals(@Param("fromDate") LocalDate fromDate,
+                                     @Param("toDate") LocalDate toDate,
+                                     @Param("productId") Long productId,
+                                     @Param("warehouseId") Long warehouseId);
+
     /** 특정 전표(refNo)로 생성된 출고/반품 이벤트(매출취소 역분개용). product·warehouse 즉시 로드. */
     @Query("select t from InventoryTxn t join fetch t.product join fetch t.warehouse"
             + " where t.refNo = :refNo and t.shipmentType is not null")

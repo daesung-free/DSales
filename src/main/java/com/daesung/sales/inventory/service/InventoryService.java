@@ -6,6 +6,7 @@ import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.inventory.dto.BomWorkRequest;
 import com.daesung.sales.inventory.dto.BomWorkResponse;
 import com.daesung.sales.inventory.dto.DisposalRequest;
+import com.daesung.sales.inventory.dto.DisposalRecordRow;
 import com.daesung.sales.inventory.dto.DisposalResponse;
 import com.daesung.sales.inventory.dto.InboundRequest;
 import com.daesung.sales.inventory.dto.InboundResponse;
@@ -267,6 +268,29 @@ public class InventoryService {
                     closing, cached, closing == cached));
         }
         return result;
+    }
+
+    /**
+     * 폐기 내역 조회(10p). 재고이벤트(DISPOSE)가 원천이다 — 별도 폐기 원장을 두지 않는다.
+     *
+     * <p>★수량은 원장에 <b>음수</b>로 들어 있다(재고를 깎으므로). 화면에는 양수로 보여야 하니
+     * 여기서 부호를 뒤집는다. "10권 버렸다"를 −10으로 보여주면 담당자가 다시 읽어야 한다.
+     *
+     * <p>★<b>사유와 비고는 같은 칸이다.</b> 등록할 때 사유를 memo에 넣고 있어
+     * 지금은 사유만 채우고 비고는 비운다 — 둘을 나누려면 컬럼을 하나 더 만들어야 하고,
+     * 그건 화면에서 실제로 둘 다 쓰는지 확인한 뒤에 할 일이다.
+     */
+    @Transactional(readOnly = true)
+    public List<DisposalRecordRow> disposals(LocalDate fromDate, LocalDate toDate,
+                                             Long productId, Long warehouseId) {
+        return inventoryTxnRepository.findDisposals(fromDate, toDate, productId, warehouseId).stream()
+                .map(t -> new DisposalRecordRow(
+                        t.getId(), t.getRefNo(), t.getTradeDate(),
+                        t.getWarehouse().getId(), t.getWarehouse().getName(),
+                        t.getProduct().getId(), t.getProduct().getCode(), t.getProduct().getName(),
+                        t.getProduct().getCatCode(), t.getProduct().getCatName(),
+                        Math.abs(t.getQty()), t.getMemo(), null))
+                .toList();
     }
 
     /**

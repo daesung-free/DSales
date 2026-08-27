@@ -14,6 +14,7 @@ import com.daesung.sales.dsre.gateway.OutboundLogisCost;
 import com.daesung.sales.dsre.gateway.PeriodLogisCost;
 import com.daesung.sales.logistics.dto.LogisCostUpsertRequest;
 import com.daesung.sales.logistics.dto.ReturnRateRequest;
+import com.daesung.sales.logistics.dto.ReturnRateResponse;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -219,6 +220,23 @@ public class LogisticsController {
             throw new BusinessException(ErrorCode.NOT_FOUND, "물류단가가 없습니다. dtl_cd=" + dtlCd);
         }
         return ApiResponse.success(null);
+    }
+
+    @Operation(summary = "회수단가 조회",
+            description = """
+                    회수 단가(dtl_cd=0 특수행)의 현재값.
+
+                    ★**저장은 되는데 읽을 수가 없었다** — PUT만 있고 GET이 없어
+                    화면의 회수단가 입력창이 빈 칸으로 열렸다. 지금 값을 모르고 덮어쓰면
+                    바꾸려던 항목 말고 다른 항목까지 0으로 밀린다.
+
+                    아직 회수단가 행이 만들어지지 않았으면 0으로 준다(오류가 아니다 —
+                    "아직 등록 전"과 "조회 실패"는 화면에서 다르게 다뤄야 한다).""")
+    @GetMapping("/rates/return")
+    public ApiResponse<ReturnRateResponse> returnRate() {
+        return ApiResponse.success(dsreGateway.findLogisCost(0)
+                .map(r -> new ReturnRateResponse(r.paper(), r.omr(), r.etc(), r.changedAt()))
+                .orElseGet(() -> new ReturnRateResponse(0, 0, 0, null)));
     }
 
     @Operation(summary = "회수단가 수정",
