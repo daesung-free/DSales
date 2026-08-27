@@ -94,9 +94,28 @@ class ExcelExportIntegrationTest extends IntegrationTestSupport {
         return table;
     }
 
+    /**
+     * 헤더 행의 위치. 리포트에는 위에 <b>제목·조회기준 2행</b>이 붙을 수 있다
+     * (재무팀 실파일 형식 — 프론트 전달 2026-08-20 §A-2).
+     * 그 행들은 <b>첫 칸에만 값이 있고 나머지는 빈</b> 모양이라 그걸로 가려낸다.
+     *
+     * <p>0행 고정으로 두면 제목을 붙이는 리포트마다 테스트가 깨지고,
+     * 그때 "형식이 바뀐 것"인지 "값이 사라진 것"인지 구분이 안 된다.
+     */
+    private static int headerRow(List<List<Object>> table) {
+        for (int i = 0; i < table.size(); i++) {
+            List<Object> r = table.get(i);
+            long filled = r.stream().filter(java.util.Objects::nonNull).count();
+            if (filled > 1) {
+                return i;
+            }
+        }
+        return 0;
+    }
+
     /** 헤더가 한글로 채워져 있는지(빈 헤더는 화면에서 이름 없는 칸이 된다). */
     private void assertHeader(List<List<Object>> table, String path, String... expected) {
-        List<Object> header = table.get(0);
+        List<Object> header = table.get(headerRow(table));
         assertThat(header).as("헤더 %s", path).isNotEmpty();
         assertThat(header).as("빈 헤더 칸 %s", path).doesNotContainNull();
         for (String h : expected) {
@@ -111,8 +130,9 @@ class ExcelExportIntegrationTest extends IntegrationTestSupport {
      * "행이 하나라도 있으면 통과"로 두면 그 결함을 못 잡는다.
      */
     private void assertFilled(List<List<Object>> table, String path, int minFilled) {
-        assertThat(table.size()).as("데이터 행 없음 %s", path).isGreaterThan(1);
-        List<Object> first = table.get(1);
+        int h = headerRow(table);
+        assertThat(table.size()).as("데이터 행 없음 %s", path).isGreaterThan(h + 1);
+        List<Object> first = table.get(h + 1);
         long filled = first.stream().filter(java.util.Objects::nonNull).count();
         assertThat(filled).as("데이터 행이 대부분 비어 있음 %s → %s", path, first)
                 .isGreaterThanOrEqualTo(minFilled);

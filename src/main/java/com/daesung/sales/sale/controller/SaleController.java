@@ -35,6 +35,7 @@ import jakarta.validation.Valid;
 import java.time.LocalDate;
 import com.daesung.sales.common.excel.ExcelExportUtil;
 import com.daesung.sales.common.excel.ExcelExportUtil.Col;
+import com.daesung.sales.common.excel.ExcelExportUtil.Heading;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springdoc.core.annotations.ParameterObject;
@@ -189,7 +190,8 @@ public class SaleController {
                 new Col("매입 입고수량", "inboundQty"),
                 new Col("매입단가", "purchaseUnitCost"), new Col("매입액", "purchaseAmount"),
                 new Col("이익", "profit"), new Col("이익률(%)", "marginPct"));
-        byte[] xlsx = excel.toXlsx("순매출조회", cols, saleReportService.netSales(fromDate, toDate, contentType).rows());
+        byte[] xlsx = excel.toXlsx("순매출조회", cols, saleReportService.netSales(fromDate, toDate, contentType).rows(),
+                Heading.period("순매출조회", fromDate, toDate));
         return excel.asDownload(xlsx, "순매출조회.xlsx");
     }
 
@@ -226,7 +228,8 @@ public class SaleController {
                 new Col("도서코드", "bookCode"), new Col("도서명", "bookName"), new Col("수량", "qty"),
                 new Col("금액", "amount"), new Col("세액", "tax"), new Col("합계", "total"));
         byte[] xlsx = excel.toXlsx("매출액명세서", cols,
-                saleReportService.statement(from, to, kind, salesType).rows());
+                saleReportService.statement(from, to, kind, salesType).rows(),
+                Heading.period("매출액명세서", from, to));
         return excel.asDownload(xlsx, "매출액명세서_" + from + "_" + to + ".xlsx");
     }
 
@@ -261,7 +264,8 @@ public class SaleController {
                 new Col("비처리인원", "ungradedQty"), new Col("비처리금액", "ungradedAmount"),
                 new Col("계인원", "totalQty"), new Col("계금액", "totalAmount"),
                 new Col("과세매출액", "taxableAmount"), new Col("부가세", "vat"));
-        byte[] xlsx = excel.toXlsx("월별매출액명세서", cols, saleReportService.monthlyStatement(y, m).rows());
+        byte[] xlsx = excel.toXlsx("월별매출액명세서", cols, saleReportService.monthlyStatement(y, m).rows(),
+                new Heading("월별매출액명세서", "조회기준 : " + y + "년 " + m + "월"));
         return excel.asDownload(xlsx, "월별매출액명세서_" + y + "-" + String.format("%02d", m) + ".xlsx");
     }
 

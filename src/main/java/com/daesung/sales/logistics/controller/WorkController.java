@@ -46,6 +46,7 @@ import org.springframework.web.multipart.MultipartFile;
 public class WorkController {
 
     private final WorkService workService;
+    private final com.daesung.sales.dashboard.service.ActionItemService actionItemService;
     private final ShipmentService shipmentService;
     private final ExcelExportUtil excel;
 
@@ -72,6 +73,21 @@ public class WorkController {
             @RequestParam(required = false) DeliveryType deliveryType) {
         return ApiResponse.success(
                 workService.workOrders(fromDate, toDate, tradeClass, partnerId, printed, deliveryType));
+    }
+
+    @Operation(summary = "미확인 출고요청 건수",
+            description = """
+                    아직 작업지시가 나가지 않은(미출력) 발송 건수. 좌측 메뉴 배지·대시보드 카드가 쓴다 —
+                    화면을 열지 않아도 대기 건이 있는지 보이게 하려는 것이다.
+                    판정은 작업요청서 조회의 `printed=false`와 **같다**. 따로 세면 배지에는 3건인데
+                    화면을 열면 5건인 상황이 생기고, 그때 담당자는 둘 다 못 믿게 된다.
+                    기간을 안 주면 기준일부터 30일 전까지를 센다(무한정 거슬러 세면 몇 년 전
+                    미출력분까지 잡혀 숫자가 늘 커져 있고, 그러면 아무도 안 본다).""")
+    @GetMapping("/work-orders/new-count")
+    public ApiResponse<Integer> newWorkOrderCount(
+            @Parameter(description = "기준일(미지정 시 오늘)") @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate asOf) {
+        return ApiResponse.success(actionItemService.newWorkOrderCount(asOf));
     }
 
     @Operation(summary = "작업요청서 출력 처리",

@@ -62,6 +62,7 @@ public class ConsignmentService {
     private final WarehouseRepository warehouseRepository;
     private final PartnerRepository partnerRepository;
     private final PeriodLockService periodLockService;
+    private final SettlementDraftService settlementDraftService;
     private final StatusHistoryService statusHistoryService;
 
     /** 위탁출고. 품목마다 물류→위탁 이고 + 미결(OPEN) 생성. 한 트랜잭션. 매출 미발생. */
@@ -235,6 +236,9 @@ public class ConsignmentService {
                     co.getRemainingQty(), co.getStatus(), supplyAmount, tax, totalAmount,
                     mainBalance, consignBalance));
         }
+        // 확정에 쓴 임시저장은 함께 정리한다 — 남겨 두면 "확정했는데 초안이 그대로"라
+        // 담당자가 두 번 확정하려 든다. 없는 번호면 조용히 넘어간다(매출은 이미 섰다).
+        settlementDraftService.consume(req.fromDraftId());
         return new ConsignSettleResponse(lines);
     }
 

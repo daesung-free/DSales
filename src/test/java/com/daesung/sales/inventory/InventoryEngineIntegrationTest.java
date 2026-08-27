@@ -146,7 +146,10 @@ class InventoryEngineIntegrationTest extends IntegrationTestSupport {
         try (var wb = new org.apache.poi.xssf.usermodel.XSSFWorkbook(new java.io.ByteArrayInputStream(xlsx))) {
             var sheet = wb.getSheetAt(0);
             assertThat(sheet.getSheetName()).isEqualTo("제품수불부");
-            assertThat(sheet.getRow(0).getCell(0).getStringCellValue()).isEqualTo("도서코드");
+            // 0행=제목, 1행=조회기준, 2행=헤더 (재무팀 실파일 형식)
+            assertThat(sheet.getRow(0).getCell(0).getStringCellValue()).isEqualTo("제품수불부현황");
+            assertThat(sheet.getRow(1).getCell(0).getStringCellValue()).startsWith("조회기준 : ");
+            assertThat(sheet.getRow(2).getCell(0).getStringCellValue()).isEqualTo("도서코드");
             assertThat(sheet.getLastRowNum()).isGreaterThan(0);
         }
     }

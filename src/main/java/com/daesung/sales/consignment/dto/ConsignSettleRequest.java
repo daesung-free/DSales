@@ -27,7 +27,13 @@ public record ConsignSettleRequest(
         @NotNull LocalDate salesDate,
 
         @Schema(description = "처리 항목(정산수량·반품수량)", requiredMode = Schema.RequiredMode.REQUIRED)
-        @NotEmpty @Valid List<Settlement> settlements
+        @NotEmpty @Valid List<Settlement> settlements,
+
+        @Schema(description = """
+                이 확정에 사용한 임시저장 번호(선택). 넘기면 확정 성공 후 그 초안이 정리된다.
+                ★없는 번호여도 확정은 실패하지 않는다 — 매출은 이미 섰는데 초안이 없다고
+                전체를 되돌리면 손해가 더 크다.""", example = "DRAFT-20260622-1")
+        String fromDraftId
 ) {
     @Schema(name = "ConsignSettlement")
     public record Settlement(

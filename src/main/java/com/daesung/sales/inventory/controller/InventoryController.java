@@ -2,6 +2,7 @@ package com.daesung.sales.inventory.controller;
 
 import com.daesung.sales.common.excel.ExcelExportUtil;
 import com.daesung.sales.common.excel.ExcelExportUtil.Col;
+import com.daesung.sales.common.excel.ExcelExportUtil.Heading;
 import com.daesung.sales.common.response.ApiResponse;
 import com.daesung.sales.inventory.dto.BomWorkRequest;
 import com.daesung.sales.inventory.dto.BomWorkResponse;
@@ -98,7 +99,8 @@ public class InventoryController {
                 new Col("무상", "free"), new Col("교사용", "teacher"), new Col("반품", "salesReturn"),
                 new Col("조정", "adjust"), new Col("현재재고", "closing"));
         byte[] xlsx = excel.toXlsx("제품수불부", cols,
-                inventoryService.stockLedger(fromDate, toDate, productId, warehouseId, warehouseType));
+                inventoryService.stockLedger(fromDate, toDate, productId, warehouseId, warehouseType),
+                Heading.period("제품수불부현황", fromDate, toDate));
         return excel.asDownload(xlsx, "제품수불부.xlsx");
     }
 
@@ -136,7 +138,8 @@ public class InventoryController {
                 new Col("무상", "free"), new Col("교사용", "teacher"), new Col("반품", "salesReturn"),
                 new Col("조정", "adjust"), new Col("재고", "closing"));
         byte[] xlsx = excel.toXlsx("제품수불부결산", cols,
-                inventoryService.stockSettlement(baseDate, productId, warehouseType));
+                inventoryService.stockSettlement(baseDate, productId, warehouseType),
+                Heading.asOf("제품수불부 결산내역", baseDate));
         return excel.asDownload(xlsx, "제품수불부_결산내역.xlsx");
     }
 }

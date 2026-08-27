@@ -29,6 +29,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class DashboardController {
 
     private final DashboardService dashboardService;
+    private final com.daesung.sales.dashboard.service.ActionItemService actionItemService;
 
     @Operation(summary = "매출목표 등록/수정",
             description = "연·월(비우면 연간)·대상(전사/사업부문/상품) 금액 upsert. 예산 입력 권한(재무/관리자)만. "
@@ -99,5 +100,16 @@ public class DashboardController {
     public ApiResponse<java.util.List<TargetResponse>> targets(
             @Parameter(description = "연도", example = "2026") @RequestParam int year) {
         return ApiResponse.success(dashboardService.listTargets(year));
+    }
+
+    @Operation(summary = "할 일 목록",
+            description = """
+                    지금 손대야 할 것을 한 번에 센다 — 위탁 정산 대기 · 미확인 출고요청 · 담보 만기 임박.
+                    ★**0건인 항목은 내려보내지 않는다.** '0건' 카드가 늘 떠 있으면 담당자가 매번
+                    숫자를 읽어 할 일이 없음을 확인해야 한다 — 목록에 있다는 것 자체가 신호여야 한다.
+                    각 숫자는 해당 화면이 쓰는 것과 **같은 판정**이라 카드와 화면이 갈리지 않는다.""")
+    @GetMapping("/actions")
+    public ApiResponse<java.util.List<com.daesung.sales.dashboard.dto.ActionItemResponse>> actions() {
+        return ApiResponse.success(actionItemService.actionItems());
     }
 }

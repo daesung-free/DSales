@@ -7,6 +7,7 @@ import com.daesung.sales.closing.dto.TaxInvoiceResponse;
 import com.daesung.sales.closing.service.TaxService;
 import com.daesung.sales.common.excel.ExcelExportUtil;
 import com.daesung.sales.common.excel.ExcelExportUtil.Col;
+import com.daesung.sales.common.excel.ExcelExportUtil.Heading;
 import java.util.List;
 import com.daesung.sales.common.response.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -55,7 +56,8 @@ public class TaxController {
         List<Col> cols = List.of(
                 new Col("거래처명", "partnerName"), new Col("총건수", "totalCount"),
                 new Col("총순매출금액", "totalNetSupply"), new Col("총세액", "totalNetTax"));
-        byte[] xlsx = excel.toXlsx("수익신고", cols, taxService.revenueReport(fromDate, toDate, taxType).rows());
+        byte[] xlsx = excel.toXlsx("수익신고", cols, taxService.revenueReport(fromDate, toDate, taxType).rows(),
+                Heading.period("수익신고", fromDate, toDate));
         return excel.asDownload(xlsx, "수익신고.xlsx");
     }
 
@@ -112,7 +114,8 @@ public class TaxController {
                 new Col("계산서반품", "invoiceReturn"), new Col("세금계산서반품", "taxInvoiceReturn"),
                 new Col("순매출(계산서)", "invoiceNet"), new Col("순매출(세금계산서)", "taxInvoiceNet"),
                 new Col("계", "netTotal"), new Col("세액", "tax"));
-        byte[] xlsx = excel.toXlsx("월별신고내역", cols, taxService.taxFiling(y).rows());
+        byte[] xlsx = excel.toXlsx("월별신고내역", cols, taxService.taxFiling(y).rows(),
+                new Heading("계산서·세금계산서 월별 신고내역", "조회기준 : " + y + "년"));
         return excel.asDownload(xlsx, "계산서월별신고_" + y + ".xlsx");
     }
 

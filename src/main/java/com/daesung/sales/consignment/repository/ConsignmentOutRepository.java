@@ -26,4 +26,21 @@ public interface ConsignmentOutRepository extends JpaRepository<ConsignmentOut, 
     @Query("select c from ConsignmentOut c join fetch c.product"
             + " where c.partner.id = :partnerId and c.remainingQty > 0 order by c.id")
     List<ConsignmentOut> findPending(Long partnerId);
+
+    /**
+     * 전 거래처 미결 백로그(건수·잔여수량 합). 대시보드 '위탁 정산 대기' 카드용.
+     *
+     * <p>거래처별 조회({@link #findPending})를 전 거래처로 돌려 세면 되지만,
+     * 그러면 거래처 수만큼 쿼리가 나가고 화면은 <b>숫자 두 개</b>만 쓴다.
+     * <p>‼️반환 타입을 {@code Object[]}로 쓰면 안 된다 — Hibernate가 <b>행 배열을 한 겹 더 감싸</b>
+     * {@code Object[]{Object[]{건수, 합계}}}로 준다. 그대로 읽으면 ClassCastException이 나고
+     * 화면에는 카드가 통째로 사라진다(조용히 틀리는 쪽이라 실제로 한 번 겪었다).
+     * 스칼라 두 개는 따로 세는 편이 안전하고, 쿼리도 그대로 인덱스를 탄다.
+     */
+    @Query("select count(c) from ConsignmentOut c where c.remainingQty > 0")
+    long countPending();
+
+    /** 미결 잔여수량 합. {@link #countPending}과 짝. */
+    @Query("select coalesce(sum(c.remainingQty), 0) from ConsignmentOut c where c.remainingQty > 0")
+    long sumPendingQty();
 }

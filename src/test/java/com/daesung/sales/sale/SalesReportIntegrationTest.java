@@ -304,12 +304,15 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
                 new java.io.ByteArrayInputStream(xlsx))) {
             var sheet = wb.getSheetAt(0);
             assertThat(sheet.getSheetName()).isEqualTo("매출액명세서");
-            var header = sheet.getRow(0);
+            // 0행=제목, 1행=조회기준, 2행=헤더 (재무팀 실파일 형식 — 프론트 전달 2026-08-20 §A-2)
+            assertThat(sheet.getRow(0).getCell(0).getStringCellValue()).isEqualTo("매출액명세서");
+            assertThat(sheet.getRow(1).getCell(0).getStringCellValue()).startsWith("조회기준 : ");
+            var header = sheet.getRow(2);
             assertThat(header.getCell(0).getStringCellValue()).isEqualTo("구분");
             // 집계 기준이 대분류라 분류코드보다 앞에 온다(발주처 회신 2026-08-20)
             assertThat(header.getCell(1).getStringCellValue()).isEqualTo("대분류");
             assertThat(header.getCell(2).getStringCellValue()).isEqualTo("분류코드");
-            assertThat(sheet.getLastRowNum()).isGreaterThan(0);   // 데이터 행 존재
+            assertThat(sheet.getLastRowNum()).isGreaterThan(2);   // 제목 2행 + 헤더 뒤로 데이터 존재
         }
     }
 

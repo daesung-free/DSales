@@ -43,4 +43,17 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long> {
                           @Param("partnerId") Long partnerId,
                           @Param("printed") Boolean printed,
                           @Param("deliveryType") DeliveryType deliveryType);
+
+    /**
+     * 미확인(미출력) 발송 건수. 대시보드 '미확인 출고요청' 카드와 메뉴 배지가 쓴다.
+     *
+     * <p>판정은 {@link #search} 의 {@code printed=false} 와 <b>같다</b>(printedAt is null).
+     * 따로 세면 카드에는 3건인데 화면을 열면 5건인 상황이 생긴다.
+     */
+    @Query("""
+            select count(s) from Shipment s
+             where s.tradeDate between :from and :to
+               and s.printedAt is null
+            """)
+    int countUnprinted(@Param("from") LocalDate from, @Param("to") LocalDate to);
 }

@@ -88,7 +88,8 @@ public class PartnerController {
                 new Col("거래처코드", "code"), new Col("거래처명", "name"),
                 new Col("담보만기일", "assureExpiry"), new Col("담보금액", "assureAmount"),
                 new Col("남은일수", "daysUntilExpiry"), new Col("상태", "status"));
-        byte[] xlsx = excel.toXlsx("담보만기", cols, partnerService.collateralExpiry(asOf, withinDays).rows());
+        byte[] xlsx = excel.toXlsx("담보만기", cols, partnerService.collateralExpiry(asOf, withinDays).rows(),
+                com.daesung.sales.common.excel.ExcelExportUtil.Heading.asOf("담보 만기 임박", asOf));
         return excel.asDownload(xlsx, "담보만기알림.xlsx");
     }
 

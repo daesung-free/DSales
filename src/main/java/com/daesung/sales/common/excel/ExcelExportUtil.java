@@ -44,6 +44,47 @@ public class ExcelExportUtil {
     }
 
     /**
+     * 제목·조회기준 머리글(2행). 근거: 재무팀 실파일이 전부
+     * <b>제목 / 조회기준 / 헤더 / 데이터</b> 구조이고, 프론트도 같은 2행을 붙이고 있다
+     * (백엔드 전달 2026-08-20 §A-2 — 서버 export로 일원화하면 이 2행이 사라진다는 지적).
+     *
+     * <p>재무팀은 <b>기존 파일과 눈으로 대조</b>하는 환경이라 형식 차이가 곧 클레임이다.
+     *
+     * @param title    1행: 화면 제목(예: 외상매출현황조회)
+     * @param criteria 2행: 조회기준(예: {@code 조회기준 : 2026.01.01 ~ 2026.06.30}). null이면 1행만
+     */
+    public record Heading(String title, String criteria) {
+
+        /** 기간 조회 화면의 표준 문구. 날짜 표기는 재무팀 파일과 같은 점 구분이다. */
+        public static Heading period(String title, java.time.LocalDate from, java.time.LocalDate to) {
+            return new Heading(title, "조회기준 : " + dot(from) + " ~ " + dot(to));
+        }
+
+        /** 기준일 하나짜리 화면(잔액·현황 등). */
+        public static Heading asOf(String title, java.time.LocalDate baseDate) {
+            return new Heading(title, "조회기준 : " + dot(baseDate));
+        }
+
+        private static String dot(java.time.LocalDate d) {
+            return (d == null) ? "" : d.format(java.time.format.DateTimeFormatter.ofPattern("yyyy.MM.dd"));
+        }
+    }
+
+    /**
+     * 분류별 소계 스펙. 근거: 재무팀 실파일(매출액정리_6월.xlsx)이 분류별 '소 계'와 총계를 포함하고,
+     * 레거시 {@code 매출액명세서.vb}도 ROLLUP으로 같은 행을 만든다.
+     *
+     * <p>★<b>정렬된 순서에서 값이 바뀌는 지점</b>에 소계가 들어간다. 그래서 rows가
+     * groupBy 기준으로 정렬돼 있어야 한다 — 흩어져 있으면 같은 분류의 소계가 여러 번 찍힌다.
+     *
+     * @param groupBy  묶음 기준 필드(예: catCode)
+     * @param labelKey 소계 행에 표시할 이름 필드(예: catName)
+     * @param sumKeys  합계를 낼 숫자 필드들
+     */
+    public record Subtotal(String groupBy, String labelKey, List<String> sumKeys) {
+    }
+
+    /**
      * 필드 값 추출. 평범한 키 외에 <b>{@code 이름[인덱스]}</b> 표기를 지원한다.
      *
      * <p>월별 크로스탭(1월[수량] … 12월[수량])처럼 값이 리스트로 오는 리포트가 있는데,
@@ -71,14 +112,96 @@ public class ExcelExportUtil {
      * 근거: '엑셀 형식은 드라이브 파일 참고'(재무팀).
      */
     public byte[] toXlsx(String sheetName, List<Col> cols, List<?> rows) {
+        return toXlsx(sheetName, cols, rows, null, null);
+    }
+
+    /** 제목·조회기준 2행을 붙인 xlsx(재무팀 실파일 형식). */
+    public byte[] toXlsx(String sheetName, List<Col> cols, List<?> rows, Heading heading) {
+        return toXlsx(sheetName, cols, rows, heading, null);
+    }
+
+    /**
+     * 제목 2행 + 분류별 소계·총계를 붙인 xlsx.
+     *
+     * <p>★소계는 <b>본문 행 사이</b>에 끼워 넣는다. 파일을 열었을 때 분류가 끝나는 자리에
+     * 바로 '소 계'가 보여야 재무팀이 기존 파일과 줄을 맞춰 볼 수 있다.
+     */
+    public byte[] toXlsx(String sheetName, List<Col> cols, List<?> rows,
+                         Heading heading, Subtotal subtotal) {
         List<Map<String, Object>> maps = new ArrayList<>();
         for (Object r : rows) {
             maps.add(om.convertValue(r, MAP_TYPE));
         }
         List<String> headers = cols.stream().map(Col::header).toList();
-        return write(sheetName, headers, maps.stream()
-                .map(m -> cols.stream().map(c -> resolve(m, c.field())).toList())
-                .toList());
+        List<List<Object>> body = (subtotal == null)
+                ? maps.stream().map(m -> cols.stream().map(c -> resolve(m, c.field())).toList()).toList()
+                : withSubtotals(cols, maps, subtotal);
+        return write(sheetName, headers, body, heading);
+    }
+
+    /**
+     * 본문 + 분류 소계 + 총계 행렬. 숫자 합계는 {@code sumKeys} 컬럼에만 찍고
+     * 나머지 칸은 비운다 — 코드·이름 칸에 합계가 찍히면 데이터처럼 읽힌다.
+     */
+    private List<List<Object>> withSubtotals(List<Col> cols, List<Map<String, Object>> maps,
+                                             Subtotal spec) {
+        List<List<Object>> out = new ArrayList<>();
+        Map<String, java.math.BigDecimal> groupSum = new java.util.LinkedHashMap<>();
+        Map<String, java.math.BigDecimal> grandSum = new java.util.LinkedHashMap<>();
+        Object curGroup = null;
+        String curLabel = null;
+        boolean open = false;
+
+        for (Map<String, Object> m : maps) {
+            Object g = m.get(spec.groupBy());
+            if (open && !java.util.Objects.equals(g, curGroup)) {
+                out.add(totalRow(cols, spec, curLabel + " 소 계", groupSum));
+                groupSum.clear();
+                open = false;
+            }
+            if (!open) {
+                curGroup = g;
+                curLabel = String.valueOf(m.getOrDefault(spec.labelKey(), ""));
+                open = true;
+            }
+            out.add(cols.stream().map(c -> resolve(m, c.field())).toList());
+            for (String k : spec.sumKeys()) {
+                java.math.BigDecimal v = decimalOf(m.get(k));
+                groupSum.merge(k, v, java.math.BigDecimal::add);
+                grandSum.merge(k, v, java.math.BigDecimal::add);
+            }
+        }
+        if (open) {
+            out.add(totalRow(cols, spec, curLabel + " 소 계", groupSum));
+        }
+        // 본문이 비어도 총계는 낸다 — 빈 파일과 "0으로 집계됐다"는 다른 말이다.
+        out.add(totalRow(cols, spec, "총 계", grandSum));
+        return out;
+    }
+
+    /** 합계 행 한 줄. 라벨은 첫 칸에, 숫자는 해당 컬럼에만. */
+    private static List<Object> totalRow(List<Col> cols, Subtotal spec, String label,
+                                         Map<String, java.math.BigDecimal> sums) {
+        List<Object> row = new ArrayList<>();
+        for (int i = 0; i < cols.size(); i++) {
+            String field = cols.get(i).field();
+            if (i == 0) {
+                row.add(label);
+            } else if (spec.sumKeys().contains(field)) {
+                java.math.BigDecimal v = sums.get(field);
+                row.add((v == null) ? 0L : v);
+            } else {
+                row.add(null);
+            }
+        }
+        return row;
+    }
+
+    private static java.math.BigDecimal decimalOf(Object v) {
+        if (v instanceof Number n) {
+            return new java.math.BigDecimal(n.toString());
+        }
+        return java.math.BigDecimal.ZERO;
     }
 
     /** 행 리스트 → xlsx byte[]. 컬럼은 각 행 필드명의 합집합(첫 행 순서 우선). 헤더=필드명. */
@@ -93,11 +216,12 @@ public class ExcelExportUtil {
         List<String> cols = new ArrayList<>(columns);
         return write(sheetName, cols, maps.stream()
                 .map(m -> cols.stream().map(m::get).toList())
-                .toList());
+                .toList(), null);
     }
 
     /** 헤더 + 값 행렬 → xlsx byte[](공용 엔진). */
-    private byte[] write(String sheetName, List<String> headers, List<List<Object>> rows) {
+    private byte[] write(String sheetName, List<String> headers, List<List<Object>> rows,
+                         Heading heading) {
         try (Workbook wb = new XSSFWorkbook()) {
             Sheet sheet = wb.createSheet((sheetName == null || sheetName.isBlank()) ? "Sheet1" : sheetName);
 
@@ -106,14 +230,32 @@ public class ExcelExportUtil {
             bold.setBold(true);
             headerStyle.setFont(bold);
 
-            Row header = sheet.createRow(0);
+            // 제목·조회기준 2행(있을 때만). 재무팀 실파일이 전부 이 구조라
+            // 파일만 받아도 무엇을 언제 기준으로 뽑았는지 알 수 있어야 한다.
+            int headerRow = 0;
+            if (heading != null) {
+                CellStyle titleStyle = wb.createCellStyle();
+                Font titleFont = wb.createFont();
+                titleFont.setBold(true);
+                titleFont.setFontHeightInPoints((short) 14);
+                titleStyle.setFont(titleFont);
+
+                Cell t = sheet.createRow(headerRow++).createCell(0);
+                t.setCellValue(heading.title());
+                t.setCellStyle(titleStyle);
+                if (heading.criteria() != null && !heading.criteria().isBlank()) {
+                    sheet.createRow(headerRow++).createCell(0).setCellValue(heading.criteria());
+                }
+            }
+
+            Row header = sheet.createRow(headerRow);
             for (int c = 0; c < headers.size(); c++) {
                 Cell cell = header.createCell(c);
                 cell.setCellValue(headers.get(c));
                 cell.setCellStyle(headerStyle);
             }
 
-            int rowIdx = 1;
+            int rowIdx = headerRow + 1;
             for (List<Object> r : rows) {
                 Row row = sheet.createRow(rowIdx++);
                 for (int c = 0; c < headers.size(); c++) {
@@ -135,6 +277,8 @@ public class ExcelExportUtil {
     private void setCell(Cell cell, Object v) {
         if (v == null) {
             cell.setBlank();
+        } else if (v instanceof java.math.BigDecimal d) {
+            cell.setCellValue(d.doubleValue());
         } else if (v instanceof Number n) {
             cell.setCellValue(n.doubleValue());
         } else if (v instanceof Boolean b) {

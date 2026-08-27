@@ -3,6 +3,7 @@ package com.daesung.sales.receivable.controller;
 import com.daesung.sales.common.dto.PageRequestDto;
 import com.daesung.sales.common.excel.ExcelExportUtil;
 import com.daesung.sales.common.excel.ExcelExportUtil.Col;
+import com.daesung.sales.common.excel.ExcelExportUtil.Heading;
 import com.daesung.sales.common.response.ApiResponse;
 import com.daesung.sales.common.response.PageResponse;
 import com.daesung.sales.receivable.dto.ArLedgerResponse;
@@ -201,7 +202,8 @@ public class ReceivableController {
                 new Col("매출액", "saleAmount"), new Col("반품액", "returnAmount"), new Col("세액", "tax"),
                 new Col("채권발생", "receivableGen"), new Col("수금", "collected"), new Col("잔액", "balance"),
                 new Col("담보금액", "assureAmount"), new Col("담보비율", "assureRatio"), new Col("담보등급", "assureLevel"));
-        byte[] xlsx = excel.toXlsx("미수금현황", cols, receivableService.arStatus(fromDate, toDate, partnerId).rows());
+        byte[] xlsx = excel.toXlsx("미수금현황", cols, receivableService.arStatus(fromDate, toDate, partnerId).rows(),
+                Heading.period("외상매출현황조회", fromDate, toDate));
         return excel.asDownload(xlsx, "미수금현황.xlsx");
     }
 
@@ -279,7 +281,8 @@ public class ReceivableController {
                 new Col("교사용수량", "teacherQty"), new Col("교사용금액", "teacherAmount"),
                 new Col("반품수량", "returnQty"), new Col("반품금액", "returnAmount"),
                 new Col("수금액", "collectAmount"), new Col("잔액", "balance"));
-        byte[] xlsx = excel.toXlsx("외상매출장", cols, receivableService.arLedger(partnerId, fromDate, toDate).lines());
+        byte[] xlsx = excel.toXlsx("외상매출장", cols, receivableService.arLedger(partnerId, fromDate, toDate).lines(),
+                Heading.period("외상매출장조회", fromDate, toDate));
         return excel.asDownload(xlsx, "외상매출장.xlsx");
     }
 }

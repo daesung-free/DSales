@@ -57,3 +57,6 @@ graphify-out/
 
 ### SpotBugs 리포트 ###
 build/reports/
+
+# 프론트 코드(별도 저장소) — 대조용으로 가져다 둔 것이라 커밋 금지
+매출프로그램-점검/
