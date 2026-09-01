@@ -103,10 +103,8 @@ public class ConsignmentOut extends BaseEntity {
      * total_qty·remaining_qty 동시 차감(불변식 total=settled+remaining 유지). 매출 무관.
      */
     public void returnUnsold(int qty) {
-        if (qty > this.remainingQty) {
-            throw new BusinessException(ErrorCode.OVER_SETTLEMENT,
-                    "반품 수량이 미결(미판매) 잔여를 초과했습니다: 잔여 " + this.remainingQty + ", 요청 " + qty);
-        }
+        // ★초과 차단 제거(발주처 2026-08-31). 초과분은 호출부가 Case1으로 갈라 넘긴다 —
+        //   여기까지 오는 qty는 이미 잔여 이하로 잘려 있어야 한다.
         this.totalQty -= qty;
         this.remainingQty -= qty;
         this.returnedQty += qty;   // 원출고 = 정산 + 반품 + 미결잔여 가 읽히도록 누적
@@ -119,14 +117,44 @@ public class ConsignmentOut extends BaseEntity {
         }
     }
 
-    /** 부분 정산. 불변식 total = settled + remaining 유지, 초과정산 방지. */
+    /**
+     * 부분 정산. 불변식 total = settled + remaining 유지.
+     *
+     * <p>★<b>초과정산을 막지 않는다</b>(발주처 2026-08-31: "자동 차단하던 기존 로직은 제거,
+     * 초과 시 경고 알림만"). 잔여를 넘겨 정산하면 {@code remainingQty}가 <b>음수</b>가 되고,
+     * 그 사실이 그대로 화면에 보인다 — 담당자가 보고 수기로 정리하라는 것이 요구다.
+     * 조용히 0으로 깎으면 초과했다는 사실 자체가 사라진다.
+     */
     public void settle(int qty) {
-        if (qty > this.remainingQty) {
-            throw new BusinessException(ErrorCode.OVER_SETTLEMENT,
-                    "정산 수량이 미결 잔여를 초과했습니다: 잔여 " + this.remainingQty + ", 요청 " + qty);
-        }
         this.settledQty += qty;
         this.remainingQty -= qty;
-        this.status = (this.remainingQty == 0) ? ConsignmentStatus.CLOSED : ConsignmentStatus.PARTIAL;
+        this.status = (this.remainingQty <= 0) ? ConsignmentStatus.CLOSED : ConsignmentStatus.PARTIAL;
+    }
+
+    /**
+     * <b>확정매출분 반품(Case 1)</b>. 근거: 발주처 화면검토 확인요청서(2026-08-31) —
+     * "100부 위탁출고 중 60부 정산 확정(미결잔여 40부) 상태에서 반품 50부가 등록되면,
+     * 40부는 Case2로, <b>초과분 10부는 Case1</b>(기존 정산 확정분에 대한 반품,
+     * 정산 수량을 50부로 정정 + 매출 마이너스 반영)으로 처리".
+     *
+     * <p>★<b>기존 정산 건을 소급 수정하지 않는다.</b> 원문: "정산이 여러 건에 나뉘어
+     * 확정되어 있었더라도 특정 정산 건을 소급 수정하지 않고, 초과분은 별도 반품 건을
+     * 등록하는 방식으로 처리". 그래서 {@code ConsignmentSettlement} 행은 건드리지 않고
+     * 누적값만 되돌리며, 매출 반품 라인은 호출부가 따로 만든다.
+     *
+     * <p>잔여는 건드리지 않는다 — 이미 팔린 몫이 돌아온 것이라 미판매 잔여와 무관하다.
+     * 결과적으로 <b>원출고 = 정산 + 반품 + 잔여</b>가 계속 읽힌다.
+     */
+    public void returnSettled(int qty) {
+        this.settledQty -= qty;
+        this.totalQty -= qty;
+        this.returnedQty += qty;
+        if (this.remainingQty <= 0) {
+            this.status = ConsignmentStatus.CLOSED;
+        } else if (this.settledQty > 0) {
+            this.status = ConsignmentStatus.PARTIAL;
+        } else {
+            this.status = ConsignmentStatus.OPEN;
+        }
     }
 }

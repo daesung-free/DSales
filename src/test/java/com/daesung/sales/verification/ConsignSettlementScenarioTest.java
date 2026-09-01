@@ -76,8 +76,8 @@ class ConsignSettlementScenarioTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("S-3-3 초과 정산 차단 — 잔여 20인데 50 정산 시도 → 거부, 장부 불변")
-    void 시나리오3_초과정산_차단() {
+    @DisplayName("S-3-3 초과 정산 — 잔여 20인데 50 정산: 차단하지 않고 경고 + 잔여 음수")
+    void 시나리오3_초과정산_허용() {
         JsonNode pending = ship("CS-P3", 100);
         long outId = pending.path("consignmentOutId").asLong();
         settle(outId, 80, "2026-07-04");
@@ -85,16 +85,22 @@ class ConsignSettlementScenarioTest extends IntegrationTestSupport {
         JsonNode before = pendingLine("CS-P3");
         assertThat(before.path("remainingQty").asInt()).isEqualTo(20);
 
+        // ★2026-08-31 발주처 확정: "자동 차단하던 로직 제거, 초과 시 경고 알림만 표시하고
+        //   이후 처리는 담당자가 수기로". 그래서 등록은 되고 **경고가 함께 온다**.
         JsonNode over = post("/consignment/settle", Map.of(
                 "salesDate", "2026-07-05",
                 "settlements", List.of(Map.of("consignmentOutId", outId, "settleQty", 50,
                         "unitPrice", 20000, "supplyRate", 75))));
-        assertThat(over.path("success").asBoolean()).as("초과 정산은 거부돼야 함: %s", over).isFalse();
-        assertThat(over.path("error").path("code").asText()).isEqualTo("OVER_SETTLEMENT");
+        assertThat(over.path("success").asBoolean()).as("초과여도 등록된다: %s", over).isTrue();
+
+        JsonNode line = over.path("data").path("items").get(0);
+        assertThat(line.path("overWarning").asText())
+                .as("초과 사실을 경고로 알려줘야 화면이 alert를 띄운다").contains("미결 잔여를 초과");
 
         JsonNode after = pendingLine("CS-P3");
-        assertThat(after.path("settledQty").asInt()).as("거부 후 누적 불변").isEqualTo(80);
-        assertThat(after.path("remainingQty").asInt()).as("거부 후 잔여 불변").isEqualTo(20);
+        assertThat(after.path("settledQty").asInt()).as("80 + 50").isEqualTo(130);
+        assertThat(after.path("remainingQty").asInt())
+                .as("초과분이 음수로 드러난다 — 0으로 깎으면 초과 사실이 사라진다").isEqualTo(-30);
     }
 
     @Test
@@ -235,9 +241,9 @@ class ConsignSettlementScenarioTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("정산+반품 합계가 미결 잔여를 넘으면 거부 — 각각은 잔여 이내여도")
+    @DisplayName("정산+반품 합계가 미결 잔여를 넘어도 등록된다 — 경고만, 초과분은 Case1")
     void 정산_반품_합계초과() {
-        // 따로 검사하면 30·30 각각은 잔여 50 이내라 통과하고, 합이 60이 되어 미결이 음수가 된다.
+        // 잔여 50에 정산 30 + 반품 30 = 60. 차단하지 않고, 반품 초과분은 확정매출분 반품(Case1)으로 간다.
         String sfx = "-RO" + (System.nanoTime() % 1_000_000L);
         Long sup = createId("/masters/clients", Map.of("code", "ROS" + sfx, "name", "인쇄", "type", "NORMAL"));
         Long pt = createId("/masters/clients", Map.of("code", "ROP" + sfx, "name", "위탁처", "type", "NORMAL"));
@@ -255,12 +261,18 @@ class ConsignSettlementScenarioTest extends IntegrationTestSupport {
         long outId = data(get("/consignment/pending?partnerId=" + pt))
                 .path("items").get(0).path("consignmentOutId").asLong();
 
-        assertThat(exchangeRaw(HttpMethod.POST, "/consignment/settle", Map.of(
+        JsonNode both = post("/consignment/settle", Map.of(
                 "salesDate", "2034-09-01",
                 "settlements", List.of(Map.of("consignmentOutId", outId,
                         "settleQty", 30, "returnQty", 30,
-                        "unitPrice", 10000, "supplyRate", 75))), token(), null)
-                .getStatusCode().value()).as("30+30 > 잔여 50").isEqualTo(409);
+                        "unitPrice", 10000, "supplyRate", 75))));
+        assertThat(both.path("success").asBoolean()).as("30+30 > 잔여 50이어도 등록: %s", both).isTrue();
+
+        JsonNode l = both.path("data").path("items").get(0);
+        assertThat(l.path("overWarning").asText()).contains("미결 잔여를 초과");
+        // 정산 30이 먼저 반영돼 잔여가 20 → 반품 30 중 20은 Case2, 10은 Case1(확정매출분)
+        assertThat(l.path("returnCase2Qty").asInt()).as("미결잔여만큼: %s", l).isEqualTo(20);
+        assertThat(l.path("returnCase1Qty").asInt()).as("초과분은 확정매출분 반품").isEqualTo(10);
 
         // 아무것도 입력 안 하면 400 — 전 건을 훑고 아무 일도 안 하는 요청이다.
         assertThat(exchangeRaw(HttpMethod.POST, "/consignment/settle", Map.of(
@@ -274,7 +286,10 @@ class ConsignSettlementScenarioTest extends IntegrationTestSupport {
                 "salesDate", "2034-09-01",
                 "settlements", List.of(Map.of("consignmentOutId", outId, "returnQty", 10)))))
                 .path("items").get(0);
-        assertThat(only.path("remainingQty").asInt()).isEqualTo(40);
+        // 앞에서 정산 30 + 반품 30(Case2 20 + Case1 10)이 이미 반영됐다 →
+        // 잔여 0에서 다시 반품 10을 넣으면 그 10은 전부 Case1(확정매출분)로 간다.
+        assertThat(only.path("returnCase1Qty").asInt()).as("잔여가 없으니 전부 Case1: %s", only).isEqualTo(10);
+        assertThat(only.path("remainingQty").asInt()).as("잔여는 그대로 0").isZero();
         assertThat(only.hasNonNull("salesNo")).as("반품만이면 매출번호가 없다").isFalse();
     }
 

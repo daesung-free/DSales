@@ -18,14 +18,15 @@ import org.testcontainers.containers.MySQLContainer;
 import org.testcontainers.utility.DockerImageName;
 
 /**
- * 통합테스트 공용 베이스. 실 MySQL 8 + Redis(Testcontainers) 위에서 앱 전체(HTTP→서비스→쿼리→DB)를 관통.
+ * 통합테스트 공용 베이스. 실 MySQL 8.4 + Redis(Testcontainers) 위에서 앱 전체(HTTP→서비스→쿼리→DB)를 관통.
+ * ★이미지 태그는 운영 RDS 버전(8.4.x)에 맞춘다 — 8.0으로 검증하면 8.4에서 달라진 동작이 검증 밖으로 샌다.
  * Flyway가 스키마 생성, 인증은 부트스트랩→로그인으로 실제 토큰 사용. DSRE는 off(복제본 불필요).
  * 컨테이너는 static 블록에서 직접 start(싱글톤 패턴) — @DynamicPropertySource 해석 전 기동 보장, JVM 내 재사용.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT)
 public abstract class IntegrationTestSupport {
 
-    static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.0")
+    static final MySQLContainer<?> MYSQL = new MySQLContainer<>("mysql:8.4")
             .withDatabaseName("sales").withUsername("sales").withPassword("sales");
 
     static final GenericContainer<?> REDIS = new GenericContainer<>(DockerImageName.parse("redis:7-alpine"))

@@ -349,6 +349,17 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
                                      @Param("toDate") LocalDate toDate,
                                      @Param("contentType") String contentType);
 
+    /**
+     * 그 미결의 <b>마지막 위탁정산 매출</b>. 확정매출분 반품(Case1)에서 정가·공급률 출처로 쓴다.
+     *
+     * <p>담당자가 반품하며 단가를 다시 적지 않아도 되게 하려는 것이다 —
+     * "팔린 것을 무르는" 건이라 팔 때의 조건을 그대로 따르는 게 맞다.
+     * 여러 번 나눠 정산했으면 <b>가장 최근 건</b>을 쓴다(조건이 바뀌었다면 최신이 현재 계약이다).
+     */
+    @Query("select s from Sale s where s.settlement.consignmentOut.id = :consignmentOutId "
+            + "and s.canceled = false order by s.id desc limit 1")
+    java.util.Optional<Sale> findLatestConsignSale(@Param("consignmentOutId") Long consignmentOutId);
+
     /** 외상매출장 명세: 특정 거래처의 기간 내 매출 라인(취소 제외, 일자순). */
     @Query("select s from Sale s where s.partner.id = :partnerId and s.canceled = false "
             + "and s.salesDate between :from and :to order by s.salesDate, s.id")

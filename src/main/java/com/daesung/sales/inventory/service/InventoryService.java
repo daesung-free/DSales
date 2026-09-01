@@ -44,6 +44,8 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class InventoryService {
 
+    private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(InventoryService.class);
+
     private static final DateTimeFormatter YYYYMMDD = DateTimeFormatter.BASIC_ISO_DATE;
 
     private final InventoryRepository inventoryRepository;
@@ -388,20 +390,30 @@ public class InventoryService {
      * 반환값 = 갱신 후 잔량.
      */
     private int applyDelta(Product product, Warehouse warehouse, int delta) {
-        if (delta >= 0) {
-            int inc = inventoryRepository.addQty(product.getId(), warehouse.getId(), delta);
-            if (inc == 0) {
-                inventoryRepository.save(Inventory.create(product, warehouse, delta));
-            }
-        } else {
-            int dec = inventoryRepository.addQtyIfEnough(product.getId(), warehouse.getId(), delta);
-            if (dec == 0) {
-                throw new BusinessException(ErrorCode.NEGATIVE_STOCK,
-                        "재고 부족: 상품[" + product.getCode() + "] 창고[" + warehouse.getName() + "]");
-            }
+        // ★음수재고를 막지 않는다(발주처 2026-08-31 화면검토 확인요청서).
+        //   원문: "재고 음수 차단 로직은 적용되면 안됩니다. 입고 전 출시/출고되는 상품의 경우
+        //   재고 (–)로 처리되며, DSRE에서 수불관리를 하는 상품의 경우도 출고 수량만 나타나기
+        //   때문에 재고는 마이너스로 표시되는게 정상입니다."
+        //   → 차감도 무조건 원자적 UPDATE로 더한다(조건부 차감 addQtyIfEnough를 쓰지 않는다).
+        int updated = inventoryRepository.addQty(product.getId(), warehouse.getId(), delta);
+        if (updated == 0) {
+            // 행이 없으면 만든다. 첫 거래가 출고라면 그대로 음수로 시작한다.
+            inventoryRepository.save(Inventory.create(product, warehouse, delta));
         }
-        return inventoryRepository.findByProductIdAndWarehouseId(product.getId(), warehouse.getId())
+        int balance = inventoryRepository.findByProductIdAndWarehouseId(product.getId(), warehouse.getId())
                 .map(Inventory::getQty)
-                .orElse(Math.max(delta, 0));
+                .orElse(delta);
+
+        // ‼️막지는 않되 조용히 넘기지도 않는다.
+        //   "입고 전 출고"라 정상인 음수와 오입력으로 생긴 음수는 데이터만 봐서는 구분되지 않는다.
+        //   나중에 재고가 안 맞을 때 언제부터 음수였는지 되짚을 단서를 남긴다.
+        if (balance < 0) {
+            // ★로그에는 **숫자 id만** 넣는다. 상품코드·창고명은 마스터에서 온 문자열이라
+            //   줄바꿈이 섞이면 로그 한 줄을 위조할 수 있다(정적분석 CRLF_INJECTION_LOGS).
+            //   id로도 어느 건인지 찾을 수 있다.
+            log.warn("재고 음수(차단 안 함, 발주처 2026-08-31): productId={} warehouseId={} 잔량={} 차감={}",
+                    product.getId(), warehouse.getId(), balance, delta);
+        }
+        return balance;
     }
 }

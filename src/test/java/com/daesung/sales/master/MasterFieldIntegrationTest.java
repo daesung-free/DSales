@@ -120,15 +120,19 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
         JsonNode rows = data(get("/stock/ledger?warehouseId=" + wh));
         assertThat(codes(rows)).doesNotContain("MF-EXAM");
 
-        // 대조: 재고관리 상품(기본 true)은 입고 없이 팔면 NEGATIVE_STOCK
+        // 대조: 재고관리 상품(기본 true)은 이벤트가 남고 **재고가 음수로 간다**.
+        // ★2026-08-31 발주처 확정으로 음수재고 차단을 제거했다 —
+        //   "입고 전 출시/출고되는 상품은 재고 (–)로 처리되며 마이너스 표시가 정상".
+        //   예전에는 여기서 NEGATIVE_STOCK으로 거부했다.
         Long book = createId("/masters/products",
                 Map.of("code", "MF-BOOK", "name", "일반교재", "contentType", "SELF"));
-        JsonNode fail = post("/sales/entries", Map.of(
+        JsonNode ok = post("/sales/entries", Map.of(
                 "salesDate", "2026-04-15", "partnerId", ownerFallback(), "warehouseId", wh,
                 "items", List.of(Map.of("productId", book, "shipmentType", "NORMAL_SHIP",
                         "unitPrice", 10000, "supplyRate", 100, "qty", 30))));
-        assertThat(fail.path("success").asBoolean()).isFalse();
-        assertThat(fail.path("error").path("code").asText()).isEqualTo("NEGATIVE_STOCK");
+        assertThat(ok.path("success").asBoolean()).as("입고 없이도 출고된다: %s", ok).isTrue();
+        assertThat(ok.path("data").path("items").get(0).path("stockBalance").asInt())
+                .as("재고는 음수로 남는다").isEqualTo(-30);
     }
 
     @Test
@@ -253,7 +257,7 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("위탁 반품 — 역-자동이고(위탁→물류 재고복귀) + 미결원장 축소, 초과 방지")
+    @DisplayName("위탁 반품 — 역-자동이고(위탁→물류 재고복귀) + 미결원장 축소, 초과분은 Case1")
     void 위탁반품() {
         Long main = createId("/masters/warehouses", Map.of("code", "CR-MAIN", "name", "물류", "type", "MAIN"));
         Long consign = createId("/masters/warehouses", Map.of("code", "CR-CONS", "name", "위탁", "type", "CONSIGN"));
@@ -279,16 +283,21 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
         assertThat(line.path("mainBalance").asInt()).isEqualTo(30);      // 물류 복귀
         assertThat(line.path("consignBalance").asInt()).isEqualTo(70);   // 위탁 차감
 
-        // 초과 반품(잔여 70 초과) → 409/오류
+        // ★초과 반품을 더 이상 막지 않는다(발주처 2026-08-31).
+        //   잔여 70 상태에서 80을 반품하면 70은 Case2, 초과분 10은 Case1(확정매출분 반품)로 갈린다.
+        //   ※단 **나간 것보다 많이는** 못 돌려받는다. 이 미결은 정산 이력이 없어
+        //     돌려받을 수 있는 최대가 잔여 70이다 → 80은 "출고수량 초과"로 거부된다.
+        //     "미결잔여 초과 차단"(제거됨)과 "출고수량 초과"(유지)는 다른 규칙이다.
         JsonNode over = post("/consignment/return", Map.of(
                 "processedDate", "2026-06-30",
-                "items", List.of(Map.of("consignmentOutId", coId, "returnQty", 200))));
-        assertThat(over.path("success").asBoolean()).isFalse();
-        assertThat(over.path("error").path("code").asText()).isEqualTo("OVER_SETTLEMENT");
+                "items", List.of(Map.of("consignmentOutId", coId, "returnQty", 80))));
+        assertThat(over.path("error").path("code").asText())
+                .as("출고수량 초과로 거부되어야: %s", over)
+                .isEqualTo("INVALID_INPUT");
     }
 
     @Test
-    @DisplayName("위탁정산 동시성 — 같은 미결에 동시 정산 2건이면 정확히 1건만 성공(초과정산·lost update 방지, 이슈#97)")
+    @DisplayName("위탁정산 동시성 — 동시 정산 2건이 모두 반영된다(lost update 없음, 이슈#97)")
     void 위탁정산_동시성() throws Exception {
         Long main = createId("/masters/warehouses", Map.of("code", "CC-MAIN", "name", "물류", "type", "MAIN"));
         Long consign = createId("/masters/warehouses", Map.of("code", "CC-CONS", "name", "위탁", "type", "CONSIGN"));
@@ -316,22 +325,23 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
             JsonNode r1 = f1.get();
             JsonNode r2 = f2.get();
 
+            // ★초과정산 차단을 제거했으므로(발주처 2026-08-31) **둘 다 성공한다.**
+            //   이 테스트가 지키는 것은 이제 "차단"이 아니라 **lost update가 없다**는 것이다 —
+            //   비관적 락이 두 정산을 직렬화하므로 둘이 서로를 덮어쓰지 않는다.
             int success = (r1.path("success").asBoolean() ? 1 : 0) + (r2.path("success").asBoolean() ? 1 : 0);
-            assertThat(success).as("동시 정산 결과 r1=%s r2=%s", r1, r2).isEqualTo(1);
-            // 실패한 쪽은 초과정산 오류
-            JsonNode failed = r1.path("success").asBoolean() ? r2 : r1;
-            assertThat(failed.path("error").path("code").asText()).isEqualTo("OVER_SETTLEMENT");
+            assertThat(success).as("동시 정산 결과 r1=%s r2=%s", r1, r2).isEqualTo(2);
         } finally {
             pool.shutdownNow();
         }
 
-        // 장부 정합: 정산 수량은 정확히 100(2건=200 아님), 잔여 0, CLOSED
+        // 장부 정합: 두 건이 모두 쌓여 정산 200. 잔여는 −100으로 **음수 그대로 보인다** —
+        // 초과했다는 사실이 화면에 드러나야 담당자가 수기로 정리한다(발주처 요구).
         JsonNode d = data(get("/consignment/settlement-statement?fromDate=2020-01-01&toDate=2030-12-31"));
         JsonNode row = rowByField(d.path("rows"), "partnerName", "위탁동시성거래처");
-        assertThat(row.path("settleQty").asLong()).as("lost update 없어야: %s", row).isEqualTo(100);
-        assertThat(row.path("remainingQty").asLong()).isEqualTo(0);
+        assertThat(row.path("settledQtyCum").asLong())
+                .as("두 건이 모두 누적돼야(lost update 없음): %s", row).isEqualTo(200);
+        assertThat(row.path("remainingQty").asLong()).as("초과분이 음수로 드러난다").isEqualTo(-100);
         assertThat(row.path("totalQty").asLong()).isEqualTo(100);
-        assertThat(row.path("status").asText()).isEqualTo("CLOSED");
 
         // 정리: 남긴 정산 매출 취소(정산내역서 전역 summary 오염 방지 — settled_at 기준이라 날짜격리 불가)
         long saleId = data(get("/sales?startDate=2026-10-01&endDate=2026-10-31&partnerId=" + partner))

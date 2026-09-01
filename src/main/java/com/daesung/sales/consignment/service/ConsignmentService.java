@@ -23,6 +23,7 @@ import com.daesung.sales.inventory.entity.InventoryTxn;
 import com.daesung.sales.inventory.entity.TxnType;
 import com.daesung.sales.inventory.service.InventoryService;
 import com.daesung.sales.partner.entity.Partner;
+import com.daesung.sales.salestype.entity.SalesCategory;
 import com.daesung.sales.salestype.entity.ShipmentType;
 import com.daesung.sales.partner.repository.PartnerRepository;
 import com.daesung.sales.product.entity.Product;
@@ -48,6 +49,9 @@ import org.springframework.transaction.annotation.Transactional;
 @Service
 @RequiredArgsConstructor
 public class ConsignmentService {
+
+    private static final org.slf4j.Logger log =
+            org.slf4j.LoggerFactory.getLogger(ConsignmentService.class);
 
     private static final DateTimeFormatter YYYYMMDD = DateTimeFormatter.BASIC_ISO_DATE;
 
@@ -148,13 +152,17 @@ public class ConsignmentService {
                     .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                             "미결(위탁출고)이 없습니다. id=" + s.consignmentOutId()));
 
-            // ★정산과 반품을 '합쳐서' 잔여와 비교한다. 따로 검사하면 각각은 통과해도
-            //   두 값의 합이 잔여를 넘어 미결이 음수가 된다(같은 줄에서 동시에 입력되므로).
+            // ★초과를 막지 않는다(발주처 2026-08-31: "자동 차단하던 기존 로직은 제거,
+            //   초과 시 경고 알림만 표시하고 이후 처리는 담당자가 수기로").
+            //   대신 초과 사실을 응답에 실어 화면이 alert를 띄울 수 있게 한다.
+            String overWarning = null;
             if (settleQty + returnQty > co.getRemainingQty()) {
-                throw new BusinessException(ErrorCode.OVER_SETTLEMENT,
-                        "정산+반품 수량이 미결 잔여를 초과했습니다: 잔여 " + co.getRemainingQty()
-                                + ", 정산 " + settleQty + " + 반품 " + returnQty
-                                + " (미결 " + co.getSourceOutNo() + ")");
+                overWarning = "미결 잔여를 초과했습니다: 잔여 " + co.getRemainingQty()
+                        + ", 정산 " + settleQty + " + 반품 " + returnQty
+                        + " (미결 " + co.getSourceOutNo() + ")";
+                // 문구는 응답(overWarning)으로 나간다. 로그에는 숫자만 남긴다(CRLF 위조 방지).
+                log.warn("위탁 초과 처리(차단 안 함): consignmentOutId={} 잔여={} 정산={} 반품={}",
+                        co.getId(), co.getRemainingQty(), settleQty, returnQty);
             }
 
             String beforeStatus = co.getStatus().name();   // ★바꾸기 전에 읽는다
@@ -210,11 +218,24 @@ public class ConsignmentService {
                 }
             }
 
-            // (2) 반품분 → 매출 무관, 미결 축소 + 실물재고 복귀(위탁창고 → 물류창고)
+            // (2) 반품분 → 미결 잔여를 먼저 채우고(Case2), 남는 것은 확정매출분 반품(Case1).
+            //     근거: 발주처 화면검토 확인요청서(2026-08-31) 100/60/50 예시.
+            int case2 = 0;
+            int case1 = 0;
             if (returnQty > 0) {
-                returnUnsoldStock(co, returnQty, req.salesDate());
-                // ★moveStock이 영속성 컨텍스트를 비우므로 이후 co를 다시 읽는다.
-                co = consignmentOutRepository.findById(s.consignmentOutId()).orElseThrow();
+                int[] split = splitReturn(co, returnQty);
+                case2 = split[0];
+                case1 = split[1];
+                if (case2 > 0) {
+                    returnUnsoldStock(co, case2, req.salesDate());
+                    // ★moveStock이 영속성 컨텍스트를 비우므로 이후 co를 다시 읽는다.
+                    co = consignmentOutRepository.findById(s.consignmentOutId()).orElseThrow();
+                }
+                if (case1 > 0) {
+                    returnSettledStock(co, case1, req.salesDate(),
+                            s.unitPrice(), s.supplyRate(), s.tax(), s.memo());
+                    co = consignmentOutRepository.findById(s.consignmentOutId()).orElseThrow();
+                }
             }
 
             // 잔량은 정산·반품 어느 쪽으로 줄었든 항상 현재값을 담는다.
@@ -233,6 +254,7 @@ public class ConsignmentService {
 
             lines.add(new ConsignSettleResponse.Line(
                     salesNo, co.getId(), co.getSourceOutNo(), settleQty, returnQty,
+                    case2, case1, overWarning,
                     co.getRemainingQty(), co.getStatus(), supplyAmount, tax, totalAmount,
                     mainBalance, consignBalance));
         }
@@ -260,6 +282,95 @@ public class ConsignmentService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_INPUT,
                         "위탁창고 도착다리를 찾을 수 없습니다: " + co.getSourceOutNo()))
                 .getWarehouse();
+    }
+
+    /**
+     * 위탁 반품 <b>Case 분해</b>. 근거: 발주처 화면검토 확인요청서(2026-08-31).
+     *
+     * <p>원문 예시: "100부 위탁출고 중 60부 정산 확정(미결잔여 40부) 상태에서 반품 50부가
+     * 등록되면, <b>40부는 Case2</b>(위탁창고→물류창고 재고 복구, 매출 영향 없음)로,
+     * <b>초과분 10부는 Case1</b>(기존 정산 확정분에 대한 반품, 정산 수량을 50부로 정정 +
+     * 매출 마이너스 반영)으로 처리".
+     *
+     * <p>★<b>미결 잔여를 먼저 채우고 남는 것만 Case1</b>이다. 순서를 뒤집으면
+     * 아직 안 판 물건을 "팔린 것을 무른다"로 처리하게 되어 매출이 없는데 매출 반품이 선다.
+     *
+     * <p>★<b>나간 것보다 많이 돌려받을 수는 없다.</b> 잔여 + 정산누적을 넘는 반품은
+     * 거부한다 — 발주처가 풀라고 한 것은 "미결잔여 초과"이지(그건 Case1으로 흡수된다)
+     * "원 출고수량 초과"가 아니다. 그대로 두면 정산누적·총출고가 <b>음수</b>가 되어
+     * 원출고 = 정산 + 반품 + 잔여가 깨진다.
+     *
+     * @return {@code [Case2 수량, Case1 수량]}
+     */
+    private static int[] splitReturn(ConsignmentOut co, int returnQty) {
+        int remaining = Math.max(co.getRemainingQty(), 0);
+        int settled = Math.max(co.getSettledQty(), 0);
+        if (returnQty > remaining + settled) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "반품 수량이 나간 수량을 초과했습니다: 미결잔여 " + remaining
+                            + " + 정산누적 " + settled + " = " + (remaining + settled)
+                            + ", 요청 " + returnQty + " (미결 " + co.getSourceOutNo() + ")");
+        }
+        int case2 = Math.min(returnQty, remaining);
+        return new int[] {case2, returnQty - case2};
+    }
+
+    /**
+     * <b>Case 1 — 확정매출분 반품.</b> 매출 반품(RETURN) 라인 생성 + 미결 누적 되돌림 +
+     * 실물 재고 복구(물류창고 +).
+     *
+     * <p>★기존 정산 건({@code ConsignmentSettlement})은 <b>손대지 않는다</b> —
+     * 발주처 원문 "특정 정산 건을 소급 수정하지 않고 별도 반품 건을 등록하는 방식".
+     *
+     * <p>★재고는 <b>물류창고로</b> 돌아온다. 확정매출분은 이미 위탁창고에서도 빠졌고
+     * 실물은 거래처에 있었으므로, 돌아오는 자리는 위탁창고가 아니라 물류창고다
+     * (일반 반품입고와 같다).
+     */
+    private void returnSettledStock(ConsignmentOut co, int qty, LocalDate salesDate,
+                                    Integer unitPrice, Integer supplyRate, Integer tax, String memo) {
+        Product product = co.getProduct();
+        Warehouse mainWh = co.getOriginTxn().getWarehouse();
+
+        int price = (unitPrice != null) ? unitPrice : settledUnitPriceOf(co);
+        int rate = (supplyRate != null) ? supplyRate : settledSupplyRateOf(co);
+        Integer discount = partnerSupplyRateService.discountFor(product, co.getPartner().getId());
+        Amounts amt = Amounts.of(price, rate, qty, product.isTaxFree(), tax, discount);
+
+        String salesNo = "I-" + salesDate.format(YYYYMMDD) + "-"
+                + sequenceService.next(SequenceService.SEQ_INVOICE);
+        Sale ret = Sale.createBulk(salesNo, salesDate, co.getPartner(), product,
+                ShipmentType.RETURN, SalesCategory.RETURN, price, rate, qty,
+                amt.supplyAmount(), amt.tax(), amt.totalAmount(),
+                (memo != null ? memo + " / " : "") + "위탁 확정매출분 반품(Case1) " + co.getSourceOutNo(),
+                null);
+        ret.applyWarehouse(mainWh);
+        saleRepository.save(ret);
+
+        co.returnSettled(qty);
+        consignmentOutRepository.saveAndFlush(co);
+
+        if (product.isStockManaged()) {
+            inventoryService.applyShipment(product, mainWh, qty, TxnType.RETURN,
+                    ShipmentType.RETURN, salesDate, salesNo, "위탁 확정매출분 반품 입고");
+        }
+    }
+
+    /** 확정매출분 반품의 정가 — 입력이 없으면 그 미결의 마지막 위탁정산 매출에서 가져온다. */
+    private int settledUnitPriceOf(ConsignmentOut co) {
+        return saleRepository.findLatestConsignSale(co.getId())
+                .map(Sale::getUnitPrice)
+                .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_INPUT,
+                        "확정매출분 반품에 쓸 정가가 없습니다. 정가·공급률을 입력하세요. 미결="
+                                + co.getSourceOutNo()));
+    }
+
+    /** 확정매출분 반품의 공급률 — 정가와 같은 출처(마지막 위탁정산 매출). */
+    private int settledSupplyRateOf(ConsignmentOut co) {
+        return saleRepository.findLatestConsignSale(co.getId())
+                .map(Sale::getSupplyRate)
+                .orElseThrow(() -> new BusinessException(ErrorCode.INVALID_INPUT,
+                        "확정매출분 반품에 쓸 공급률이 없습니다. 정가·공급률을 입력하세요. 미결="
+                                + co.getSourceOutNo()));
     }
 
     /**
@@ -298,22 +409,43 @@ public class ConsignmentService {
             ConsignmentOut co = consignmentOutRepository.findByIdForUpdate(item.consignmentOutId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                             "미결(위탁출고)이 없습니다. id=" + item.consignmentOutId()));
-            if (item.returnQty() > co.getRemainingQty()) {
-                throw new BusinessException(ErrorCode.OVER_SETTLEMENT,
-                        "반품 수량이 미결 잔여를 초과했습니다: 잔여 " + co.getRemainingQty()
-                                + ", 요청 " + item.returnQty() + " (미결 " + co.getSourceOutNo() + ")");
-            }
-
             String sourceOutNo = co.getSourceOutNo();
             Long coId = co.getId();
             String productCode = co.getProduct().getCode();
 
-            // 정산 화면(반품수량 칸)과 같은 경로를 쓴다 — 두 곳에서 규칙이 갈리면 안 된다.
-            MovedBalance moved = returnUnsoldStock(co, item.returnQty(), req.processedDate());
+            // ★초과를 막지 않고 Case2/Case1으로 가른다 — 정산 화면(반품수량 칸)과 같은 규칙이다.
+            //   두 경로에서 규칙이 갈리면 같은 반품이 어디로 들어왔느냐에 따라 결과가 달라진다.
+            int[] split = splitReturn(co, item.returnQty());
+            int case2 = split[0];
+            int case1 = split[1];
+            String overWarning = (case1 > 0)
+                    ? "미결 잔여를 초과했습니다: 잔여 " + co.getRemainingQty()
+                        + ", 요청 " + item.returnQty() + " → 초과분 " + case1 + "부는 확정매출분 반품(Case1)"
+                    : null;
+            if (overWarning != null) {
+                log.warn("위탁 반품 초과 처리(차단 안 함): consignmentOutId={} 잔여={} 요청={} Case1={}",
+                        coId, co.getRemainingQty(), item.returnQty(), case1);
+            }
+
+            MovedBalance moved = new MovedBalance(0, 0);
+            if (case2 > 0) {
+                moved = returnUnsoldStock(co, case2, req.processedDate());
+                co = consignmentOutRepository.findById(coId).orElseThrow();
+            }
+            if (case1 > 0) {
+                // 단독 반품에는 정가·공급률 입력칸이 없다 → 마지막 위탁정산 매출에서 가져온다.
+                returnSettledStock(co, case1, req.processedDate(), null, null, null, item.memo());
+                co = consignmentOutRepository.findById(coId).orElseThrow();
+                Long pid = co.getProduct().getId();
+                moved = new MovedBalance(
+                        inventoryService.balanceOf(pid, co.getOriginTxn().getWarehouse().getId()),
+                        inventoryService.balanceOf(pid, consignWarehouseOf(co).getId()));
+            }
             ConsignmentOut after = consignmentOutRepository.findById(coId).orElseThrow();
 
             lines.add(new ConsignReturnResponse.Line(
                     coId, sourceOutNo, productCode, item.returnQty(),
+                    case2, case1, overWarning,
                     after.getRemainingQty(), after.getStatus(),
                     moved.mainBalance(), moved.consignBalance()));
         }

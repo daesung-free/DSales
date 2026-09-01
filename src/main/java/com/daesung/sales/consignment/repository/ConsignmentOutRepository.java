@@ -24,8 +24,11 @@ public interface ConsignmentOutRepository extends JpaRepository<ConsignmentOut, 
 
     /** 특정 거래처의 미결(잔여>0) 위탁출고. product를 함께 로드해 N+1 방지. */
     @Query("select c from ConsignmentOut c join fetch c.product"
-            + " where c.partner.id = :partnerId and c.remainingQty > 0 order by c.id")
+            + " where c.partner.id = :partnerId and c.remainingQty <> 0 order by c.id")
     List<ConsignmentOut> findPending(Long partnerId);
+    // ★조건이 `> 0`이 아니라 `<> 0`인 이유: 초과정산 차단을 제거한 뒤(발주처 2026-08-31)
+    //   잔여가 **음수**가 될 수 있다. `> 0`으로 두면 초과된 미결이 화면에서 사라져
+    //   "경고만 주고 담당자가 수기로 정리한다"는 요구를 만족할 수 없다 — 보여야 고친다.
 
     /**
      * 전 거래처 미결 백로그(건수·잔여수량 합). 대시보드 '위탁 정산 대기' 카드용.
@@ -37,7 +40,7 @@ public interface ConsignmentOutRepository extends JpaRepository<ConsignmentOut, 
      * 화면에는 카드가 통째로 사라진다(조용히 틀리는 쪽이라 실제로 한 번 겪었다).
      * 스칼라 두 개는 따로 세는 편이 안전하고, 쿼리도 그대로 인덱스를 탄다.
      */
-    @Query("select count(c) from ConsignmentOut c where c.remainingQty > 0")
+    @Query("select count(c) from ConsignmentOut c where c.remainingQty <> 0")
     long countPending();
 
     /** 미결 잔여수량 합. {@link #countPending}과 짝. */
