@@ -56,7 +56,7 @@ public class Product extends BaseEntity {
     @Column(name = "use_yn", nullable = false)
     private boolean useYn = true;
 
-    /** 매출구분(매출액정리·순매출조회 집계기준). 근거: 32p 도서관리. */
+    /** 세부구분(구 '매출구분' — 발주처 2026-08-31 명칭 통일). 매출액정리·순매출조회 집계기준. 근거: 32p. */
     @Column(name = "sales_division", length = 30)
     private String salesDivision;
 
@@ -172,7 +172,7 @@ public class Product extends BaseEntity {
         m.put("catCode|분류코드", catCode);
         m.put("catName|분류명", catName);
         m.put("useYn|사용여부", String.valueOf(useYn));
-        m.put("salesDivision|매출구분", salesDivision);
+        m.put("salesDivision|세부구분", salesDivision);   // 구 '매출구분' — 발주처 2026-08-31 명칭 통일
         m.put("productYear|상품년도", str(productYear));
         m.put("productType|상품구분", productType);
         m.put("ledgerVisible|수불부노출", String.valueOf(ledgerVisible));

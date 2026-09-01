@@ -30,7 +30,9 @@ public record NetSalesResponse(
             @Schema(description = "분류명") String catName,
             @Schema(description = "상품코드") String productCode,
             @Schema(description = "상품명") String productName,
-            @Schema(description = "콘텐츠구분(SELF/EXTERNAL)") String contentType,
+            @Schema(description = "콘텐츠구분 코드(SELF/EXTERNAL)") String contentType,
+            @Schema(description = "콘텐츠구분 표기(자체교재/**매입 교재**). 발주처 2026-08-31 명칭 확정")
+            String contentTypeName,
             @Schema(description = "매출수량") long saleQty,
             @Schema(description = "매출액(공급가액)") long saleAmount,
             @Schema(description = "교사용 수량(증정용 포함)") long freeQty,

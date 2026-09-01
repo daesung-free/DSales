@@ -56,6 +56,31 @@ public class School extends BaseEntity {
     @Column(length = 50)
     private String region;
 
+    /** 지역코드(레거시 cityCode). 지역명(city)과 짝 — 검색이 코드로도 들어온다. */
+    @Column(name = "city_code", length = 20)
+    private String cityCode;
+
+    /** 특약점L — 특약점 소재(레거시 custLoc). 화면은 "특약점L + 특약점N"을 이어 붙여 보여준다. */
+    @Column(name = "partner_loc", length = 100)
+    private String partnerLoc;
+
+    /**
+     * 모의고사 담당 특약점. ★<b>같은 학교라도 상품군에 따라 담당이 다르다</b> —
+     * 그래서 거래처 하나(custCode)로는 표현되지 않는다.
+     */
+    @Column(name = "mock_partner_code", length = 30)
+    private String mockPartnerCode;
+
+    @Column(name = "mock_partner_name", length = 100)
+    private String mockPartnerName;
+
+    /** IC 담당 특약점. 모의고사와 같은 이유로 따로 든다. */
+    @Column(name = "ic_partner_code", length = 30)
+    private String icPartnerCode;
+
+    @Column(name = "ic_partner_name", length = 100)
+    private String icPartnerName;
+
     /** 학교/학원명. */
     @Column(name = "school_name", length = 100)
     private String schoolName;
@@ -127,6 +152,22 @@ public class School extends BaseEntity {
      * 거래처구분·학교/학원구분·메모는 매출프로그램 수기 입력값이라 손대지 않는다(발주처 확정 2026-08).
      * 동기화로 다시 나타난 행은 미사용에서 되살린다.
      */
+    /**
+     * 학교/학원검색(29p) 전용 필드. ★<b>DSRE 동기화 대상이 아니다</b> —
+     * 상품군별 담당 특약점은 레거시 {@code schData}에만 있던 축이라 DSRE가 주지 않는다.
+     * 담당자가 수기로 넣고, 동기화가 덮어쓰지 않는다(보존형 동기화 원칙).
+     */
+    public void applySearchFields(String cityCode, String partnerLoc,
+                                  String mockPartnerCode, String mockPartnerName,
+                                  String icPartnerCode, String icPartnerName) {
+        this.cityCode = cityCode;
+        this.partnerLoc = partnerLoc;
+        this.mockPartnerCode = mockPartnerCode;
+        this.mockPartnerName = mockPartnerName;
+        this.icPartnerCode = icPartnerCode;
+        this.icPartnerName = icPartnerName;
+    }
+
     public void applyDsreFields(String custName, String city, String region, String schoolName, boolean isSchool) {
         this.custName = custName;
         this.city = city;

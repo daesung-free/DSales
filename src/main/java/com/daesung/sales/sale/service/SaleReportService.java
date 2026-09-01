@@ -137,7 +137,8 @@ public class SaleReportService {
                 tPurch += purchase;
                 tInQ += inQty;
             }
-            rows.add(new NetSalesResponse.Row(pid, (String) r[4], (String) r[5], (String) r[1], (String) r[2], ct,
+            rows.add(new NetSalesResponse.Row(pid, (String) r[4], (String) r[5], (String) r[1], (String) r[2],
+                    ct, contentLabel(ct),
                     saleQty, saleAmt, freeQty, freeAmt, retQty, returnRate(retQty, saleQty), retAmt,
                     netQty, netAmt, netTax, netAmt + netTax,
                     inQty, unitCost, purchase, profit, margin));
@@ -151,11 +152,26 @@ public class SaleReportService {
         Long totalPurchase = anyExternal ? tPurch : null;
         Long totalProfit = anyExternal ? (tNetAmt - tPurch) : null;
         Double totalMargin = (anyExternal && tNetAmt != 0) ? Math.round((double) totalProfit / tNetAmt * 100 * 10) / 10.0 : null;
-        NetSalesResponse.Row total = new NetSalesResponse.Row(null, null, null, "합계", null, null,
+        NetSalesResponse.Row total = new NetSalesResponse.Row(null, null, null, "합계", null, null, null,
                 tSaleQ, tSaleA, tFreeQ, tFreeA, tRetQ, returnRate(tRetQ, tSaleQ), tRetA,
                 tSaleQ - tRetQ, tNetAmt, tNetTax, tNetAmt + tNetTax,
                 anyExternal ? tInQ : null, null, totalPurchase, totalProfit, totalMargin);
         return new NetSalesResponse(from, to, filter, rows, total);
+    }
+
+    /**
+     * 콘텐츠구분 표기. 발주처 화면검토(2026-08-31)로 '외부콘텐츠' → <b>'매입 교재'</b>가 됐다.
+     * 코드값(EXTERNAL)은 그대로 두고 라벨만 바꾼다 — 저장 데이터·API 계약을 건드릴 일이 아니다.
+     */
+    private static String contentLabel(String code) {
+        if (code == null) {
+            return null;
+        }
+        try {
+            return com.daesung.sales.product.entity.ContentType.valueOf(code).label();
+        } catch (IllegalArgumentException e) {
+            return code;   // 알 수 없는 값은 그대로 — 숨기면 왜 비었는지 못 찾는다
+        }
     }
 
     /** 반품률 %(반품/매출). 매출이 0이면 나눌 수 없어 null — 0%로 두면 "반품 없음"으로 오해된다. */

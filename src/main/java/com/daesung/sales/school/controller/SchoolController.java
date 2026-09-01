@@ -91,4 +91,29 @@ public class SchoolController {
     public ApiResponse<SchoolSyncResult> sync() {
         return ApiResponse.success(schoolService.syncFromDsre());
     }
+
+    @Operation(summary = "학교/학원검색(29p)",
+            description = """
+                    레거시 `학교검색.vb`와 같은 필터 4종·같은 컬럼으로 조회한다.
+                    필터는 전부 **부분일치**이고, 빈 값은 조건에서 빠진다.
+
+                    ★**특약점명은 대표·모의고사·IC 세 축을 다 뒤진다** —
+                    같은 학교라도 상품군에 따라 담당 특약점이 달라, 대표만 보면 못 찾는다
+                    (레거시 원문: `custName like ? or mCustName like ? or iCustName like ?`).
+
+                    ‼️레거시는 특약점(모의고사)·특약점(IC) 컬럼을 **주석 처리해 화면에 안 띄운다**.
+                    여기서는 응답에 담아 둔다 — 화면 노출 여부는 발주처가 정할 일이고,
+                    빼 두면 필요해질 때 서버부터 다시 고쳐야 한다.
+
+                    화면명은 '학교검색' → '**학교/학원검색**'으로 확정(발주처 2026-08-31).""")
+    @GetMapping("/search")
+    public ApiResponse<java.util.List<com.daesung.sales.school.dto.SchoolSearchRow>> search(
+            @Parameter(description = "학교코드(부분일치)") @RequestParam(required = false) String schoolCode,
+            @Parameter(description = "학교/학원명(부분일치)") @RequestParam(required = false) String schoolName,
+            @Parameter(description = "지역(지역코드·지역명·관할 어디든 부분일치)")
+            @RequestParam(required = false) String region,
+            @Parameter(description = "특약점명(대표·모의고사·IC 세 축 부분일치)")
+            @RequestParam(required = false) String partnerName) {
+        return ApiResponse.success(schoolService.search(schoolCode, schoolName, region, partnerName));
+    }
 }

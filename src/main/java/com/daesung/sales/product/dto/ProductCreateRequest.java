@@ -41,7 +41,7 @@ public record ProductCreateRequest(
         @Schema(description = "사용 여부(미지정 시 true)", example = "true")
         Boolean useYn,
 
-        @Schema(description = "매출구분(매출액정리·순매출조회 집계기준)", example = "정상")
+        @Schema(description = "세부구분(구 '매출구분' — 발주처 2026-08-31 명칭 통일). 매출액정리·순매출조회 집계기준", example = "정상")
         String salesDivision,
 
         @Schema(description = "상품년도(32p)", example = "2026")

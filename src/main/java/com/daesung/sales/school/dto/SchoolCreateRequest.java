@@ -18,6 +18,18 @@ public record SchoolCreateRequest(
         @Schema(description = "학교 Y/N(기본 true)", example = "true") Boolean isSchool,
         @Schema(description = "학교/학원구분(SCHOOL/HAKWON, 기본 SCHOOL)", example = "SCHOOL") SchoolType schoolType,
         @Schema(description = "거래처구분(특약점/기타학원/B2B 등)", example = "특약점") String clientCategory,
-        @Schema(description = "메모") String memo
+        @Schema(description = "메모") String memo,
+
+        // ── 학교/학원검색(29p) 축 — DSRE 동기화가 주지 않아 수기로 받는다 ──
+        @Schema(description = "지역코드(레거시 cityCode). 검색 필터에 쓰인다", example = "11") String cityCode,
+        @Schema(description = "특약점L — 특약점 소재. 검색의 '특약점LN' = 이 값 + 특약점명", example = "강남")
+        String partnerLoc,
+        @Schema(description = """
+                모의고사 담당 특약점명. ★**같은 학교라도 상품군에 따라 담당이 다르다** —
+                대표 특약점(custName) 하나로는 표현되지 않는다.""")
+        String mockPartnerName,
+        @Schema(description = "모의고사 담당 특약점코드") String mockPartnerCode,
+        @Schema(description = "IC 담당 특약점명. 모의고사와 같은 이유로 따로 든다") String icPartnerName,
+        @Schema(description = "IC 담당 특약점코드") String icPartnerCode
 ) {
 }
