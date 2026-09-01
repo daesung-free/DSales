@@ -24,15 +24,14 @@ public record BomResponse(
             @Schema(description = "구성회차(0=구분 없음)") int round,
             @Schema(description = "시행예정일") LocalDate examDate,
             @Schema(description = "분리포장여부") boolean separatePack,
-            @Schema(description = "자재구분") MaterialType materialType,
-            @Schema(description = "물류비용 연계(작업구분 PACKTYPE)") Integer packType) {
+            @Schema(description = "자재구분") MaterialType materialType) {
     }
 
     public static BomResponse from(Product parent, List<BomItem> items) {
         List<Component> comps = items.stream()
                 .map(b -> new Component(b.getChild().getId(), b.getChild().getCode(),
                         b.getChild().getName(), b.getRatio(), b.getRound(), b.getExamDate(),
-                        b.isSeparatePack(), b.getMaterialType(), b.getPackType()))
+                        b.isSeparatePack(), b.getMaterialType()))
                 .toList();
         return new BomResponse(parent.getId(), parent.getCode(), parent.getName(), comps);
     }

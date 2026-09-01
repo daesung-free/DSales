@@ -66,8 +66,6 @@ public class BomItem extends SoftDeletableEntity {
     private MaterialType materialType;
 
     /** 물류비용 연계 — 물류비용등록(36p) 작업구분(PACKTYPE). 3=개별봉투(SET). */
-    @Column(name = "pack_type")
-    private Integer packType;
 
     public static BomItem create(Product parent, Product child, int ratio) {
         BomItem b = new BomItem();
@@ -79,12 +77,11 @@ public class BomItem extends SoftDeletableEntity {
 
     /** 33p 상세 필드 지정(선택 입력). 미지정 시 회차 0·분리포장 false로 남는다. */
     public BomItem applyDetail(Integer round, LocalDate examDate, Boolean separatePack,
-                               MaterialType materialType, Integer packType) {
+                               MaterialType materialType) {
         this.round = (round == null) ? 0 : round;
         this.examDate = examDate;
         this.separatePack = separatePack != null && separatePack;
         this.materialType = materialType;
-        this.packType = packType;
         return this;
     }
 }

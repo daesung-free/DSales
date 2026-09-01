@@ -1,0 +1,113 @@
+package com.daesung.sales.material.controller;
+
+import com.daesung.sales.common.response.ApiResponse;
+import com.daesung.sales.material.dto.MaterialBomRequest;
+import com.daesung.sales.material.dto.MaterialBomResponse;
+import com.daesung.sales.material.dto.MaterialRequest;
+import com.daesung.sales.material.dto.MaterialResponse;
+import com.daesung.sales.material.service.MaterialBomService;
+import com.daesung.sales.material.service.MaterialService;
+import com.daesung.sales.product.entity.MaterialType;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
+import java.util.List;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+
+/**
+ * 기초관리 · 자재 마스터 + 세트 자재 매칭(33p 도서관리 세트구성 탭).
+ * 근거: 발주처 「도서관리·제품수불부현황 데이터 구조 보완 요청안」(2026-08-31).
+ */
+@Tag(name = "기초관리 · 자재",
+        description = "자재 마스터(33p) + 세트·회차 ↔ 자재 매칭. 범용 자재는 여러 세트에 중복 매칭된다")
+@RestController
+@RequestMapping("/masters")
+@RequiredArgsConstructor
+public class MaterialController {
+
+    private final MaterialService materialService;
+    private final MaterialBomService materialBomService;
+
+    @Operation(summary = "자재 목록(33p)",
+            description = """
+                    자재구분·사용여부·검색어(자재코드/자재명)로 좁힌다.
+
+                    ★자재는 **상품이 아니다** — 팔지 않으므로 정가·공급률이 없다.
+                    별도 목록으로 관리하고 세트의 구성회차에 **선택 매칭**한다.""")
+    @GetMapping("/materials")
+    public ApiResponse<List<MaterialResponse>> list(
+            @Parameter(description = "자재구분 필터") @RequestParam(required = false) MaterialType materialType,
+            @Parameter(description = "사용여부 필터") @RequestParam(required = false) Boolean useYn,
+            @Parameter(description = "검색어(자재코드·자재명)") @RequestParam(required = false) String keyword) {
+        return ApiResponse.success(materialService.search(materialType, useYn, keyword));
+    }
+
+    @Operation(summary = "자재 등록",
+            description = "자재구분을 정확히 선택할 것 — **물류 작업비 단가를 고르는 키**다(발주처 강조).")
+    @PostMapping("/materials")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResponse<MaterialResponse> create(@Valid @RequestBody MaterialRequest req) {
+        return ApiResponse.success(materialService.create(req));
+    }
+
+    @Operation(summary = "자재 수정", description = "자재코드는 바뀌지 않는다(매칭이 참조하는 식별자).")
+    @PutMapping("/materials/{id}")
+    public ApiResponse<MaterialResponse> update(@PathVariable Long id,
+                                                @Valid @RequestBody MaterialRequest req) {
+        return ApiResponse.success(materialService.update(id, req));
+    }
+
+    @Operation(summary = "자재 삭제(논리)",
+            description = """
+                    ★**세트 구성에 매칭돼 있으면 거부**한다. 지우면 그 세트의 소요수량이
+                    조용히 사라져 물류 작업비가 줄어든다.
+                    더 안 쓸 자재는 `useYn=false`로 두면 목록에서만 빠지고 기존 매칭은 남는다.""")
+    @DeleteMapping("/materials/{id}")
+    public ApiResponse<Void> delete(@PathVariable Long id) {
+        materialService.delete(id, materialBomService.matchedCount(id));
+        return ApiResponse.success(null);
+    }
+
+    // ── 세트 ↔ 자재 매칭 ────────────────────────────────────────────────────────
+
+    @Operation(summary = "세트 자재 매칭 조회(33p 구성회차별 매칭 결과)",
+            description = "공통(회차 미지정) 먼저, 그다음 회차순.")
+    @GetMapping("/products/{setProductId}/materials")
+    public ApiResponse<MaterialBomResponse> boms(@PathVariable Long setProductId) {
+        return ApiResponse.success(materialBomService.list(setProductId));
+    }
+
+    @Operation(summary = "세트 자재 매칭 추가",
+            description = """
+                    회차를 비우면 **공통**(세트 전체에 붙는 범용 자재)이다.
+                    같은 (세트·회차·자재) 조합이 이미 있으면 **수량을 갱신**한다.
+
+                    ★소요수량은 세트 내 회차 반복까지 반영한 **최종 수량**이다 —
+                    4회차 구성의 OMR은 4, 세트에 한 번뿐인 쿠폰은 1.
+                    서버가 회차 수를 곱하지 않는다.""")
+    @PostMapping("/products/{setProductId}/materials")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResponse<MaterialBomResponse> addBom(@PathVariable Long setProductId,
+                                                   @Valid @RequestBody MaterialBomRequest req) {
+        return ApiResponse.success(materialBomService.add(setProductId, req));
+    }
+
+    @Operation(summary = "세트 자재 매칭 해제")
+    @DeleteMapping("/products/{setProductId}/materials/{bomId}")
+    public ApiResponse<MaterialBomResponse> removeBom(@PathVariable Long setProductId,
+                                                      @PathVariable Long bomId) {
+        return ApiResponse.success(materialBomService.remove(setProductId, bomId));
+    }
+}

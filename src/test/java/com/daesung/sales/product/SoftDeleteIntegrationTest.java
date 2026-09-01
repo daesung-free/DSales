@@ -105,7 +105,7 @@ class SoftDeleteIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("33p BOM 상세 — 자재구분·물류비용 연계·회차 저장, 같은 자재를 회차별로 등록 가능")
+    @DisplayName("33p BOM 상세 — 자재구분·회차 저장, 같은 자재를 회차별로 등록 가능")
     void bom_상세필드_회차별등록() {
         long set = product("SD-SET3", "회차세트");
         long paper = product("SD-PAPER", "시험지자재");
@@ -114,11 +114,11 @@ class SoftDeleteIntegrationTest extends IntegrationTestSupport {
         // 1회차: 시험지 + OMR / 2회차: 같은 시험지 자재 재사용
         put("/masters/products/" + set + "/bom", Map.of("components", List.of(
                 Map.of("childProductId", paper, "ratio", 1, "round", 1, "examDate", "2026-09-01",
-                        "separatePack", true, "materialType", "EXAM_PAPER", "packType", 3),
+                        "separatePack", true, "materialType", "EXAM_PAPER"),
                 Map.of("childProductId", omr, "ratio", 1, "round", 1,
-                        "materialType", "OMR", "packType", 3),
+                        "materialType", "OMR"),
                 Map.of("childProductId", paper, "ratio", 2, "round", 2, "examDate", "2026-10-01",
-                        "materialType", "EXAM_PAPER", "packType", 1))));
+                        "materialType", "EXAM_PAPER"))));
 
         JsonNode comps = data(get("/masters/products/" + set + "/bom")).path("components");
         assertThat(comps).as("회차별 3행이 모두 저장돼야 함(같은 자재 반복 허용)").hasSize(3);
@@ -135,12 +135,15 @@ class SoftDeleteIntegrationTest extends IntegrationTestSupport {
         }
         assertThat(r1).isNotNull();
         assertThat(r1.path("materialType").asText()).isEqualTo("EXAM_PAPER");
-        assertThat(r1.path("packType").asInt()).as("물류비용 연계(작업구분)").isEqualTo(3);
+        // ★물류비용 연계(packType)는 철회됐다(발주처 2026-08-31 구조보완요청안) —
+        //   "자재 목록에 물류비용 연계 항목을 두지 않습니다. 물류 작업비는 자재구분 단가를
+        //   곱해 계산하므로 별도 비용 연계 필드는 필요하지 않습니다."
+        assertThat(r1.hasNonNull("packType")).as("물류비용 연계는 더 이상 없다").isFalse();
         assertThat(r1.path("examDate").asText()).isEqualTo("2026-09-01");
         assertThat(r1.path("separatePack").asBoolean()).isTrue();
 
         assertThat(r2).as("같은 자재라도 회차가 다르면 별개 행").isNotNull();
         assertThat(r2.path("ratio").asInt()).isEqualTo(2);
-        assertThat(r2.path("packType").asInt()).isEqualTo(1);
+        assertThat(r2.path("materialType").asText()).isEqualTo("EXAM_PAPER");
     }
 }

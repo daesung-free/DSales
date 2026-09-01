@@ -42,11 +42,7 @@ public record BomRegisterRequest(
             @Schema(description = "자재구분 — 물류비용등록 작업구분과 1:1 대응. "
                     + "EXAM_PAPER(시험지)/ANSWER_SHEET(해설지)/OMR/LABEL(라벨)/ETC",
                     example = "EXAM_PAPER")
-            MaterialType materialType,
-
-            @Schema(description = "물류비용 연계 — 물류비용등록(36p) 작업구분(PACKTYPE). 3=개별봉투(SET)",
-                    example = "3")
-            Integer packType
+            MaterialType materialType
     ) {
     }
 }

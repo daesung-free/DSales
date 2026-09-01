@@ -131,7 +131,7 @@ public class ProductService {
                     .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                             "구성품 상품이 없습니다. id=" + c.childProductId()));
             saved.add(bomItemRepository.save(BomItem.create(parent, child, c.ratio())
-                    .applyDetail(c.round(), c.examDate(), c.separatePack(), c.materialType(), c.packType())));
+                    .applyDetail(c.round(), c.examDate(), c.separatePack(), c.materialType())));
         }
         parent.markAsSet();
         return BomResponse.from(parent, saved);

@@ -205,7 +205,7 @@ public class InventoryService {
         // 완제품 행: 비율·자재구분은 구성품에만 있는 값이라 비운다.
         BomWorkResponse.Line parentLine = new BomWorkResponse.Line(
                 parent.getId(), parent.getCode(), parent.getName(),
-                null, null, null, parentDelta, parentBal);
+                null, null, parentDelta, parentBal);
 
         // 구성품: 조립 −(비율×수량), 해체 +(비율×수량)
         List<BomWorkResponse.Line> compLines = new ArrayList<>();
@@ -217,7 +217,7 @@ public class InventoryService {
             compLines.add(new BomWorkResponse.Line(child.getId(), child.getCode(), child.getName(),
                     b.getRatio(),
                     (b.getMaterialType() == null) ? null : b.getMaterialType().name(),
-                    b.getPackType(), compDelta, compBal));
+                    compDelta, compBal));
         }
 
         return new BomWorkResponse(warehouse.getId(), warehouse.getName(), req.direction(),
