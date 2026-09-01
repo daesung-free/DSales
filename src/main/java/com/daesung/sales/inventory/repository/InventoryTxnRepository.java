@@ -179,6 +179,30 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
                                    @Param("warehouseType") String warehouseType);
 
     /**
+     * 폐기 <b>분류명별 요약</b>(10p). 근거: 발주처 화면검토(2026-08-31) —
+     * "폐기 내역 조회시에도 <b>분류명 별로</b> 해당 내역 요약(전체)/상세가 모두 조회 가능한지".
+     *
+     * <p>상세({@link #findDisposals})가 낱건이라면 이건 분류 단위 합계다.
+     * 수량은 원장에 음수로 들어 있어 양수로 뒤집는다 — "몇 부 버렸나"에 음수를 주면
+     * 읽는 사람이 매번 뒤집어야 한다.
+     *
+     * <p>반환 Object[]: [catCode, catName, 폐기건수, 폐기수량].
+     */
+    @Query(value = """
+            SELECT p.cat_code, p.cat_name, COUNT(*) AS cnt, COALESCE(SUM(-t.qty), 0) AS qty
+            FROM inventory_txn t JOIN products p ON p.id = t.product_id
+            WHERE t.txn_type = 'DISPOSE'
+              AND (CAST(:fromDate AS DATE) IS NULL OR t.trade_date >= :fromDate)
+              AND (CAST(:toDate   AS DATE) IS NULL OR t.trade_date <= :toDate)
+              AND (CAST(:warehouseId AS SIGNED) IS NULL OR t.warehouse_id = :warehouseId)
+            GROUP BY p.cat_code, p.cat_name
+            ORDER BY p.cat_code
+            """, nativeQuery = true)
+    List<Object[]> disposalSummaryByCategory(@Param("fromDate") LocalDate fromDate,
+                                             @Param("toDate") LocalDate toDate,
+                                             @Param("warehouseId") Long warehouseId);
+
+    /**
      * 상품별 <b>소요 기준 출고량</b>(자재 상세용). 근거: 발주처 구조보완요청안(2026-08-31)
      * "세트 출고분·회차 단독 출고분은 각각 세트·회차의 <b>매출+교사용 합계</b>(실제 출고된 수량)".
      *

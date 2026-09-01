@@ -163,7 +163,18 @@ public class ProductService {
         int unchanged = 0;
         List<Long> notFound = new ArrayList<>();
 
-        for (Long id : req.productIds().stream().distinct().toList()) {
+        // ★분류코드를 주면 그 분류 전체가 대상이다(발주처 2026-08-31: 수불부/단가 노출은
+        //   분류명(콘텐츠) 단위로 설정). 저장은 도서 단위 그대로라 단일 소스가 유지된다 —
+        //   분류별 설정을 따로 저장하면 도서 값과 어긋났을 때 어느 쪽이 이기는지가 또 규칙이 된다.
+        List<Long> targets = (req.catCode() != null && !req.catCode().isBlank())
+                ? productRepository.findIdsByCatCode(req.catCode().trim())
+                : (req.productIds() == null ? List.of() : req.productIds());
+        if (targets.isEmpty()) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "대상이 없습니다. 도서 id 목록이나 분류코드를 지정하세요.");
+        }
+
+        for (Long id : targets.stream().distinct().toList()) {
             var found = productRepository.findById(id);
             if (found.isEmpty()) {
                 notFound.add(id);
@@ -182,7 +193,7 @@ public class ProductService {
                     before, after);
             changed++;
         }
-        return new ProductFlagBulkResult(req.productIds().size(), changed, unchanged, notFound);
+        return new ProductFlagBulkResult(targets.size(), changed, unchanged, notFound);
     }
 
     /** 거래처별 단가 스냅샷(변경이력용). */

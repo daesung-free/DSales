@@ -58,4 +58,20 @@ public class DisposalController {
             @Parameter(description = "창고 id 필터") @RequestParam(required = false) Long warehouseId) {
         return ApiResponse.success(inventoryService.disposals(fromDate, toDate, productId, warehouseId));
     }
+
+    @Operation(summary = "폐기 분류명별 요약(10p)",
+            description = """
+                    분류(catCode) 단위로 폐기 건수·수량을 합산한다.
+                    낱건은 `GET /disposals`(상세)가 준다 — 발주처가 요청한 "요약(전체)/상세" 두 축이다.
+
+                    수량은 **양수**로 준다(원장에는 음수로 기록된다).""")
+    @GetMapping("/summary")
+    public ApiResponse<com.daesung.sales.inventory.dto.DisposalSummaryResponse> summary(
+            @Parameter(description = "폐기일 시작(yyyy-MM-dd). 미지정=전체") @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @Parameter(description = "폐기일 종료(yyyy-MM-dd). 미지정=전체") @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @Parameter(description = "창고 id 필터") @RequestParam(required = false) Long warehouseId) {
+        return ApiResponse.success(inventoryService.disposalSummary(fromDate, toDate, warehouseId));
+    }
 }

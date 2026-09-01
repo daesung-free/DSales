@@ -1,7 +1,6 @@
 package com.daesung.sales.product.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
-import jakarta.validation.constraints.NotEmpty;
 import jakarta.validation.constraints.Size;
 import java.util.List;
 
@@ -16,9 +15,19 @@ import java.util.List;
 @Schema(name = "ProductFlagBulkRequest", description = "도서 Y/N 항목 일괄 변경")
 public record ProductFlagBulkRequest(
 
-        @Schema(description = "대상 도서 id 목록(화면에서 선택한 행)",
-                requiredMode = Schema.RequiredMode.REQUIRED)
-        @NotEmpty
+        @Schema(description = """
+                분류코드. 이걸 주면 **그 분류의 도서 전체**가 대상이 된다(productIds는 무시).
+                근거: 발주처 구조보완요청안(2026-08-31) — "수불부/단가 노출 Y/N 값은
+                DSRE 병행 운영/매출프로그램 단독 운영 여부에 따라 결정되는 값으로,
+                **분류명(콘텐츠) 단위로 설정**됩니다."
+                ★저장은 도서 단위 그대로다(단일 소스 유지). 분류는 **거는 단위**다 —
+                분류별 설정을 따로 저장하면 도서 값과 어긋났을 때 어느 쪽이 이기는지가
+                또 하나의 규칙이 된다.""", example = "S2026A02")
+        String catCode,
+
+        @Schema(description = """
+                대상 도서 id 목록(화면에서 선택한 행). **catCode를 주면 무시된다.**
+                둘 중 하나는 있어야 한다 — 없으면 서비스가 거부한다.""")
         @Size(max = 1000, message = "한 번에 1000건까지 처리할 수 있습니다.")
         List<Long> productIds,
 

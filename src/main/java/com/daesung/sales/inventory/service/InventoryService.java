@@ -7,6 +7,7 @@ import com.daesung.sales.inventory.dto.BomWorkRequest;
 import com.daesung.sales.inventory.dto.BomWorkResponse;
 import com.daesung.sales.inventory.dto.DisposalRequest;
 import com.daesung.sales.inventory.dto.DisposalRecordRow;
+import com.daesung.sales.inventory.dto.DisposalSummaryResponse;
 import com.daesung.sales.inventory.dto.DisposalResponse;
 import com.daesung.sales.inventory.dto.InboundRequest;
 import com.daesung.sales.inventory.dto.InboundResponse;
@@ -322,6 +323,26 @@ public class InventoryService {
                         t.getProduct().getCatCode(), t.getProduct().getCatName(),
                         Math.abs(t.getQty()), t.getMemo(), null))
                 .toList();
+    }
+
+    /**
+     * 폐기 분류명별 요약(10p). 상세({@link #disposals})가 낱건이라면 이건 분류 단위 합계다.
+     * 수량은 양수로 뒤집어 낸다 — 원장은 음수지만 "몇 부 버렸나"에 음수를 주면 다시 읽어야 한다.
+     */
+    @Transactional(readOnly = true)
+    public DisposalSummaryResponse disposalSummary(LocalDate fromDate, LocalDate toDate,
+                                                   Long warehouseId) {
+        List<DisposalSummaryResponse.Row> rows = new ArrayList<>();
+        long totalCount = 0;
+        long totalQty = 0;
+        for (Object[] r : inventoryTxnRepository.disposalSummaryByCategory(fromDate, toDate, warehouseId)) {
+            long cnt = num(r[2]);
+            long qty = num(r[3]);
+            rows.add(new DisposalSummaryResponse.Row((String) r[0], (String) r[1], cnt, qty));
+            totalCount += cnt;
+            totalQty += qty;
+        }
+        return new DisposalSummaryResponse(fromDate, toDate, rows, totalCount, totalQty);
     }
 
     /**
