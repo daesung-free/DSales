@@ -179,6 +179,43 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
                                    @Param("warehouseType") String warehouseType);
 
     /**
+     * 상품별 <b>소요 기준 출고량</b>(자재 상세용). 근거: 발주처 구조보완요청안(2026-08-31)
+     * "세트 출고분·회차 단독 출고분은 각각 세트·회차의 <b>매출+교사용 합계</b>(실제 출고된 수량)".
+     *
+     * <p>같은 문서의 소요량 반영 기준을 그대로 담았다 —
+     * <ul>
+     *   <li><b>폐기</b> → 매출·교사용과 동일하게 <b>합산</b></li>
+     *   <li><b>반품</b> → 위탁출고 반품과 동일하게 <b>차감</b></li>
+     *   <li><b>대체</b> → 세트조립·해체만 반영(조립 시 소진·해체 시 복원),
+     *       <b>창고이동은 무관</b> — 창고만 옮긴 것은 소비가 아니다</li>
+     * </ul>
+     *
+     * <p>부호를 양수로 뒤집어 낸다. 원장은 출고를 음수로 적지만 "몇 부 나갔나"를 묻는
+     * 화면에 음수를 주면 읽는 사람이 매번 뒤집어야 한다.
+     *
+     * <p>증정(GIFT)도 포함한다 — 문서 문구는 "매출+교사용"이지만 증정도 실제로 물건이 나가고,
+     * 정본 수불부 컬럼에 증정 칸이 따로 없어 교사용·무상으로 묶여 있다.
+     *
+     * <p>반환 Object[]: [productId, 소요기준 출고량].
+     */
+    @Query(value = """
+            SELECT product_id,
+              COALESCE(SUM(CASE WHEN shipment_type IN ('NORMAL_SHIP','GIFT','TEACHER_USE') THEN -qty ELSE 0 END), 0)
+              + COALESCE(SUM(CASE WHEN txn_type = 'DISPOSE' THEN -qty ELSE 0 END), 0)
+              - COALESCE(SUM(CASE WHEN shipment_type = 'RETURN' THEN qty ELSE 0 END), 0)
+              + COALESCE(SUM(CASE WHEN txn_type IN ('BOM_ASSEMBLE','BOM_DISASSEMBLE') THEN qty ELSE 0 END), 0)
+                AS consumed
+            FROM inventory_txn
+            WHERE product_id IN (:productIds)
+              AND (CAST(:fromDate AS DATE) IS NULL OR trade_date >= :fromDate)
+              AND (CAST(:toDate   AS DATE) IS NULL OR trade_date <= :toDate)
+            GROUP BY product_id
+            """, nativeQuery = true)
+    List<Object[]> consumedQtyByProduct(@Param("productIds") java.util.Collection<Long> productIds,
+                                        @Param("fromDate") LocalDate fromDate,
+                                        @Param("toDate") LocalDate toDate);
+
+    /**
      * 도서입출고현황의 매입측(상품별 입고/취소) + 재고. 근거: 레거시 도서입출고현황.vb 입고/취소 버킷.
      * 입고=INBOUND qty&gt;0(원가금액=qty×unit_cost), 취소(매입취소)=INBOUND qty&lt;0(역분개), 재고=SUM(qty≤종료일)(정본 재고).
      * 상품 전 창고 합산. 반환 Object[]: [productId, code, name, catCode, catName, price,

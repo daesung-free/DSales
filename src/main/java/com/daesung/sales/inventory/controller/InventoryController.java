@@ -40,6 +40,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class InventoryController {
 
     private final InventoryService inventoryService;
+    private final com.daesung.sales.inventory.service.MaterialLedgerService materialLedgerService;
     private final ExcelExportUtil excel;
 
     @Operation(summary = "일반 입고 등록",
@@ -132,6 +133,36 @@ public class InventoryController {
                 inventoryService.stockLedger(fromDate, toDate, productId, warehouseId, warehouseType),
                 Heading.period("제품수불부현황", fromDate, toDate));
         return excel.asDownload(xlsx, "제품수불부.xlsx");
+    }
+
+    @Operation(summary = "제품수불부 자재 상세(11p 2단계)",
+            description = """
+                    요약(세트·회차)에서 한 행을 골랐을 때 **구성 자재가 몇 장 들어갔는지**.
+
+                    ★**자재 재고가 아니다.** 발주처 원문 — "자재 자체의 입고·이월을 반영한
+                    재고 잔량이 아니라 해당 세트 내 **소요량** 기준".
+                    자재를 얼마나 들여왔는지가 아니라, 세트가 팔린 만큼 얼마나 쓰였는지를 낸다.
+
+                    합계 = **세트 출고분 + 회차 단독 출고분**
+                    (각각 그 상품의 출고수량 × 세트당 소요수량)
+
+                    출고수량 = 매출 + 무상 + 교사용 + 폐기 − 반품 ± 세트조립/해체.
+                    ‼️**창고이동은 빠진다** — 창고만 옮긴 것은 소비가 아니다(발주처 확정).
+
+                    회차를 지정하면 그 회차 전용 자재 + 공통 자재만 나온다.
+                    ⚠️공통 자재의 '회차 단독 출고분'은 0이다 — 회차만 팔렸을 때 범용 자재가
+                    몇 개 필요한지 정의가 없어 임의로 곱하지 않는다(발주처 확인 대기).""")
+    @GetMapping("/ledger/materials")
+    public ApiResponse<com.daesung.sales.inventory.dto.MaterialLedgerResponse> materials(
+            @Parameter(description = "세트 상품 id", required = true) @RequestParam Long setProductId,
+            @Parameter(description = "회차 상품 id(미지정 시 세트 전체 자재)")
+            @RequestParam(required = false) Long roundProductId,
+            @Parameter(description = "시작일(yyyy-MM-dd). 미지정=전체") @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @Parameter(description = "종료일(yyyy-MM-dd). 미지정=전체") @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate) {
+        return ApiResponse.success(
+                materialLedgerService.materials(setProductId, roundProductId, fromDate, toDate));
     }
 
     @Operation(summary = "제품수불부 결산내역(연초~기준일 누적)",
