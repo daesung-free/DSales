@@ -41,8 +41,16 @@ public class ProductController {
     @GetMapping
     public ApiResponse<PageResponse<ProductResponse>> list(
             @Parameter(description = "검색어(상품코드 또는 상품명 부분일치)") @RequestParam(required = false) String keyword,
+            @Parameter(description = """
+                    수불부노출 필터 — 제품수불부(11p) 집계 대상만/제외만 보기.
+                    ★단가노출과 **별개 축**이다(발주처 2026-08-21 E-7로 분리).""")
+            @RequestParam(required = false) Boolean ledgerVisible,
+            @Parameter(description = """
+                    단가노출 필터 — 거래처별 단가를 매기는 도서만/제외만 보기.
+                    수불부엔 안 나와도 단가는 매기는 상품이 있어 수불부노출과 따로 둔다.""")
+            @RequestParam(required = false) Boolean priceVisible,
             @ParameterObject PageRequestDto pageReq) {
-        return ApiResponse.success(productService.findAll(keyword, pageReq.toPageable()));
+        return ApiResponse.success(productService.findAll(keyword, ledgerVisible, priceVisible, pageReq.toPageable()));
     }
 
     @Operation(summary = "도서 목록 엑셀 다운로드", description = "검색조건 전체를 xlsx로(도서관리 기본정보).")
@@ -60,10 +68,12 @@ public class ProductController {
                 new com.daesung.sales.common.excel.ExcelExportUtil.Col("대분류", "majorCategoryName"),
                 new com.daesung.sales.common.excel.ExcelExportUtil.Col("세부구분", "salesDivision"),
                 new com.daesung.sales.common.excel.ExcelExportUtil.Col("수불부노출", "ledgerVisible"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("단가노출", "priceVisible"),
                 new com.daesung.sales.common.excel.ExcelExportUtil.Col("재고관리", "stockManaged"),
                 new com.daesung.sales.common.excel.ExcelExportUtil.Col("사용여부", "useYn"));
         byte[] xlsx = excel.toXlsx("도서목록", cols,
-                productService.findAll(keyword, org.springframework.data.domain.PageRequest.of(0, 100000)).getContent());
+                productService.findAll(keyword, null, null,
+                        org.springframework.data.domain.PageRequest.of(0, 100000)).getContent());
         return excel.asDownload(xlsx, "도서목록.xlsx");
     }
 

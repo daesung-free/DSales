@@ -78,6 +78,15 @@ public class Product extends BaseEntity {
     private Integer supplyRate;
 
     /** 수불부노출 여부(제품수불부 집계 포함). 기본 true. */
+    /**
+     * 단가노출 — 거래처별 단가(34p) 화면에 이 도서를 띄울지.
+     * ★수불부노출과 <b>다른 축</b>이다(발주처 2026-08-21 E-7 지적으로 분리).
+     * "수불부엔 안 나오지만 단가는 매긴다"가 가능하다.
+     */
+    @Column(name = "price_visible", nullable = false)
+    private boolean priceVisible = true;
+
+    /** 수불부노출 — 제품수불부(11p) 집계에 포함할지. DSRE가 수불을 관리하는 상품은 빼야 한다. */
     @Column(name = "ledger_visible", nullable = false)
     private boolean ledgerVisible = true;
 
@@ -176,6 +185,7 @@ public class Product extends BaseEntity {
         m.put("productYear|상품년도", str(productYear));
         m.put("productType|상품구분", productType);
         m.put("ledgerVisible|수불부노출", String.valueOf(ledgerVisible));
+        m.put("priceVisible|단가노출", String.valueOf(priceVisible));
         m.put("webVisible|Web게시", String.valueOf(webVisible));
         m.put("stockManaged|재고관리", String.valueOf(stockManaged));
         return m;
@@ -186,12 +196,18 @@ public class Product extends BaseEntity {
      * 근거: 발주처 요청(1-3) "각 열을 일괄로 처리(전체선택 등)".
      */
     public void updateFlags(Boolean webVisible, Boolean taxFree, Boolean ledgerVisible,
-                            Boolean useYn, Boolean stockManaged) {
+                            Boolean useYn, Boolean stockManaged, Boolean priceVisible) {
         this.webVisible = keep(webVisible, this.webVisible);
         this.taxFree = keep(taxFree, this.taxFree);
         this.ledgerVisible = keep(ledgerVisible, this.ledgerVisible);
         this.useYn = keep(useYn, this.useYn);
         this.stockManaged = keep(stockManaged, this.stockManaged);
+        this.priceVisible = keep(priceVisible, this.priceVisible);
+    }
+
+    /** 단가노출 설정(등록·수정 경로 공용). */
+    public void applyPriceVisible(Boolean priceVisible) {
+        this.priceVisible = keep(priceVisible, this.priceVisible);
     }
 
     /** 요청에 값이 없으면(null) 기존 값을 그대로 둔다. */

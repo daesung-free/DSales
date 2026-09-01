@@ -56,6 +56,9 @@ public record ProductCreateRequest(
         @Schema(description = "수불부노출 여부(미지정 시 true)", example = "true")
         Boolean ledgerVisible,
 
+        @Schema(description = "단가노출 여부 — 거래처별 단가(34p) 화면 노출. 수불부노출과 별개 축(미지정 시 true)", example = "true")
+        Boolean priceVisible,
+
         @Schema(description = "Web게시 여부(미지정 시 false)", example = "false")
         Boolean webVisible,
 

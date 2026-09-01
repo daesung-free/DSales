@@ -30,6 +30,8 @@ public record ProductResponse(
         String productType,
         Integer supplyRate,
         boolean ledgerVisible,
+
+        boolean priceVisible,
         boolean webVisible,
         boolean stockManaged
 ) {
@@ -49,6 +51,6 @@ public record ProductResponse(
                 major,
                 (major == null) ? null : major.label(),
                 p.getProductYear(), p.getProductType(), p.getSupplyRate(),
-                p.isLedgerVisible(), p.isWebVisible(), p.isStockManaged());
+                p.isLedgerVisible(), p.isPriceVisible(), p.isWebVisible(), p.isStockManaged());
     }
 }

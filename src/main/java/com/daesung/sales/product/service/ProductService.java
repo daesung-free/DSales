@@ -41,11 +41,16 @@ public class ProductService {
     private final SalesDivisionRepository salesDivisionRepository;
     private final SalesDivisionService salesDivisionService;
 
-    public PageResponse<ProductResponse> findAll(String keyword, Pageable pageable) {
-        Page<Product> page = (keyword == null || keyword.isBlank())
-                ? productRepository.findAll(pageable)
-                : productRepository.findByCodeContainingIgnoreCaseOrNameContainingIgnoreCase(
-                        keyword, keyword, pageable);
+    /**
+     * 도서 목록. 검색어 + <b>노출 플래그 2종</b>으로 좁힌다.
+     *
+     * <p>★수불부노출과 단가노출은 <b>다른 축</b>이다(발주처 2026-08-21 E-7로 분리).
+     * 수불부엔 안 나와도 단가는 매기는 상품이 있어 한 값으로 묶을 수 없다.
+     */
+    public PageResponse<ProductResponse> findAll(String keyword, Boolean ledgerVisible,
+                                                 Boolean priceVisible, Pageable pageable) {
+        String kw = (keyword == null || keyword.isBlank()) ? null : keyword.trim();
+        Page<Product> page = productRepository.search(kw, ledgerVisible, priceVisible, pageable);
         // 세부구분 마스터는 몇 줄짜리라 한 번에 읽어 맵으로 쓴다 — 상품마다 조회하면 목록 한 장에 수백 번이 된다.
         Map<String, SalesDivision> divisions = divisionsByCode();
         return PageResponse.of(page.map(p -> ProductResponse.from(p, divisions.get(p.getSalesDivision()))));
@@ -86,6 +91,9 @@ public class ProductService {
                 req.salesDivision(), req.ledgerVisibleOrDefault(), req.webVisibleOrDefault(),
                 req.stockManagedOrDefault());
         product.applyExtra(req.productYear(), req.productType(), req.supplyRate());
+        // 단가노출은 미지정 시 수불부노출을 따른다 — V60 분리 이전 데이터와 같은 모양이 되게.
+        product.applyPriceVisible((req.priceVisible() != null)
+                ? req.priceVisible() : req.ledgerVisibleOrDefault());
         Product saved = productRepository.save(product);
         return ProductResponse.from(saved, findDivision(saved.getSalesDivision()));
     }
@@ -101,6 +109,8 @@ public class ProductService {
                 req.catCode(), req.catName(), req.useYn(),
                 req.salesDivision(), req.ledgerVisible(), req.webVisible(), req.stockManaged());
         product.applyExtra(req.productYear(), req.productType(), req.supplyRate());
+        // 수정에서는 미지정이면 기존 값을 그대로 둔다(다른 필드와 같은 규칙).
+        product.applyPriceVisible(req.priceVisible());
         masterChangeLogService.recordDiff(MasterEntityType.PRODUCT, product.getId(), product.getCode(),
                 before, product.auditSnapshot());
         return ProductResponse.from(product, findDivision(product.getSalesDivision()));
@@ -183,7 +193,7 @@ public class ProductService {
             Product p = found.get();
             Map<String, String> before = p.auditSnapshot();
             p.updateFlags(req.webVisible(), req.taxFree(), req.ledgerVisible(),
-                    req.useYn(), req.stockManaged());
+                    req.useYn(), req.stockManaged(), req.priceVisible());
             Map<String, String> after = p.auditSnapshot();
             if (before.equals(after)) {
                 unchanged++;

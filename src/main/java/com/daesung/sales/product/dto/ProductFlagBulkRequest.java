@@ -40,6 +40,9 @@ public record ProductFlagBulkRequest(
         @Schema(description = "수불부노출 — 미지정이면 건드리지 않음", example = "true")
         Boolean ledgerVisible,
 
+        @Schema(description = "단가노출 — 미지정이면 건드리지 않음. 수불부노출과 별개 축", example = "true")
+        Boolean priceVisible,
+
         @Schema(description = "사용여부 — 미지정이면 건드리지 않음", example = "true")
         Boolean useYn,
 
@@ -49,7 +52,7 @@ public record ProductFlagBulkRequest(
 ) {
     /** 바꿀 플래그가 하나도 없으면 무의미한 요청이다(전 건을 훑고 아무것도 안 한다). */
     public boolean hasNoFlag() {
-        return webVisible == null && taxFree == null && ledgerVisible == null
+        return webVisible == null && taxFree == null && ledgerVisible == null && priceVisible == null
                 && useYn == null && stockManaged == null;
     }
 }
