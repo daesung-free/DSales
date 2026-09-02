@@ -370,7 +370,7 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("교재식 반품 — 도서 단위 반품가능 조회 + 범위초과 거부 + 공급률 수정 허용(2026-08-05 확정)")
+    @DisplayName("교재식 반품 — 도서 단위 반품가능 조회 + 초과 시 경고(차단 아님) + 공급률 수정 허용")
     void 반품교재식_범위검증() {
         Long wh = createId("/masters/warehouses", Map.of("code", "RB-WH", "name", "반품창고", "type", "MAIN"));
         Long p = createId("/masters/products",
@@ -392,18 +392,13 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
         assertThat(line.path("returnableQty").asLong()).isEqualTo(30);
         assertThat(line.path("supplyRate").asInt()).isEqualTo(70);
 
-        // 범위 초과(31 > 30) → 409 RETURN_EXCEEDS
-        JsonNode over = post("/sales/return-inbound", Map.of(
-                "returnDate", "2026-08-10", "partnerId", partner, "warehouseId", wh,
-                "items", List.of(Map.of("productId", p, "unitPrice", 10000, "supplyRate", 70, "qty", 31))));
-        assertThat(over.path("success").asBoolean()).isFalse();
-        assertThat(over.path("error").path("code").asText()).isEqualTo("RETURN_EXCEEDS");
-
-        // 범위 내(20) → 성공, 이후 반품가능 30−20=10
+        // 범위 내(20) → 성공, 경고 없음, 이후 반품가능 30−20=10
         JsonNode ok = post("/sales/return-inbound", Map.of(
                 "returnDate", "2026-08-10", "partnerId", partner, "warehouseId", wh,
                 "items", List.of(Map.of("productId", p, "unitPrice", 10000, "supplyRate", 70, "qty", 20))));
         assertThat(ok.path("success").asBoolean()).as("정상 반품: %s", ok).isTrue();
+        assertThat(ok.path("data").path("warnings"))
+                .as("★범위 안이면 경고가 없어야 한다 — 아무 때나 뜨면 담당자가 무시하게 된다").isEmpty();
         JsonNode after = rowByField(data(get("/sales/returnable?partnerId=" + partner)).path("rows"),
                 "productCode", "RB-BK");
         assertThat(after.path("returnedQty").asLong()).isEqualTo(20);
@@ -422,11 +417,27 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
                 "productCode", "RB-BK");
         assertThat(after2.path("returnableQty").asLong()).isEqualTo(5);
 
-        // 잔여(5)를 넘기면 여전히 거부된다 — 범위 자체는 살아 있다
-        JsonNode stillOver = post("/sales/return-inbound", Map.of(
+        // ★잔여(5)를 넘겨도 **막지 않는다** — 경고로 알린다(발주처 화면검토 2026-08-31 화면28:
+        //   "출고내역보다 반품 등록 내역이 더 많이 입력되는 경우 경고 알림(alert)을 넣어주시기 바랍니다").
+        //   현장에서는 컷오버 전 출고분이 반품으로 들어온다 — 막으면 실제로 들어온 물건을 못 적는다.
+        JsonNode over = post("/sales/return-inbound", Map.of(
                 "returnDate", "2026-08-10", "partnerId", partner, "warehouseId", wh,
                 "items", List.of(Map.of("productId", p, "unitPrice", 10000, "supplyRate", 55, "qty", 6))));
-        assertThat(stillOver.path("error").path("code").asText()).isEqualTo("RETURN_EXCEEDS");
+        assertThat(over.path("success").asBoolean()).as("초과여도 등록된다: %s", over).isTrue();
+
+        JsonNode warns = over.path("data").path("warnings");
+        assertThat(warns).as("★초과분을 숨기지 않는다 — 조용히 통과시키면 담당자가 모른다").hasSize(1);
+        assertThat(warns.get(0).path("code").asText()).isEqualTo("RETURN_EXCEEDS");
+        assertThat(warns.get(0).path("returnableQty").asLong()).as("잔여 5").isEqualTo(5);
+        assertThat(warns.get(0).path("requestedQty").asInt()).isEqualTo(6);
+        assertThat(warns.get(0).path("exceededQty").asLong()).as("6 − 5").isEqualTo(1);
+        assertThat(warns.get(0).path("message").asText()).contains("RB-BK");
+
+        // 장부에는 실제로 들어간다: 30 − 20 − 5 − 6 = −1
+        JsonNode after3 = rowByField(data(get("/sales/returnable?partnerId=" + partner)).path("rows"),
+                "productCode", "RB-BK");
+        assertThat(after3.path("returnableQty").asLong())
+                .as("음수로 보여야 고칠 수 있다 — 0으로 깎으면 초과분이 사라진다").isEqualTo(-1);
     }
 
     @Test

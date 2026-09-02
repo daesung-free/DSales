@@ -151,11 +151,30 @@ public class SaleController {
         return ApiResponse.success(saleService.returnable(partnerId, productId));
     }
 
-    @Operation(summary = "반품입고(29p 물류 진입점, 교재식)",
-            description = "물류가 반품 물량을 입고하면 한 트랜잭션으로 매출 반품(RETURN) 라인 자동 생성 + 물류창고 재고 +복구. "
-                    + "교재식: 반품수량은 (누적 판매출고 − 기반품) 범위 내여야 하며(초과 시 409), 정가·공급률은 원 출고건과 일치해야 함. "
-                    + "재고관리 상품만 재고 복구(모의고사 등 인원기반은 이벤트 없음). 원본 출고번호(선택) 역추적 링크. "
-                    + "반품 가능내역은 GET /sales/returnable로 먼저 조회.")
+    @Operation(summary = "반품입고(29p·28p 물류 진입점, 교재식)",
+            description = """
+                    물류가 반품 물량을 입고하면 한 트랜잭션으로 매출 반품(RETURN) 라인 자동 생성
+                    + 물류창고 재고 +복구. 반품 가능내역은 `GET /sales/returnable`로 먼저 조회한다.
+
+                    ### ★초과해도 막지 않는다 — 경고로 알린다
+                    발주처 화면검토(2026-08-31) 화면28 원문 —
+                    "출고내역보다 반품 등록 내역이 더 많이 입력되는 경우 **경고 알림(alert)**을 넣어주시기 바랍니다."
+
+                    경고를 요구했지 차단을 요구하지 않았고, 같은 회신에서 재고 음수·초과정산 차단도
+                    함께 걷어냈다. 현장에서는 컷오버 전 출고분이나 다른 경로로 나간 물건이 반품으로 들어온다 —
+                    막으면 **실제로 들어온 물건을 장부에 못 적는다**.
+
+                    · 초과분은 응답 `warnings[]`에 담긴다(코드 `RETURN_EXCEEDS`,
+                      반품가능수량·요청수량·초과수량·표시문구 포함). **`warnings`가 비어 있지 않으면 화면은 alert을 띄울 것.**
+                    · 서버 로그에도 남는다. 조용히 통과시키면 담당자는 자기가 초과 입력한 줄 모른다.
+                    · ⚠️종전에는 409 RETURN_EXCEEDS로 거부했다(2026-09-02 변경).
+
+                    ### 공급률
+                    원 출고건 값을 **표시**만 하고 **수정 가능**하다(발주처 확정 2026-08-04·08-05).
+                    그래서 범위 판정은 **도서 단위 합계**로만 한다 — 공급률을 판정 키에 넣으면
+                    담당자가 값을 바꾸는 순간 원 출고건을 못 찾아 거부되어 사실상 잠금이 된다.
+
+                    재고관리 상품만 재고 복구(모의고사 등 인원기반은 이벤트 없음). 원본 출고번호(선택) 역추적 링크.""")
     @PostMapping("/return-inbound")
     public ApiResponse<SalesEntryResponse> returnInbound(@Valid @RequestBody ReturnInboundRequest req) {
         return ApiResponse.success(saleService.returnInbound(req));

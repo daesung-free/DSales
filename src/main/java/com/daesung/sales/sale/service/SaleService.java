@@ -40,12 +40,14 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@Slf4j
 @RequiredArgsConstructor
 public class SaleService {
 
@@ -85,7 +87,7 @@ public class SaleService {
         for (SalesEntryRequest.Item item : req.items()) {
             resolved.add(resolve(item, partner));
         }
-        assertReturnsWithinRange(partner.getId(), resolved);
+        List<SalesEntryResponse.Warning> warnings = collectReturnWarnings(partner.getId(), resolved);
 
         // 2단계: 저장 + 재고 반영.
         String datePart = req.salesDate().format(YYYYMMDD);
@@ -132,7 +134,7 @@ public class SaleService {
             lines.add(new SalesEntryResponse.Line(salesNo, product.getId(), product.getCode(),
                     item.shipmentType(), r.salesCategory(), item.qty(), supplyAmount, tax, totalAmount, stockBalance));
         }
-        return new SalesEntryResponse(partner.getId(), partner.getName(), lines);
+        return new SalesEntryResponse(partner.getId(), partner.getName(), lines, warnings);
     }
 
     /** 매출등록 라인 해석 결과(정가·공급률 자동적용까지 확정된 상태). */
@@ -173,13 +175,16 @@ public class SaleService {
     }
 
     /**
-     * 매출등록 요청 내 반품(RETURN) 라인의 교재식 범위검증. 반품 라인이 없으면 조회조차 하지 않는다.
-     * 같은 요청의 판매출고(SALE)는 반품가능수량에 선반영 — 최종 장부 기준으로 판정하므로 라인 순서와 무관.
+     * 매출등록 요청 내 반품(RETURN) 라인의 교재식 <b>초과 확인</b>. 반품 라인이 없으면 조회조차 하지 않는다.
+     * 같은 요청의 판매출고(SALE)는 반품가능수량에 선반영 — 최종 장부 기준으로 보므로 라인 순서와 무관.
+     *
+     * <p>★막지 않고 <b>경고를 모아 돌려준다</b>(발주처 2026-08-31 화면28). {@code consumeReturnable} 참고.
      */
-    private void assertReturnsWithinRange(Long partnerId, List<ResolvedItem> resolved) {
+    private List<SalesEntryResponse.Warning> collectReturnWarnings(Long partnerId, List<ResolvedItem> resolved) {
+        List<SalesEntryResponse.Warning> warnings = new ArrayList<>();
         boolean hasReturn = resolved.stream().anyMatch(r -> r.salesCategory() == SalesCategory.RETURN);
         if (!hasReturn) {
-            return;
+            return warnings;
         }
         Map<String, Long> returnable = loadReturnable(partnerId);
         for (ResolvedItem r : resolved) {
@@ -189,9 +194,14 @@ public class SaleService {
         }
         for (ResolvedItem r : resolved) {
             if (r.salesCategory() == SalesCategory.RETURN) {
-                consumeReturnable(returnable, r.product(), r.item().qty());
+                SalesEntryResponse.Warning w =
+                        consumeReturnable(returnable, r.product(), r.item().qty());
+                if (w != null) {
+                    warnings.add(w);
+                }
             }
         }
+        return warnings;
     }
 
     /**
@@ -211,6 +221,7 @@ public class SaleService {
 
         String datePart = req.returnDate().format(YYYYMMDD);
         List<SalesEntryResponse.Line> lines = new ArrayList<>();
+        List<SalesEntryResponse.Warning> warnings = new ArrayList<>();
 
         // 교재식 반품: 거래처의 도서×정가×공급률별 반품가능수량(누적 출고−기반품) 맵. 한 요청 내 여러 라인은 누적 차감.
         Map<String, Long> returnable = loadReturnable(req.partnerId());
@@ -220,7 +231,10 @@ public class SaleService {
                     .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                             "상품이 없습니다. id=" + item.productId()));
 
-            consumeReturnable(returnable, product, item.qty());
+            SalesEntryResponse.Warning w = consumeReturnable(returnable, product, item.qty());
+            if (w != null) {
+                warnings.add(w);
+            }
 
             // 반품도 출고와 같은 기준으로 계산되어야 한다 — 할인 매출을 정가 기준으로 되돌리면
             // 반품 금액이 원래 판 금액보다 커진다.
@@ -254,7 +268,7 @@ public class SaleService {
             lines.add(new SalesEntryResponse.Line(salesNo, product.getId(), product.getCode(),
                     ShipmentType.RETURN, SalesCategory.RETURN, item.qty(), supplyAmount, tax, totalAmount, stockBalance));
         }
-        return new SalesEntryResponse(partner.getId(), partner.getName(), lines);
+        return new SalesEntryResponse(partner.getId(), partner.getName(), lines, warnings);
     }
 
     /**
@@ -284,18 +298,34 @@ public class SaleService {
     }
 
     /**
-     * 반품 1건 범위검증 + 잔여 차감(한 요청 내 여러 라인은 누적 차감).
-     * 반품수량 ≤ (그 도서의 누적 판매출고 − 기반품). 정가·공급률은 검증에 쓰지 않고 입력값을 그대로 반영한다.
+     * 반품 1건 <b>초과 여부 확인</b> + 잔여 차감(한 요청 내 여러 라인은 누적 차감).
+     *
+     * <p>★<b>막지 않는다.</b> 발주처 화면검토(2026-08-31) 화면28 —
+     * "출고내역보다 반품 등록 내역이 더 많이 입력되는 경우 <b>경고 알림(alert)</b>을 넣어주시기 바랍니다."
+     * 경고를 요구했지 차단을 요구하지 않았고, 같은 회신에서 재고 음수·초과정산 차단도 함께 걷어냈다(§1).
+     * 현장에서는 컷오버 전 출고분이나 다른 경로로 나간 물건이 반품으로 들어온다 —
+     * 막으면 실제로 들어온 물건을 장부에 못 적는다.
+     *
+     * <p>대신 <b>초과분을 숨기지 않는다</b>: 응답에 경고를 담고 서버 로그에도 남긴다.
+     * 조용히 통과시키면 담당자는 자기가 초과 입력한 줄 모른다.
+     *
+     * @return 초과했으면 경고, 아니면 null
      */
-    private void consumeReturnable(Map<String, Long> returnable, Product product, int qty) {
+    private SalesEntryResponse.Warning consumeReturnable(Map<String, Long> returnable,
+                                                         Product product, int qty) {
         String key = returnableKey(product.getId());
         long remain = returnable.getOrDefault(key, 0L);
-        if (qty > remain) {
-            throw new BusinessException(ErrorCode.RETURN_EXCEEDS,
-                    "반품가능수량 초과: 상품 " + product.getCode()
-                            + " → 반품가능 " + remain + ", 요청 " + qty);
+        returnable.put(key, remain - qty);        // 초과분은 음수로 남는다(다음 라인이 이어서 차감)
+        if (qty <= remain) {
+            return null;
         }
-        returnable.put(key, remain - qty);
+        long over = qty - Math.max(remain, 0L);
+        log.warn("반품 초과(차단 안 함, 발주처 2026-08-31): productId={} 반품가능={} 요청={} 초과={}",
+                product.getId(), remain, qty, over);
+        return new SalesEntryResponse.Warning("RETURN_EXCEEDS",
+                product.getId(), product.getCode(), Math.max(remain, 0L), qty, over,
+                "반품 수량이 출고 잔여를 초과했습니다. 도서 " + product.getCode()
+                        + " → 반품가능 " + Math.max(remain, 0L) + ", 요청 " + qty + " (초과 " + over + ")");
     }
 
     /**
@@ -325,8 +355,12 @@ public class SaleService {
                     a.getProductId(), a.getProductCode(), a.getProductName(),
                     unitPrice, supplyRate, saleQty, returned, saleQty - returned));
         }
+        // ★0만 걸러낸다(더 반품할 것도, 잘못된 것도 없는 도서). **음수는 보여준다** —
+        //   반품 초과를 허용한 뒤로(발주처 2026-08-31 화면28) 잔여가 음수가 될 수 있는데,
+        //   >0 으로 거르면 초과된 도서가 화면에서 통째로 사라져 담당자가 고칠 방법이 없어진다.
+        //   보여야 고친다. (위탁 미결 remainingQty에서 같은 이유로 이미 한 번 고쳤다.)
         List<ReturnableResponse.Row> rows = byProduct.values().stream()
-                .filter(r -> r.returnableQty() > 0)
+                .filter(r -> r.returnableQty() != 0)
                 .toList();
         return new ReturnableResponse(partnerId, rows);
     }
