@@ -101,4 +101,17 @@ public interface DsreGateway {
      * @return 실제로 바뀐 행 수(0 또는 1)
      */
     int markReadyToShip(int reqCd);
+
+    /**
+     * 진행상태 전환(조건부). <b>현재 상태가 {@code fromCode}일 때만</b> 바꾼다.
+     * 근거: 자료요청서 3-2(가) — 발송준비중 "되돌릴 때는 수동 전환", 발송완료 "체크박스 다건 일괄".
+     *
+     * <p>★조건부인 이유는 {@link #markReadyToShip}과 같다. 조회한 뒤 바꾸기까지 사이에
+     * DSRE2 데스크톱이 먼저 상태를 옮길 수 있다(같은 행을 두 시스템이 쓴다).
+     * 무조건 UPDATE면 남이 발송완료한 건을 우리가 되돌려 놓는다.
+     * 0이 오면 "그 사이 누가 바꿨다"는 뜻이므로 성공으로 보고하면 안 된다.
+     *
+     * @return 실제로 바뀐 행 수(0 또는 1)
+     */
+    int changeState(int reqCd, String fromCode, String toCode);
 }

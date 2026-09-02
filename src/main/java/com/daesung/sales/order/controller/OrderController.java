@@ -7,10 +7,12 @@ import com.daesung.sales.dsre.gateway.DsreGateway;
 import com.daesung.sales.dsre.gateway.DsreOrderRow;
 import com.daesung.sales.dsre.gateway.LogisMode;
 import com.daesung.sales.dsre.gateway.OrderState;
+import com.daesung.sales.order.dto.OrderStateChangeRequest;
 import com.daesung.sales.order.service.OrderService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import java.time.LocalDate;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
@@ -20,6 +22,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
@@ -30,15 +33,18 @@ import org.springframework.web.bind.annotation.RestController;
  * <p><b>상태 원본은 DSRE2 {@code tbl_request_info.STATE}다.</b> 우리는 복사본을 두지 않고 그 값을
  * 직접 읽고 쓴다 — 그래서 동기화 로직이 없고, 우리가 바꾸면 DSRE2 데스크톱에 즉시 보인다.
  *
- * <p>발주처 확정(2026-08-11) "DSRE는 그대로 사용"에 따라 전이는 대부분 DSRE2 데스크톱 소관이고,
- * <b>우리가 바꾸는 건 거래명세서 발급(상품준비중 → 발송준비중) 하나뿐</b>이다.
- * 그것만 예외인 이유는 명세서 출력이 원래부터 매출프로그램 기능이었고(레거시 리포트 21종,
- * DSRE2엔 명세서 화면 없음), 발주처가 그 시점을 자동 전환으로 정했기 때문이다(3-2(가) 5번).
+ * <p>발주처 확정(2026-08-11) "DSRE는 그대로 사용"에 따라 전이는 대부분 DSRE2 데스크톱 소관이다.
+ * <b>우리 몫은 물류 담당자가 하는 뒤쪽 세 전이</b>다(자료요청서 3-2(가).진행상태) —
+ * 거래명세서 출력(S→W, 자동) · <b>되돌리기(W→S, 수동)</b> · <b>발송완료(W→D, 다건 일괄)</b>.
+ * 명세서 출력이 원래부터 매출프로그램 기능이었고(레거시 리포트 21종, DSRE2엔 명세서 화면 없음),
+ * 되돌리기·발송처리도 같은 물류 담당자가 같은 화면에서 하는 일이라 함께 둔다.
+ * 앞쪽(접수·검수·취소)은 order 사이트와 DSRE2 소관이라 건드리지 않는다.
  *
  * <p>DSRE 연동이 꺼져 있으면(daesung.dsre.enabled=false) 이 화면 자체가 뜨지 않는다.
  */
 @Tag(name = "주문 · 진행상태",
-        description = "DSRE2 주문·진행상태 조회 + 거래명세서 발급 전환. 나머지 상태 전이는 DSRE2 소관.")
+        description = "DSRE2 주문·진행상태 조회 + 물류 담당자 몫 전이(명세서 발급·되돌리기·발송완료). "
+                + "접수·검수·취소는 order 사이트와 DSRE2 소관.")
 @RestController
 @RequestMapping("/orders")
 @ConditionalOnProperty(name = "daesung.dsre.enabled", havingValue = "true")
@@ -57,12 +63,47 @@ public class OrderController {
                     · 상태 원본은 DSRE2라 여기서 바꾸면 DSRE2 데스크톱에도 즉시 반영된다(복사본 없음).
                     · **상품준비중일 때만** 바뀐다. 이미 발송완료 등이면 되돌리지 않고
                       `changed=false`로 응답한다 — 명세서 재출력은 실무에서 흔해 오류로 막지 않는다.
-                    · 되돌리기(발송준비중 → 상품준비중)는 DSRE2에서 수동으로 한다.
+                    · 되돌리기(발송준비중 → 상품준비중)와 발송완료는 `POST /orders/state`로 한다.
                     · DSRE2엔 이력 테이블이 없어, 우리가 바꾼 건은 상태변경 이력에 남긴다.""")
     @PostMapping("/{reqCd}/issue-statement")
     public ApiResponse<OrderService.IssueResult> issueStatement(
             @Parameter(description = "신청번호(REQ_CD)", example = "78331") @PathVariable int reqCd) {
         return ApiResponse.success(orderService.issueStatement(reqCd));
+    }
+
+    @Operation(summary = "진행상태 다건 일괄 전환(되돌리기 · 발송완료)",
+            description = """
+                    체크한 주문들의 진행상태를 한 번에 바꾼다.
+                    근거: 자료요청서 3-2(가).진행상태 — 발송준비중 "**되돌릴 때는 수동 전환**",
+                    발송완료 "물류가 발송 처리(**체크박스 다건 일괄** 포함)".
+
+                    ### 바꿀 수 있는 전이
+                    | 현재 | → | 목표 | 쓰임 |
+                    |---|---|---|---|
+                    | 상품준비중(S) | → | 발송준비중(W) | 거래명세서 출력(자동 전환의 수동판) |
+                    | 발송준비중(W) | → | 상품준비중(S) | **되돌리기(한 칸)** |
+                    | 발송준비중(W) | → | 발송완료(D) | **발송 처리** |
+
+                    · 표에 **없는 전이는 거부**한다. 아무 상태로나 뛰게 열면 접수완료가 곧바로
+                      발송완료가 되는 주문이 생기고, 검수·준비 단계가 있으나 마나가 된다.
+                    · 되돌리기는 **한 칸(W→S)** 뿐이다 — 발송완료를 되돌리는 경로는 정본에 없다.
+                    · 접수·검수·취소는 order 사이트와 DSRE2 데스크톱 소관이라 여기서 못 바꾼다.
+
+                    ### 실패 처리
+                    · **한 건이 안 된다고 전체를 실패시키지 않는다.** 100건을 체크했는데
+                      이미 발송완료된 1건 때문에 전부 다시 고르는 것은 실무에서 못 쓴다.
+                      건별로 `changed`와 넘어간 `message`를 준다 — `skipped`가 0이 아니면 확인할 것.
+                    · 조회와 변경 사이에 DSRE2 데스크톱이 먼저 옮겼으면 **성공으로 치지 않는다**
+                      (조건부 UPDATE). "그 사이 바뀌었다"고 알려준다.
+
+                    ### 이력
+                    바꾼 건은 상태변경 이력(`status_history`)에 남는다. DSRE2는 제자리 UPDATE라
+                    이전 값이 사라져서, 우리가 안 남기면 **되돌린 사실 자체가 어디에도 없다**.
+                    `reason`은 선택이지만 되돌리기는 적어 두는 편이 좋다(감사에서 묻는 것은 "왜"다).""")
+    @PostMapping("/state")
+    public ApiResponse<OrderService.BulkStateResult> changeState(
+            @Valid @RequestBody OrderStateChangeRequest req) {
+        return ApiResponse.success(orderService.changeState(req.reqCds(), req.toState(), req.reason()));
     }
 
     @Operation(summary = "주문·진행상태 조회",

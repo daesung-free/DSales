@@ -613,6 +613,16 @@ public class JdbcDsreGateway implements DsreGateway {
         return dsreJdbcTemplate.update(READY_TO_SHIP_SQL, reqCd);
     }
 
+    // 진행상태 전환. 현재 상태가 일치할 때만 — 조회와 UPDATE 사이에 DSRE2 데스크톱이 먼저 옮길 수 있다.
+    // ★SQL은 완성된 상수 하나다(조각 결합 금지 — 정적분석 게이트규칙). 상태값도 바인딩으로 넘긴다.
+    private static final String CHANGE_STATE_SQL =
+            "UPDATE tbl_request_info SET STATE=? WHERE REQ_CD=? AND STATE=?";
+
+    @Override
+    public int changeState(int reqCd, String fromCode, String toCode) {
+        return dsreJdbcTemplate.update(CHANGE_STATE_SQL, toCode, reqCd, fromCode);
+    }
+
     /**
      * 집계·저장함수 결과를 Integer로. MySQL이 COUNT()·FUNC_REQINWON_GET()을 BIGINT로 돌려줘
      * Integer 직접 캐스팅은 ClassCastException이 난다(실제로 발생).

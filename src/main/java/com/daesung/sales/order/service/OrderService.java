@@ -7,6 +7,11 @@ import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.dsre.gateway.DsreGateway;
 import com.daesung.sales.dsre.gateway.DsreOrderRow;
 import com.daesung.sales.dsre.gateway.OrderState;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Service;
@@ -63,5 +68,102 @@ public class OrderService {
 
     /** 발급 처리 결과. */
     public record IssueResult(int reqCd, boolean changed, String stateCode, String stateName, String message) {
+    }
+
+    // ── 진행상태 수동 전환(자료요청서 3-2(가)) ──────────────────────────────────────
+
+    /**
+     * <b>우리가 바꿔도 되는 전이</b>. 정본(자료요청서 3-2(가).진행상태)에서 물류 담당자 몫으로
+     * 적힌 것만 담는다 — 나머지(접수·검수·취소)는 order 사이트와 DSRE2 데스크톱 소관이다.
+     *
+     * <pre>
+     *   S → W   거래명세서 출력(자동). 수동으로도 넘길 수 있게 열어 둔다
+     *   W → S   ★되돌리기 — "되돌릴 때는 수동 전환"
+     *   W → D   발송완료 — "물류가 발송 처리(체크박스 다건 일괄)"
+     * </pre>
+     *
+     * <p>★<b>표에 없는 전이는 거부한다.</b> 아무 상태로나 뛰게 열어 두면 접수완료가 곧바로
+     * 발송완료가 되는 주문이 생기고, 그러면 검수·준비 단계가 있으나 마나가 된다.
+     * 되돌리기도 <b>한 칸(W→S)</b>만이다 — 발송완료를 되돌리는 경로는 정본에 없다.
+     */
+    private static final Map<OrderState, Set<OrderState>> ALLOWED = Map.of(
+            OrderState.PREPARING, Set.of(OrderState.READY_TO_SHIP),
+            OrderState.READY_TO_SHIP, Set.of(OrderState.PREPARING, OrderState.SHIPPED));
+
+    /**
+     * 진행상태 <b>다건 일괄</b> 전환. 발송완료 처리와 되돌리기가 같은 경로를 쓴다.
+     *
+     * <p>★<b>한 건이 안 된다고 전체를 실패시키지 않는다.</b> 100건을 체크한 담당자가
+     * 이미 발송완료된 1건 때문에 전부 되돌려 다시 고르는 것은 실무에서 쓸 수 없다.
+     * 대신 <b>건별로 사유를 붙여</b> 돌려주고, 요청 전체가 잘못된 경우(우리가 만들 수 없는
+     * 목표 상태)만 예외로 막는다 — 그건 데이터 문제가 아니라 화면 오류다.
+     *
+     * <p>바꾼 건은 {@code status_history}에 남긴다. DSRE2는 제자리 UPDATE라 이전 값이 사라져,
+     * 우리가 남기지 않으면 <b>되돌린 사실 자체가 어디에도 없다</b>.
+     */
+    @Transactional
+    public BulkStateResult changeState(List<Integer> reqCds, OrderState to, String reason) {
+        if (reqCds == null || reqCds.isEmpty()) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "대상 주문이 없습니다.");
+        }
+        boolean reachable = ALLOWED.values().stream().anyMatch(s -> s.contains(to));
+        if (!reachable) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "매출프로그램에서 바꿀 수 없는 상태입니다: " + to.label() + "(" + to.code() + "). "
+                            + "접수·검수·취소는 order 사이트와 DSRE2 소관입니다.");
+        }
+        List<ItemResult> results = new ArrayList<>();
+        int changed = 0;
+        for (Integer reqCd : new LinkedHashSet<>(reqCds)) {   // 같은 건이 두 번 체크돼도 한 번만
+            ItemResult r = changeOne(reqCd, to, reason);
+            results.add(r);
+            if (r.changed()) {
+                changed++;
+            }
+        }
+        return new BulkStateResult(results.size(), changed, results.size() - changed, results);
+    }
+
+    private ItemResult changeOne(int reqCd, OrderState to, String reason) {
+        DsreOrderRow before = dsreGateway.findOrder(reqCd).orElse(null);
+        if (before == null) {
+            return skip(reqCd, null, to, "DSRE2에 해당 주문이 없습니다.");
+        }
+        String fromCode = before.stateCode();
+        OrderState from = OrderState.ofCode(fromCode).orElse(null);
+        if (from == to) {
+            return skip(reqCd, fromCode, to, "이미 " + to.label() + " 상태입니다.");
+        }
+        if (from == null || !ALLOWED.getOrDefault(from, Set.of()).contains(to)) {
+            return skip(reqCd, fromCode, to,
+                    OrderState.labelOf(fromCode) + " → " + to.label() + " 전환은 허용되지 않습니다.");
+        }
+        if (dsreGateway.changeState(reqCd, fromCode, to.code()) == 0) {
+            // 조회와 UPDATE 사이에 DSRE2 데스크톱이 먼저 옮겼다. 성공으로 보고하면 담당자가 속는다.
+            return skip(reqCd, fromCode, to, "그 사이 다른 곳에서 상태가 바뀌었습니다. 새로고침 후 다시 시도하세요.");
+        }
+        // ★사유가 비어 있어도 기록은 남긴다 — 되돌린 사실이 사라지는 것보다 낫다.
+        String why = (reason == null || reason.isBlank())
+                ? (to == OrderState.PREPARING ? "수동 되돌리기(사유 미입력)" : "수동 전환(사유 미입력)")
+                : reason;
+        statusHistoryService.record(StatusEntityType.DSRE_ORDER, (long) reqCd, "STATE",
+                fromCode, to.code(), why);
+        return new ItemResult(reqCd, true, fromCode, OrderState.labelOf(fromCode),
+                to.code(), to.label(), null);
+    }
+
+    private static ItemResult skip(int reqCd, String fromCode, OrderState to, String message) {
+        return new ItemResult(reqCd, false, fromCode, OrderState.labelOf(fromCode),
+                to.code(), to.label(), message);
+    }
+
+    /** 건별 전환 결과. {@code changed=false}면 {@code message}에 넘어간 이유가 있다. */
+    public record ItemResult(int reqCd, boolean changed,
+                             String fromCode, String fromName,
+                             String toCode, String toName, String message) {
+    }
+
+    /** 일괄 전환 결과. {@code skipped}가 0이 아니면 건별 사유를 확인해야 한다. */
+    public record BulkStateResult(int requested, int changed, int skipped, List<ItemResult> results) {
     }
 }
