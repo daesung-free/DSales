@@ -102,6 +102,12 @@ public class PartnerSupplyRateService {
         return PartnerSupplyRateResponse.from(getOrThrow(partnerId, majorCategory));
     }
 
+    /** 매핑 존재 여부. 업로드에서 신규/수정을 나눠 세는 데 쓴다(숫자만 봐도 사고를 알아챈다). */
+    @Transactional(readOnly = true)
+    public boolean exists(Long partnerId, MajorCategory majorCategory) {
+        return rateRepository.findByPartnerIdAndMajorCategory(partnerId, majorCategory).isPresent();
+    }
+
     /** 등록/수정(upsert). 거래처 존재 검증. */
     @Transactional
     public PartnerSupplyRateResponse upsert(Long partnerId, MajorCategory majorCategory,

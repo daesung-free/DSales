@@ -19,6 +19,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -42,6 +43,7 @@ public class PartnerSupplyRateController {
 
     private final PartnerSupplyRateService service;
     private final ExcelExportUtil excel;
+    private final com.daesung.sales.product.service.ProductUploadService uploadService;
 
     @Operation(summary = "거래처별 공급률 목록",
             description = """
@@ -116,4 +118,30 @@ public class PartnerSupplyRateController {
         service.delete(partnerId, majorCategory);
         return ApiResponse.success(null);
     }
+
+    @Operation(summary = "거래처별 단가 엑셀 업로드(33p 탭3)",
+            description = """
+                    거래처별 공급률·할인액을 일괄 등록·수정한다.
+                    키는 **거래처코드 × 대분류** — 도서 단위가 아니다
+                    (정본 34p "같은 거래처라도 **대분류별** 공급률이 다르게 설정 가능").
+
+                    컬럼: **거래처코드·대분류**(필수) + 공급률·할인액·Web게시·사용여부(선택).
+                    대분류는 코드값(`TEXTBOOK`)이나 한글명(`교재`) 아무 쪽이나 된다.
+
+                    ### 양식 = 목록 다운로드 파일 그대로
+                    `/export`로 받은 파일에서 값만 고쳐 다시 올리면 된다. **헤더 이름으로 읽어서**
+                    열 순서를 바꾸거나 메모 열을 끼워 넣어도 되고, 모르는 열은 무시한다.
+                    **필수 열이 없으면 파일 전체를 거부**한다(양식이 틀린 것이라 행 단위 오류로 흘리면 안 된다).
+
+                    ### 결과
+                    행마다 `CREATED / UPDATED / ERROR` + 엑셀 행번호. **한 행이 틀려도 나머지는 들어간다.**
+                    ‼️`created`/`updated` 숫자를 볼 것 — 고치려고 올렸는데 전부 신규면 거래처코드가 안 맞은 것이다.""")
+    @PostMapping(value = "/upload", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<com.daesung.sales.product.dto.MasterUploadResponse> upload(
+            @io.swagger.v3.oas.annotations.Parameter(description = "거래처별단가 xlsx", required = true)
+            @org.springframework.web.bind.annotation.RequestPart("file")
+            org.springframework.web.multipart.MultipartFile file) {
+        return ApiResponse.success(uploadService.uploadSupplyRates(file));
+    }
+
 }

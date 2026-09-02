@@ -15,17 +15,28 @@ package com.daesung.sales.product.entity;
  */
 public enum MaterialType {
     /** 시험지 */
-    EXAM_PAPER,
+    EXAM_PAPER("시험지"),
     /** 해설지 */
-    ANSWER_SHEET,
+    ANSWER_SHEET("해설지"),
     /** OMR 카드 */
-    OMR,
+    OMR("OMR"),
     /** 라벨 */
-    LABEL,
+    LABEL("라벨"),
     /** 단행본·책자 */
-    BOOK,
+    BOOK("단행본"),
     /** 기타 자재 */
-    ETC;
+    ETC("기타");
+
+    private final String label;
+
+    MaterialType(String label) {
+        this.label = label;
+    }
+
+    /** 화면·엑셀 표기. 담당자는 EXAM_PAPER가 아니라 '시험지'라고 적는다. */
+    public String label() {
+        return label;
+    }
 
     /**
      * 물류비용등록(36p)에서 어느 단가 컬럼을 볼지. 발주처 확정 매핑이다.

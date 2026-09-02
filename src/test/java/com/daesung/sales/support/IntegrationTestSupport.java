@@ -132,6 +132,35 @@ public abstract class IntegrationTestSupport {
         return rest.exchange("/api/v1" + path, HttpMethod.GET, new HttpEntity<>(h), byte[].class);
     }
 
+    /**
+     * 인증 multipart 업로드(엑셀 업로드 테스트용).
+     * 파일명을 넘기는 이유: 서버가 확장자를 보고 파서를 고를 수 있어서 실제 요청과 같은 모양이어야 한다.
+     */
+    protected JsonNode multipart(String path, byte[] bytes, String filename) {
+        HttpHeaders h = new HttpHeaders();
+        h.setContentType(MediaType.MULTIPART_FORM_DATA);
+        h.setBearerAuth(token());
+
+        org.springframework.core.io.ByteArrayResource part =
+                new org.springframework.core.io.ByteArrayResource(bytes) {
+                    @Override
+                    public String getFilename() {
+                        return filename;
+                    }
+                };
+        org.springframework.util.MultiValueMap<String, Object> form =
+                new org.springframework.util.LinkedMultiValueMap<>();
+        form.add("file", part);
+
+        ResponseEntity<String> resp = rest.exchange(
+                "/api/v1" + path, HttpMethod.POST, new HttpEntity<>(form, h), String.class);
+        try {
+            return om.readTree(resp.getBody());
+        } catch (Exception e) {
+            throw new RuntimeException("응답 파싱 실패: " + resp.getBody(), e);
+        }
+    }
+
     private JsonNode exchange(HttpMethod method, String path, Object body, boolean auth) {
         HttpHeaders h = new HttpHeaders();
         h.setContentType(MediaType.APPLICATION_JSON);

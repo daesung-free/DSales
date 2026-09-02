@@ -34,6 +34,8 @@ import org.springframework.web.bind.annotation.RestController;
 @RequestMapping("/masters/products")
 public class ProductController {
 
+    private final com.daesung.sales.product.service.ProductUploadService uploadService;
+
     private final ProductService productService;
     private final com.daesung.sales.common.excel.ExcelExportUtil excel;
 
@@ -135,6 +137,53 @@ public class ProductController {
     public ApiResponse<ProductFlagBulkResult> bulkUpdateFlags(
             @Valid @RequestBody ProductFlagBulkRequest req) {
         return ApiResponse.success(productService.bulkUpdateFlags(req));
+    }
+
+
+    private static final String UPLOAD_COMMON = """
+
+            ### 양식 = **목록 다운로드 파일 그대로**
+            별도 양식을 만들지 않았다. `/export`로 받은 파일에서 **값만 고쳐 다시 올리면 된다**.
+            · **헤더 이름으로 읽는다** — 열 순서를 바꾸거나 메모 열을 끼워 넣어도 된다.
+              위치로 읽으면 열 하나만 밀려도 정가 자리에 수량이 조용히 들어간다.
+            · 모르는 열은 무시한다. **필수 열이 없으면 파일 전체를 거부**한다 —
+              양식이 틀린 파일을 행 단위 오류로 흘리면 수백 줄의 같은 오류를 보고서야 알게 된다.
+            · Y/N 칸은 `Y·예·O·1` / `N·아니오·X·0`을 받는다. 알 수 없는 값은 **오류**다
+              ("Yes"를 조용히 false로 읽으면 끈 적 없는 항목이 꺼진다).
+
+            ### 결과
+            행마다 `CREATED / UPDATED / ERROR` + 엑셀 행번호를 돌려준다.
+            **한 행이 틀려도 나머지는 들어간다** — 수백 줄에서 한 줄 오타로 전부 되돌리면
+            담당자는 고칠 곳을 못 찾은 채 처음부터 다시 해야 한다.
+            ‼️`created`/`updated` 숫자를 볼 것. 고치려고 올렸는데 전부 신규면 **코드가 안 맞은 것**이다.""";
+
+    @Operation(summary = "도서 기본정보 엑셀 업로드(33p 탭1)",
+            description = "도서 마스터를 일괄 등록·수정한다. **도서코드가 키** — 있으면 고치고 없으면 만든다.\n\n"
+                    + "★**빈 칸은 '지우기'가 아니라 '그대로'다.** 담당자는 고칠 열만 채워 올린다. "
+                    + "빈 칸을 지움으로 처리하면 정가만 고치려던 사람이 분류·공급률을 통째로 날린다."
+                    + UPLOAD_COMMON)
+    @PostMapping(value = "/upload", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<com.daesung.sales.product.dto.MasterUploadResponse> uploadProducts(
+            @io.swagger.v3.oas.annotations.Parameter(description = "도서목록 xlsx", required = true)
+            @org.springframework.web.bind.annotation.RequestPart("file")
+            org.springframework.web.multipart.MultipartFile file) {
+        return ApiResponse.success(uploadService.uploadProducts(file));
+    }
+
+    @Operation(summary = "세트구성(BOM) 엑셀 업로드(33p 탭2)",
+            description = "세트별 구성품을 일괄 등록한다. 컬럼: **세트도서코드·구성도서코드·소요수량** "
+                    + "(선택: 구성회차·시행예정일·분리포장·자재구분).\n\n"
+                    + "★한 세트의 구성품이 **여러 행**으로 오고, 등록은 **세트 단위 전량 교체**다. "
+                    + "그래서 **한 세트의 구성품 중 하나라도 틀리면 그 세트는 통째로 건너뛴다** — "
+                    + "일부만 넣으면 구성품이 빠진 반쪽 BOM이 만들어지고, 그 세트로 조립하면 자재가 안 빠진다. "
+                    + "다른 세트는 영향받지 않는다."
+                    + UPLOAD_COMMON)
+    @PostMapping(value = "/bom/upload", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<com.daesung.sales.product.dto.MasterUploadResponse> uploadBom(
+            @io.swagger.v3.oas.annotations.Parameter(description = "세트구성 xlsx", required = true)
+            @org.springframework.web.bind.annotation.RequestPart("file")
+            org.springframework.web.multipart.MultipartFile file) {
+        return ApiResponse.success(uploadService.uploadBom(file));
     }
 
 }
