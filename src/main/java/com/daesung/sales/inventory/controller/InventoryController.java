@@ -24,6 +24,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import com.daesung.sales.common.query.MultiSelect;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -80,20 +81,31 @@ public class InventoryController {
                     ★수량 부호는 **그대로** 준다. 이고는 출발(−)·도착(+) 두 줄이고
                     세트작업도 완제품(+)·구성품(−)으로 갈린다 — 방향이 곧 정보다.
 
-                    출고·폐기·반품·실사는 제외한다(각자 화면이 따로 있다).""")
+                    출고·폐기·반품·실사는 제외한다(각자 화면이 따로 있다).
+
+                    도서·창고·작업구분 모두 **다중선택**이다(좌측 트리뷰 체크박스, 2026-08-31 공통 요구).
+                    단수 파라미터도 그대로 살아 있고, 복수와 같이 오면 합집합이다.""")
     @GetMapping("/records")
     public ApiResponse<List<StockRecordRow>> records(
             @Parameter(description = "처리일 시작(yyyy-MM-dd). 미지정=전체") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
             @Parameter(description = "처리일 종료(yyyy-MM-dd). 미지정=전체") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
-            @Parameter(description = "도서(상품) id 필터") @RequestParam(required = false) Long productId,
-            @Parameter(description = "창고 id 필터") @RequestParam(required = false) Long warehouseId,
+            @Parameter(description = "도서(상품) id 필터(단건)") @RequestParam(required = false) Long productId,
+            @Parameter(description = "도서(상품) id **다중선택**") @RequestParam(required = false)
+            List<Long> productIds,
+            @Parameter(description = "창고 id 필터(단건)") @RequestParam(required = false) Long warehouseId,
+            @Parameter(description = "창고 id **다중선택**") @RequestParam(required = false)
+            List<Long> warehouseIds,
             @Parameter(description = "작업구분 INBOUND(입고)/TRANSFER(단순이고)/"
-                    + "BOM_ASSEMBLE(세트조립)/BOM_DISASSEMBLE(세트해체). 미지정=전체")
-            @RequestParam(required = false) com.daesung.sales.inventory.entity.TxnType kind) {
-        return ApiResponse.success(
-                inventoryService.stockRecords(fromDate, toDate, productId, warehouseId, kind));
+                    + "BOM_ASSEMBLE(세트조립)/BOM_DISASSEMBLE(세트해체). 미지정=전체 (단건)")
+            @RequestParam(required = false) com.daesung.sales.inventory.entity.TxnType kind,
+            @Parameter(description = "작업구분 **다중선택** — 예: INBOUND,TRANSFER")
+            @RequestParam(required = false) List<com.daesung.sales.inventory.entity.TxnType> kinds) {
+        return ApiResponse.success(inventoryService.stockRecords(fromDate, toDate,
+                MultiSelect.merge(productId, productIds),
+                MultiSelect.merge(warehouseId, warehouseIds),
+                MultiSelect.merge(kind, kinds)));
     }
 
     @Operation(summary = "제품수불부 조회",

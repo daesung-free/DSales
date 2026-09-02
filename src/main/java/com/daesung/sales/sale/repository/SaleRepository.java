@@ -14,6 +14,7 @@ import com.daesung.sales.sale.entity.Sale;
 import com.daesung.sales.salestype.entity.SalesCategory;
 import com.daesung.sales.salestype.entity.ShipmentType;
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.List;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -248,19 +249,30 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
             """, nativeQuery = true)
     List<Object[]> monthlyNetSales(@Param("year") int year, @Param("productId") Long productId);
 
-    /** 통합 매출 조회(기간·회계구분·출고유형·거래처·취소포함 여부 필터). null이면 미적용. */
+    /**
+     * 통합 매출 조회(기간·회계구분·출고유형·거래처·취소포함 여부 필터).
+     * 근거: 발주처 화면검토(2026-08-31) 화면3 — "무상/유상/반품/입고 <b>중복선택</b> 체크박스".
+     *
+     * <p>세 축 모두 <b>다중선택</b>이다. 축마다 {@code anyXxx} 플래그가 짝으로 붙는데,
+     * 이는 "이 축은 안 걸렀다"는 뜻이고 그때 {@code in} 절 자체를 건너뛴다.
+     * 빈 컬렉션을 {@code in ()} 으로 넘기면 DB마다 다르게 깨지므로 플래그로 분기한다
+     * ({@code MultiSelect.orPlaceholder} 참고).
+     */
     @Query("select s from Sale s "
             + "where (:from is null or s.salesDate >= :from) "
             + "and (:to is null or s.salesDate <= :to) "
-            + "and (:salesCategory is null or s.salesCategory = :salesCategory) "
-            + "and (:shipmentType is null or s.shipmentType = :shipmentType) "
-            + "and (:partnerId is null or s.partner.id = :partnerId) "
+            + "and (:anyCategory = true or s.salesCategory in :salesCategories) "
+            + "and (:anyShipmentType = true or s.shipmentType in :shipmentTypes) "
+            + "and (:anyPartner = true or s.partner.id in :partnerIds) "
             + "and (:includeCanceled = true or s.canceled = false)")
     Page<Sale> search(@Param("from") LocalDate from,
                       @Param("to") LocalDate to,
-                      @Param("salesCategory") SalesCategory salesCategory,
-                      @Param("shipmentType") ShipmentType shipmentType,
-                      @Param("partnerId") Long partnerId,
+                      @Param("anyCategory") boolean anyCategory,
+                      @Param("salesCategories") Collection<SalesCategory> salesCategories,
+                      @Param("anyShipmentType") boolean anyShipmentType,
+                      @Param("shipmentTypes") Collection<ShipmentType> shipmentTypes,
+                      @Param("anyPartner") boolean anyPartner,
+                      @Param("partnerIds") Collection<Long> partnerIds,
                       @Param("includeCanceled") boolean includeCanceled,
                       Pageable pageable);
 

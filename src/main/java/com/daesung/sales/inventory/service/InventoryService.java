@@ -3,6 +3,7 @@ package com.daesung.sales.inventory.service;
 import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.sequence.SequenceService;
 import com.daesung.sales.common.exception.ErrorCode;
+import com.daesung.sales.common.query.MultiSelect;
 import com.daesung.sales.inventory.dto.BomWorkRequest;
 import com.daesung.sales.inventory.dto.BomWorkResponse;
 import com.daesung.sales.inventory.dto.DisposalRequest;
@@ -285,14 +286,19 @@ public class InventoryService {
      * 여기서는 방향이 곧 정보다 — 이고는 출발(−)·도착(+) 두 줄이고
      * 세트작업도 완제품(+)·구성품(−)으로 갈린다. 절댓값으로 바꾸면 그 구분이 사라진다.
      *
-     * @param kind 작업구분 필터(TxnType). null이면 네 종류 전부
+     * <p>도서·창고는 <b>다중선택</b>이다(좌측 트리뷰 체크박스, 2026-08-31 공통 요구).
+     *
+     * @param kinds 작업구분 필터(TxnType). 비면 네 종류 전부
      */
     @Transactional(readOnly = true)
     public List<StockRecordRow> stockRecords(LocalDate fromDate, LocalDate toDate,
-                                             Long productId, Long warehouseId, TxnType kind) {
-        java.util.List<TxnType> kinds = (kind == null) ? RECORD_KINDS : java.util.List.of(kind);
+                                             List<Long> productIds, List<Long> warehouseIds,
+                                             List<TxnType> kinds) {
+        List<TxnType> effectiveKinds = MultiSelect.isAny(kinds) ? RECORD_KINDS : kinds;
         return inventoryTxnRepository
-                .findStockRecords(kinds, fromDate, toDate, productId, warehouseId).stream()
+                .findStockRecords(effectiveKinds, fromDate, toDate,
+                        MultiSelect.isAny(productIds), MultiSelect.orPlaceholder(productIds, 0L),
+                        MultiSelect.isAny(warehouseIds), MultiSelect.orPlaceholder(warehouseIds, 0L)).stream()
                 .map(t -> new StockRecordRow(
                         t.getId(), t.getTradeDate(), StockRecordRow.kindOf(t.getTxnType()),
                         t.getWarehouse().getId(), t.getWarehouse().getName(),
@@ -314,8 +320,10 @@ public class InventoryService {
      */
     @Transactional(readOnly = true)
     public List<DisposalRecordRow> disposals(LocalDate fromDate, LocalDate toDate,
-                                             Long productId, Long warehouseId) {
-        return inventoryTxnRepository.findDisposals(fromDate, toDate, productId, warehouseId).stream()
+                                             List<Long> productIds, List<Long> warehouseIds) {
+        return inventoryTxnRepository.findDisposals(fromDate, toDate,
+                        MultiSelect.isAny(productIds), MultiSelect.orPlaceholder(productIds, 0L),
+                        MultiSelect.isAny(warehouseIds), MultiSelect.orPlaceholder(warehouseIds, 0L)).stream()
                 .map(t -> new DisposalRecordRow(
                         t.getId(), t.getRefNo(), t.getTradeDate(),
                         t.getWarehouse().getId(), t.getWarehouse().getName(),
@@ -331,11 +339,14 @@ public class InventoryService {
      */
     @Transactional(readOnly = true)
     public DisposalSummaryResponse disposalSummary(LocalDate fromDate, LocalDate toDate,
-                                                   Long warehouseId) {
+                                                   List<Long> productIds, List<Long> warehouseIds) {
         List<DisposalSummaryResponse.Row> rows = new ArrayList<>();
         long totalCount = 0;
         long totalQty = 0;
-        for (Object[] r : inventoryTxnRepository.disposalSummaryByCategory(fromDate, toDate, warehouseId)) {
+        // ★상세(disposals)와 똑같은 필터를 넘긴다 — 갈리면 요약과 상세가 서로 다른 말을 한다.
+        for (Object[] r : inventoryTxnRepository.disposalSummaryByCategory(fromDate, toDate,
+                MultiSelect.isAny(productIds), MultiSelect.orPlaceholder(productIds, 0L),
+                MultiSelect.isAny(warehouseIds), MultiSelect.orPlaceholder(warehouseIds, 0L))) {
             long cnt = num(r[2]);
             long qty = num(r[3]);
             rows.add(new DisposalSummaryResponse.Row((String) r[0], (String) r[1], cnt, qty));

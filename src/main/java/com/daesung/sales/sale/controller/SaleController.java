@@ -1,6 +1,7 @@
 package com.daesung.sales.sale.controller;
 
 import com.daesung.sales.common.dto.PageRequestDto;
+import com.daesung.sales.common.query.MultiSelect;
 import com.daesung.sales.common.response.ApiResponse;
 import com.daesung.sales.common.response.PageResponse;
 import com.daesung.sales.sale.dto.BookInoutResponse;
@@ -78,26 +79,48 @@ public class SaleController {
                     | 창고(2) | 물류창고/위탁창고 | 응답 `warehouseName` |
 
                     · 매출 원장의 거래분류는 **구분(상세)에서 파생**된다 — 따로 저장하지 않아 둘이 어긋날 수 없다.
-                    · `tradeClass=INBOUND`(입고)·`DISPOSE`(폐기)는 **재고 원장**의 거래라
-                      이 조회에서는 **빈 결과**를 준다. 조건을 무시하고 전체를 주면
-                      '폐기'로 걸렀는데 매출이 잔뜩 나오는 꼴이 된다.""")
+
+                    ### 다중선택(체크박스) — 2026-08-31 발주처 요구
+                    네 축 모두 **복수 파라미터**를 받는다. 값을 콤마로 잇거나 파라미터를 반복하면 된다
+                    (`tradeClasses=FREE,RETURN` 또는 `tradeClasses=FREE&tradeClasses=RETURN`).
+
+                    · **단수 파라미터는 그대로 살아 있고**, 복수와 같이 오면 **합집합**이다.
+                      단수는 '원소가 하나인 다중선택'으로 본다.
+                    · `tradeClasses`에 **입고·폐기가 섞이면 그 값만 무시**한다 — 재고 원장의
+                      거래라 매출에는 없다. '무상+입고'를 고르면 무상은 정상 조회된다.
+                      단 **입고·폐기만** 골랐다면 남는 조건이 없어 **빈 결과**다.
+                    · `tradeClasses`와 `salesCategories`를 같이 주면 **교집합**이다(별개 축이라 둘 다 만족).""")
     @GetMapping
     public ApiResponse<PageResponse<SaleResponse>> list(
             @Parameter(description = "시작일(yyyy-MM-dd)") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
             @Parameter(description = "종료일(yyyy-MM-dd)") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
-            @Parameter(description = "구분(상세) — 회계구분 SALE/FREE/RETURN")
+            @Parameter(description = "구분(상세) — 회계구분 SALE/FREE/RETURN (단건. 다중은 salesCategories)")
             @RequestParam(required = false) SalesCategory salesCategory,
+            @Parameter(description = "구분(상세) **다중선택** — 예: SALE,RETURN")
+            @RequestParam(required = false) List<SalesCategory> salesCategories,
             @Parameter(description = "거래분류 SALES(매출)/FREE(무상)/RETURN(반품)/INBOUND(입고)/DISPOSE(폐기). "
-                    + "입고·폐기는 재고 원장 거래라 이 조회에서는 빈 결과")
+                    + "입고·폐기는 재고 원장 거래라 매출 조회에서는 무시된다 (단건. 다중은 tradeClasses)")
             @RequestParam(required = false) TradeClass tradeClass,
-            @Parameter(description = "출고유형(6종)") @RequestParam(required = false) ShipmentType shipmentType,
-            @Parameter(description = "거래처 id") @RequestParam(required = false) Long partnerId,
+            @Parameter(description = "거래분류 **다중선택** — 예: FREE,RETURN (화면3 체크박스)")
+            @RequestParam(required = false) List<TradeClass> tradeClasses,
+            @Parameter(description = "출고유형(6종) (단건. 다중은 shipmentTypes)")
+            @RequestParam(required = false) ShipmentType shipmentType,
+            @Parameter(description = "출고유형 **다중선택** — 예: NORMAL_SHIP,GIFT")
+            @RequestParam(required = false) List<ShipmentType> shipmentTypes,
+            @Parameter(description = "거래처 id (단건. 다중은 partnerIds)")
+            @RequestParam(required = false) Long partnerId,
+            @Parameter(description = "거래처 id **다중선택** — 좌측 트리뷰 체크박스용")
+            @RequestParam(required = false) List<Long> partnerIds,
             @Parameter(description = "취소건 포함 여부(기본 false)") @RequestParam(defaultValue = "false") boolean includeCanceled,
             @ParameterObject PageRequestDto pageReq) {
-        return ApiResponse.success(saleService.search(startDate, endDate, salesCategory, tradeClass,
-                shipmentType, partnerId, includeCanceled, pageReq.toPageable()));
+        return ApiResponse.success(saleService.search(startDate, endDate,
+                MultiSelect.merge(salesCategory, salesCategories),
+                MultiSelect.merge(tradeClass, tradeClasses),
+                MultiSelect.merge(shipmentType, shipmentTypes),
+                MultiSelect.merge(partnerId, partnerIds),
+                includeCanceled, pageReq.toPageable()));
     }
 
     @Operation(summary = "수기 매출 등록(일반)",

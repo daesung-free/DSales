@@ -5,6 +5,7 @@ import com.daesung.sales.audit.service.StatusHistoryService;
 import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.common.money.Amounts;
+import com.daesung.sales.common.query.MultiSelect;
 import com.daesung.sales.closing.service.PeriodLockService;
 import com.daesung.sales.common.response.PageResponse;
 import com.daesung.sales.common.sequence.SequenceService;
@@ -375,37 +376,61 @@ public class SaleService {
     }
 
     /**
-     * 통합 매출 조회(7p 출고/반품조회 · 12p 통합매출조회 공용).
+     * 통합 매출 조회(7p 출고/반품조회 · 12p 통합매출조회 공용). <b>세 축 모두 다중선택</b>이다
+     * (발주처 화면검토 2026-08-31 화면3 — "무상/유상/반품/입고 중복선택 체크박스").
      *
-     * <p><b>거래분류</b>(표준 4축 중 첫째)로도 거를 수 있다. 매출 원장에 대응이 없는 값
-     * (입고·폐기 — 재고 원장의 거래다)으로 거르면 <b>빈 결과</b>를 준다.
-     * 조건을 무시하고 전체를 주면 담당자가 '폐기'로 걸렀는데 매출이 잔뜩 나오는 꼴이 된다.
+     * <p><b>거래분류</b>(표준 4축 중 첫째)로도 거를 수 있다. 다중선택이 되면서 규칙이 둘 생겼다 —
+     * <ul>
+     *   <li><b>입고·폐기는 골라도 무시</b>한다. 매출 원장에 대응이 없는 값이다(재고 원장의 거래).
+     *       '무상 + 입고'를 고른 담당자는 무상은 보고 싶은 것이지, 입고가 섞였다고 무상까지
+     *       사라지길 바라지 않는다. 단 <b>입고·폐기만</b> 골랐다면 남는 조건이 없으므로 빈 결과다 —
+     *       전체를 주면 '폐기'로 걸렀는데 매출이 잔뜩 나오는 꼴이 된다.</li>
+     *   <li>거래분류와 구분(상세)을 <b>같이</b> 주면 <b>교집합</b>이다. 둘은 다른 질문에 답하는
+     *       별개 축이라 둘 다 만족해야 한다. 교집합이 비면 빈 결과다.</li>
+     * </ul>
      */
     @Transactional(readOnly = true)
-    public PageResponse<SaleResponse> search(LocalDate from, LocalDate to, SalesCategory salesCategory,
-                                             TradeClass tradeClass,
-                                             ShipmentType shipmentType, Long partnerId,
+    public PageResponse<SaleResponse> search(LocalDate from, LocalDate to,
+                                             List<SalesCategory> salesCategories,
+                                             List<TradeClass> tradeClasses,
+                                             List<ShipmentType> shipmentTypes,
+                                             List<Long> partnerIds,
                                              boolean includeCanceled, Pageable pageable) {
-        SalesCategory category = salesCategory;
-        if (tradeClass != null) {
-            SalesCategory mapped = tradeClass.toSalesCategory();
-            if (mapped == null) {
-                return PageResponse.of(Page.empty(pageable));   // 입고·폐기는 매출이 아니다
+        List<SalesCategory> categories = salesCategories;
+        if (!MultiSelect.isAny(tradeClasses)) {
+            List<SalesCategory> mapped = new ArrayList<>();
+            for (TradeClass tc : tradeClasses) {
+                SalesCategory m = tc.toSalesCategory();
+                if (m != null && !mapped.contains(m)) {
+                    mapped.add(m);       // 입고·폐기(null)는 매출 원장에 없다 — 떨어뜨린다
+                }
             }
-            if (category != null && category != mapped) {
-                return PageResponse.of(Page.empty(pageable));   // 두 축이 서로 어긋나는 조합
+            if (mapped.isEmpty()) {
+                return PageResponse.of(Page.empty(pageable));   // 입고·폐기만 골랐다
             }
-            category = mapped;
+            if (!MultiSelect.isAny(categories)) {
+                mapped.retainAll(categories);                   // 두 축은 교집합
+                if (mapped.isEmpty()) {
+                    return PageResponse.of(Page.empty(pageable));
+                }
+            }
+            categories = mapped;
         }
         // 세부구분 마스터는 몇 줄이라 한 번에 읽어 맵으로 쓴다 — 행마다 조회하면 목록 한 장에 수백 번이 된다.
-        final SalesCategory effectiveCategory = category;
         Map<String, SalesDivision> divisions = new HashMap<>();
         for (SalesDivision d : salesDivisionRepository.findAll()) {
             divisions.put(d.getCode(), d);
         }
+        Page<Sale> page = saleRepository.search(from, to,
+                MultiSelect.isAny(categories),
+                MultiSelect.orPlaceholder(categories, SalesCategory.SALE),
+                MultiSelect.isAny(shipmentTypes),
+                MultiSelect.orPlaceholder(shipmentTypes, ShipmentType.NORMAL_SHIP),
+                MultiSelect.isAny(partnerIds),
+                MultiSelect.orPlaceholder(partnerIds, 0L),
+                includeCanceled, pageable);
         return PageResponse.of(
-                saleRepository.search(from, to, effectiveCategory, shipmentType, partnerId, includeCanceled, pageable)
-                        .map(s -> SaleResponse.from(s, divisions.get(s.getProduct().getSalesDivision()))));
+                page.map(s -> SaleResponse.from(s, divisions.get(s.getProduct().getSalesDivision()))));
     }
 
     /** 단건 응답용 세부구분 조회. 미지정이면 null → 대분류가 '미분류'로 나간다. */

@@ -59,14 +59,16 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
              where t.txnType = com.daesung.sales.inventory.entity.TxnType.DISPOSE
                and (cast(:fromDate as date) is null or t.tradeDate >= :fromDate)
                and (cast(:toDate as date) is null or t.tradeDate <= :toDate)
-               and (:productId is null or t.product.id = :productId)
-               and (:warehouseId is null or t.warehouse.id = :warehouseId)
+               and (:anyProduct = true or t.product.id in :productIds)
+               and (:anyWarehouse = true or t.warehouse.id in :warehouseIds)
              order by t.tradeDate desc, t.id desc
             """)
     List<InventoryTxn> findDisposals(@Param("fromDate") LocalDate fromDate,
                                      @Param("toDate") LocalDate toDate,
-                                     @Param("productId") Long productId,
-                                     @Param("warehouseId") Long warehouseId);
+                                     @Param("anyProduct") boolean anyProduct,
+                                     @Param("productIds") java.util.Collection<Long> productIds,
+                                     @Param("anyWarehouse") boolean anyWarehouse,
+                                     @Param("warehouseIds") java.util.Collection<Long> warehouseIds);
 
     /**
      * 입고/대체 내역(8p·9p 조회). 재고를 움직이는 <b>입고·이고·세트작업</b>만 최근순으로.
@@ -82,15 +84,17 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
              where t.txnType in :kinds
                and (cast(:fromDate as date) is null or t.tradeDate >= :fromDate)
                and (cast(:toDate as date) is null or t.tradeDate <= :toDate)
-               and (:productId is null or t.product.id = :productId)
-               and (:warehouseId is null or t.warehouse.id = :warehouseId)
+               and (:anyProduct = true or t.product.id in :productIds)
+               and (:anyWarehouse = true or t.warehouse.id in :warehouseIds)
              order by t.tradeDate desc, t.id desc
             """)
     List<InventoryTxn> findStockRecords(@Param("kinds") java.util.Collection<com.daesung.sales.inventory.entity.TxnType> kinds,
                                         @Param("fromDate") LocalDate fromDate,
                                         @Param("toDate") LocalDate toDate,
-                                        @Param("productId") Long productId,
-                                        @Param("warehouseId") Long warehouseId);
+                                        @Param("anyProduct") boolean anyProduct,
+                                        @Param("productIds") java.util.Collection<Long> productIds,
+                                        @Param("anyWarehouse") boolean anyWarehouse,
+                                        @Param("warehouseIds") java.util.Collection<Long> warehouseIds);
 
     /** 특정 전표(refNo)로 생성된 출고/반품 이벤트(매출취소 역분개용). product·warehouse 즉시 로드. */
     @Query("select t from InventoryTxn t join fetch t.product join fetch t.warehouse"
@@ -187,6 +191,10 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
      * 읽는 사람이 매번 뒤집어야 한다.
      *
      * <p>반환 Object[]: [catCode, catName, 폐기건수, 폐기수량].
+     *
+     * <p>★필터는 {@link #findDisposals}(상세)와 <b>같은 축·같은 규칙</b>이어야 한다.
+     * 한쪽만 다중선택이 되면 담당자가 창고 둘을 고른 순간 요약과 상세의 수량이 갈리고,
+     * 그러면 <b>둘 다 못 믿는다</b>.
      */
     @Query(value = """
             SELECT p.cat_code, p.cat_name, COUNT(*) AS cnt, COALESCE(SUM(-t.qty), 0) AS qty
@@ -194,13 +202,17 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
             WHERE t.txn_type = 'DISPOSE'
               AND (CAST(:fromDate AS DATE) IS NULL OR t.trade_date >= :fromDate)
               AND (CAST(:toDate   AS DATE) IS NULL OR t.trade_date <= :toDate)
-              AND (CAST(:warehouseId AS SIGNED) IS NULL OR t.warehouse_id = :warehouseId)
+              AND (:anyProduct = TRUE OR t.product_id IN (:productIds))
+              AND (:anyWarehouse = TRUE OR t.warehouse_id IN (:warehouseIds))
             GROUP BY p.cat_code, p.cat_name
             ORDER BY p.cat_code
             """, nativeQuery = true)
     List<Object[]> disposalSummaryByCategory(@Param("fromDate") LocalDate fromDate,
                                              @Param("toDate") LocalDate toDate,
-                                             @Param("warehouseId") Long warehouseId);
+                                             @Param("anyProduct") boolean anyProduct,
+                                             @Param("productIds") java.util.Collection<Long> productIds,
+                                             @Param("anyWarehouse") boolean anyWarehouse,
+                                             @Param("warehouseIds") java.util.Collection<Long> warehouseIds);
 
     /**
      * 상품별 <b>소요 기준 출고량</b>(자재 상세용). 근거: 발주처 구조보완요청안(2026-08-31)
