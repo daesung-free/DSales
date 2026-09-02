@@ -183,6 +183,77 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
                                    @Param("warehouseType") String warehouseType);
 
     /**
+     * 세트 <b>조립·해체 현황</b>(30p) — 완제품(세트) 기준 집계.
+     * 근거: 발주처 화면검토(2026-08-31) 화면30 — "화면 27(물류 작업비 계산)의 비용 산출과는
+     * <b>연동되지 않도록 분리</b>해, <b>세트 조립·해체 작업을 진행한 현황(결과)만</b> 보여주는 조회 화면".
+     *
+     * <p>★<b>완제품 행을 부호로 가려낸다.</b> BOM 작업 한 번은 완제품 1행 + 구성품 N행을 남기는데
+     * 둘 다 같은 {@code txn_type}이라 구분할 표시가 없다. 다만 방향이 정반대다 —
+     * <pre>
+     *   조립: 완제품 +workQty / 구성품 −(비율×workQty)
+     *   해체: 완제품 −workQty / 구성품 +(비율×workQty)
+     * </pre>
+     * 그래서 {@code (조립 AND qty>0) OR (해체 AND qty<0)} 이 정확히 완제품 행이다.
+     * 이 규칙이 깨지려면 {@code InventoryService.bom()}이 부호를 뒤집어야 하는데,
+     * 그러면 재고 자체가 반대로 움직여 훨씬 먼저 드러난다.
+     *
+     * <p>작업 건수는 완제품 행 수다 — 작업 1회에 완제품 행이 정확히 하나 생긴다.
+     *
+     * <p>반환 Object[]: [catCode, catName, productId, code, name,
+     * 조립건수, 조립수량, 해체건수, 해체수량, 최근작업일].
+     */
+    @Query(value = """
+            SELECT p.cat_code, p.cat_name, p.id, p.code, p.name,
+                   SUM(CASE WHEN t.txn_type = 'BOM_ASSEMBLE' THEN 1 ELSE 0 END) AS asm_cnt,
+                   COALESCE(SUM(CASE WHEN t.txn_type = 'BOM_ASSEMBLE' THEN t.qty ELSE 0 END), 0) AS asm_qty,
+                   SUM(CASE WHEN t.txn_type = 'BOM_DISASSEMBLE' THEN 1 ELSE 0 END) AS dis_cnt,
+                   COALESCE(SUM(CASE WHEN t.txn_type = 'BOM_DISASSEMBLE' THEN -t.qty ELSE 0 END), 0) AS dis_qty,
+                   MAX(t.trade_date) AS last_date
+            FROM inventory_txn t JOIN products p ON p.id = t.product_id
+            WHERE ((t.txn_type = 'BOM_ASSEMBLE' AND t.qty > 0)
+                OR (t.txn_type = 'BOM_DISASSEMBLE' AND t.qty < 0))
+              AND (CAST(:fromDate AS DATE) IS NULL OR t.trade_date >= :fromDate)
+              AND (CAST(:toDate   AS DATE) IS NULL OR t.trade_date <= :toDate)
+              AND (:anyWarehouse = TRUE OR t.warehouse_id IN (:warehouseIds))
+              AND (:catCode IS NULL OR p.cat_code = :catCode)
+            GROUP BY p.cat_code, p.cat_name, p.id, p.code, p.name
+            ORDER BY p.cat_code, p.code
+            """, nativeQuery = true)
+    List<Object[]> bomWorkByProduct(@Param("fromDate") LocalDate fromDate,
+                                    @Param("toDate") LocalDate toDate,
+                                    @Param("anyWarehouse") boolean anyWarehouse,
+                                    @Param("warehouseIds") java.util.Collection<Long> warehouseIds,
+                                    @Param("catCode") String catCode);
+
+    /**
+     * 세트 조립·해체로 <b>움직인 구성품</b>(30p 상세). 완제품과 반대 부호인 행만 모은다.
+     *
+     * <p>★<b>어느 세트 작업에 쓰였는지는 나누지 않는다.</b> 원장에 완제품↔구성품 링크가 없어
+     * 귀속을 알 수 없다. 지금 BOM 비율로 역산하면 그럴듯한 숫자가 나오지만,
+     * 작업한 뒤에 BOM이 바뀌었으면 <b>실제와 다른 값을 사실처럼</b> 보여주게 된다.
+     * 그래서 구성품은 기간 합계로만 준다 — 모르는 것은 모른다고 두는 편이 낫다.
+     *
+     * <p>반환 Object[]: [productId, code, name, 소모수량(조립), 복원수량(해체)].
+     */
+    @Query(value = """
+            SELECT p.id, p.code, p.name,
+                   COALESCE(SUM(CASE WHEN t.txn_type = 'BOM_ASSEMBLE' THEN -t.qty ELSE 0 END), 0) AS used,
+                   COALESCE(SUM(CASE WHEN t.txn_type = 'BOM_DISASSEMBLE' THEN t.qty ELSE 0 END), 0) AS back
+            FROM inventory_txn t JOIN products p ON p.id = t.product_id
+            WHERE ((t.txn_type = 'BOM_ASSEMBLE' AND t.qty < 0)
+                OR (t.txn_type = 'BOM_DISASSEMBLE' AND t.qty > 0))
+              AND (CAST(:fromDate AS DATE) IS NULL OR t.trade_date >= :fromDate)
+              AND (CAST(:toDate   AS DATE) IS NULL OR t.trade_date <= :toDate)
+              AND (:anyWarehouse = TRUE OR t.warehouse_id IN (:warehouseIds))
+            GROUP BY p.id, p.code, p.name
+            ORDER BY p.code
+            """, nativeQuery = true)
+    List<Object[]> bomWorkComponents(@Param("fromDate") LocalDate fromDate,
+                                     @Param("toDate") LocalDate toDate,
+                                     @Param("anyWarehouse") boolean anyWarehouse,
+                                     @Param("warehouseIds") java.util.Collection<Long> warehouseIds);
+
+    /**
      * 폐기 <b>분류명별 요약</b>(10p). 근거: 발주처 화면검토(2026-08-31) —
      * "폐기 내역 조회시에도 <b>분류명 별로</b> 해당 내역 요약(전체)/상세가 모두 조회 가능한지".
      *

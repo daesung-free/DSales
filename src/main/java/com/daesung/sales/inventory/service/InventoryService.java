@@ -7,6 +7,7 @@ import com.daesung.sales.common.query.MultiSelect;
 import com.daesung.sales.inventory.dto.BomWorkRequest;
 import com.daesung.sales.inventory.dto.BomWorkResponse;
 import com.daesung.sales.inventory.dto.DisposalRequest;
+import com.daesung.sales.inventory.dto.BomWorkStatusResponse;
 import com.daesung.sales.inventory.dto.DisposalRecordRow;
 import com.daesung.sales.inventory.dto.DisposalSummaryResponse;
 import com.daesung.sales.inventory.dto.DisposalResponse;
@@ -354,6 +355,64 @@ public class InventoryService {
             totalQty += qty;
         }
         return new DisposalSummaryResponse(fromDate, toDate, rows, totalCount, totalQty);
+    }
+
+    /**
+     * 세트 <b>조립·해체 현황</b>(30p). 근거: 발주처 화면검토(2026-08-31) 화면30 —
+     * "화면 27(물류 작업비 계산)의 비용 산출과는 <b>연동되지 않도록 분리</b>해,
+     * 세트 조립·해체 작업을 진행한 <b>현황(결과)만</b> 보여주는 조회 화면으로 유지".
+     *
+     * <p>★<b>이 화면은 비용을 말하지 않는다.</b> 발주처가 요구한 '분리'는 화면을 나누는 게 아니라
+     * 여기서 금액을 빼는 것이다. 금액 칸이 하나라도 있으면 화면27과 값이 갈리는 순간
+     * 어느 쪽이 맞는지 다투게 된다. 그래서 응답에 작업비 필드가 <b>한 칸도 없다</b>.
+     *
+     * <p>⚠️<b>이전 구현(회차별 포장유형 물량 집계)을 대체한다.</b> 그건 레거시
+     * {@code IC회차별작업현황.vb}를 그대로 옮긴 것이라 레거시로서는 맞았지만,
+     * 발주처가 "후자라면 조립·해체 현황으로 구성해 달라"고 했다.
+     * 포장유형 집계가 필요하면 {@code GET /sales/round-work-status}가 그대로 남아 있다.
+     */
+    @Transactional(readOnly = true)
+    public BomWorkStatusResponse bomWorkStatus(LocalDate fromDate, LocalDate toDate,
+                                               List<Long> warehouseIds, String catCode) {
+        boolean anyWarehouse = MultiSelect.isAny(warehouseIds);
+        java.util.Collection<Long> whIds = MultiSelect.orPlaceholder(warehouseIds, 0L);
+        String cat = (catCode == null || catCode.isBlank()) ? null : catCode;
+
+        List<BomWorkStatusResponse.Row> rows = new ArrayList<>();
+        long asmCnt = 0;
+        long asmQty = 0;
+        long disCnt = 0;
+        long disQty = 0;
+        for (Object[] r : inventoryTxnRepository.bomWorkByProduct(fromDate, toDate, anyWarehouse, whIds, cat)) {
+            long ac = num(r[5]);
+            long aq = num(r[6]);
+            long dc = num(r[7]);
+            long dq = num(r[8]);
+            rows.add(new BomWorkStatusResponse.Row(
+                    (String) r[0], (String) r[1], num(r[2]), (String) r[3], (String) r[4],
+                    ac, aq, dc, dq, aq - dq, toLocalDate(r[9])));
+            asmCnt += ac;
+            asmQty += aq;
+            disCnt += dc;
+            disQty += dq;
+        }
+
+        List<BomWorkStatusResponse.Component> comps = new ArrayList<>();
+        for (Object[] c : inventoryTxnRepository.bomWorkComponents(fromDate, toDate, anyWarehouse, whIds)) {
+            long used = num(c[3]);
+            long back = num(c[4]);
+            comps.add(new BomWorkStatusResponse.Component(
+                    num(c[0]), (String) c[1], (String) c[2], used, back, used - back));
+        }
+        return new BomWorkStatusResponse(rows, comps, asmCnt, asmQty, disCnt, disQty);
+    }
+
+    /** 네이티브 쿼리의 날짜 컬럼 → LocalDate. 드라이버가 java.sql.Date로 줄 수도, 이미 LocalDate로 줄 수도 있다. */
+    private static LocalDate toLocalDate(Object v) {
+        if (v instanceof LocalDate d) {
+            return d;
+        }
+        return (v instanceof java.sql.Date d) ? d.toLocalDate() : null;
     }
 
     /**

@@ -428,11 +428,20 @@ public class SaleController {
         return excel.asDownload(xlsx, "매출대비표_" + from + "_" + to + ".xlsx");
     }
 
-    @Operation(summary = "회차별 작업현황(구 IC회차별작업현황)",
+    @Operation(summary = "회차별 포장유형 물량(구 IC회차별작업현황) — ⚠️화면30이 아니다",
             description = """
                     분류×도서×**회차**를 행으로, 포장구분(개별1/개별2/반별) 수량을 열로 펼쳐 보여준다.
                     레거시 IC회차별작업현황 화면 재현 — 회차가 없는 건(0)은 제외되고, 취소 건도 빠진다.
-                    catCode를 주면 해당 분류만 조회한다.""")
+                    catCode를 주면 해당 분류만 조회한다.
+
+                    ### ⚠️화면30(회차별작업현황)은 이제 이 API가 아니다
+                    발주처가 화면검토(2026-08-31)에서 "이 화면이 세트 조립·해체를 추적하는 화면인지,
+                    아니면 회차별 포장유형별 물량을 집계하는 화면인지" 확인을 요청했고,
+                    **실측 결과 후자(이 API)였다.** 그래서 요청대로 화면30은
+                    **`GET /stock/bom-work-status`(세트 조립·해체 현황)** 으로 재구성했다.
+
+                    이 API는 **레거시 재현으로서 그대로 남겨 둔다** — 포장유형별 물량은 물류에서
+                    여전히 쓰는 숫자이고, 지운다고 조립·해체 현황이 더 정확해지지 않는다.""")
     @GetMapping("/round-work-status")
     public ApiResponse<List<RoundWorkStatusRow>> roundWorkStatus(
             @Parameter(description = "시작일(yyyy-MM-dd)") @RequestParam

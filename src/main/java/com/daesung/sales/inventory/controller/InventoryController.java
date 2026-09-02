@@ -215,4 +215,65 @@ public class InventoryController {
                 Heading.asOf("제품수불부 결산내역", baseDate));
         return excel.asDownload(xlsx, "제품수불부_결산내역.xlsx");
     }
+
+    private static final String BOM_WORK_DESC = """
+            세트를 **조립·해체한 결과**를 세트별로 집계한다.
+            근거: 발주처 화면검토(2026-08-31) 화면30 — "화면 27(물류 작업비 계산)의 비용 산출과는
+            **연동되지 않도록 분리**해, 세트 조립·해체 작업을 진행한 **현황(결과)만** 보여주는 조회 화면".
+
+            ### ★비용 칸이 없다
+            발주처가 요구한 '분리'는 화면을 나누는 것이 아니라 **이 화면이 비용을 말하지 않는 것**이다.
+            금액 칸이 하나라도 있으면 화면27과 값이 갈리는 순간 어느 쪽이 맞는지 다투게 된다.
+            작업비는 화면27(물류작업비) 소관이다.
+
+            ### 무엇을 세나
+            · 작업 건수 = **완제품 이벤트 수**(작업 1회에 정확히 하나 생긴다)
+            · 조립 수량 / 해체 수량 / **순증**(조립 − 해체). 순증이 음수면 그 기간에 푼 쪽이 많다.
+            · `components` = 그 기간 조립·해체로 움직인 **구성품 합계**
+              ⚠️**어느 세트 작업에 쓰였는지는 나누지 않는다.** 원장에 완제품↔구성품 링크가 없다.
+              지금 BOM 비율로 역산하면 그럴듯한 숫자가 나오지만, 작업한 뒤 BOM이 바뀌었으면
+              실제와 다른 값을 사실처럼 보여주게 된다. 모르는 것은 모른다고 둔다.
+
+            ### ⚠️이전 구현을 대체한다
+            종전 화면30은 **회차별 포장유형(개별1/개별2/반별) 물량 집계**였다. 레거시
+            `IC회차별작업현황.vb`를 그대로 옮긴 것이라 레거시로서는 맞았지만, 발주처가
+            "후자라면 조립·해체 현황으로 구성해 달라"고 확인 요청했고 실측 결과 후자였다.
+            포장유형 집계가 필요하면 `GET /sales/round-work-status`가 그대로 남아 있다.""";
+
+    @Operation(summary = "세트 조립·해체 현황(30p)", description = BOM_WORK_DESC)
+    @GetMapping("/bom-work-status")
+    public ApiResponse<com.daesung.sales.inventory.dto.BomWorkStatusResponse> bomWorkStatus(
+            @Parameter(description = "작업일 시작(yyyy-MM-dd). 미지정=전체") @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @Parameter(description = "작업일 종료(yyyy-MM-dd). 미지정=전체") @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @Parameter(description = "창고 id 필터(단건)") @RequestParam(required = false) Long warehouseId,
+            @Parameter(description = "창고 id **다중선택**") @RequestParam(required = false)
+            List<Long> warehouseIds,
+            @Parameter(description = "분류코드 필터") @RequestParam(required = false) String catCode) {
+        return ApiResponse.success(inventoryService.bomWorkStatus(fromDate, toDate,
+                MultiSelect.merge(warehouseId, warehouseIds), catCode));
+    }
+
+    @Operation(summary = "세트 조립·해체 현황 엑셀 다운로드(30p)",
+            description = "세트별 조립·해체 수량. 작업비는 담지 않는다(화면27 소관).")
+    @GetMapping("/bom-work-status/export")
+    public ResponseEntity<byte[]> bomWorkStatusExport(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @RequestParam(required = false) Long warehouseId,
+            @RequestParam(required = false) List<Long> warehouseIds,
+            @RequestParam(required = false) String catCode) {
+        List<Col> cols = List.of(
+                new Col("분류코드", "catCode"), new Col("분류명", "catName"),
+                new Col("도서코드", "productCode"), new Col("도서명", "productName"),
+                new Col("조립건수", "assembleCount"), new Col("조립수량", "assembleQty"),
+                new Col("해체건수", "disassembleCount"), new Col("해체수량", "disassembleQty"),
+                new Col("순증", "netQty"), new Col("최근작업일", "lastWorkedAt"));
+        byte[] xlsx = excel.toXlsx("세트조립해체현황", cols,
+                inventoryService.bomWorkStatus(fromDate, toDate,
+                        MultiSelect.merge(warehouseId, warehouseIds), catCode).rows(),
+                Heading.period("세트 조립·해체 현황", fromDate, toDate));
+        return excel.asDownload(xlsx, "세트_조립해체현황.xlsx");
+    }
 }
