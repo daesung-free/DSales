@@ -20,6 +20,17 @@ public record MaterialBomRequest(
                 4회차 구성에서 회차마다 쓰는 OMR은 4, 세트에 한 번만 필요한 쿠폰은 1.
                 ‼️서버가 회차 수를 곱하지 않는다(발주처 확정).""",
                 example = "4", requiredMode = Schema.RequiredMode.REQUIRED)
-        @Positive int qtyPerSet
+        @Positive int qtyPerSet,
+
+        @Schema(description = """
+                **회차 반복형** 여부(공통 자재에만 의미 있음).
+                · `true` — 회차마다 반복 사용(OMR 등). 세트당수량이 '회차 수만큼 반영한 값'이므로
+                  회차당 소요 = 세트당수량 ÷ 회차수. **회차만 단독으로 팔려도 자재가 나간다.**
+                · `false`(기본) — 세트 전체에 한 번만 필요(해설강의쿠폰 등).
+                  회차 단독 출고에는 붙지 않는다.
+                ‼️이 값이 있어야 제품수불부 자재 상세의 '회차 단독 출고분'을 낼 수 있다 —
+                숫자만으로는 `4`가 "4회차×1"인지 "세트당 4개 고정"인지 구분되지 않는다.""",
+                example = "true")
+        Boolean perRound
 ) {
 }

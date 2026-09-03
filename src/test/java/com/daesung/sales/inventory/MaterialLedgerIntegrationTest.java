@@ -117,14 +117,16 @@ class MaterialLedgerIntegrationTest extends IntegrationTestSupport {
 
     @Test
     @Order(2)
-    @DisplayName("공통 자재는 세트 출고분만 — 회차 단독분은 정의가 없어 0")
+    @DisplayName("공통 1회형 자재는 세트 출고분만 — 세트를 사야 붙는다")
     void 공통자재는_세트분만() {
         JsonNode r = rowOf(detail(""), omr);
 
         assertThat(r.path("roundLabel").asText()).isEqualTo("공통");
         assertThat(r.path("fromSet").asLong()).as("500 × 4").isEqualTo(2000);
+        // perRound를 안 켰으므로 '세트 전체에 한 번' 자재로 본다(V61 기본값).
+        // 회차 반복형(OMR 등)은 MaterialPerRoundIntegrationTest에서 따로 고정한다.
         assertThat(r.path("fromRound").asLong())
-                .as("회차 단독 판매 시 범용 자재 수량은 문서에 정의가 없다 → 0").isZero();
+                .as("1회형은 회차만 팔릴 때 나가지 않는다").isZero();
         assertThat(r.path("total").asLong()).isEqualTo(2000);
     }
 

@@ -22,7 +22,9 @@ public record MaterialBomResponse(
             @Schema(description = "자재코드") String materialCode,
             @Schema(description = "자재명") String materialName,
             @Schema(description = "자재구분") MaterialType materialType,
-            @Schema(description = "세트당 소요수량") int qtyPerSet
+            @Schema(description = "세트당 소요수량") int qtyPerSet,
+            @Schema(description = "회차 반복형 여부(공통 자재 전용). true면 회차 단독 출고에도 자재가 나간다")
+            boolean perRound
     ) {
     }
 
@@ -35,7 +37,7 @@ public record MaterialBomResponse(
                         b.isCommon() ? "공통" : b.getRoundProduct().getName(),
                         b.getMaterial().getId(), b.getMaterial().getCode(),
                         b.getMaterial().getName(), b.getMaterial().getMaterialType(),
-                        b.getQtyPerSet()))
+                        b.getQtyPerSet(), b.isPerRound()))
                 .toList();
         return new MaterialBomResponse(setId, setCode, setName, rows);
     }

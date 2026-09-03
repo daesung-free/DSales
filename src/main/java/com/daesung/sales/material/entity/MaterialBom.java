@@ -54,22 +54,56 @@ public class MaterialBom extends BaseEntity {
     @Column(name = "qty_per_set", nullable = false)
     private int qtyPerSet;
 
+    /**
+     * <b>회차 반복형</b> 여부(공통 자재 전용). 근거: 구조보완요청안 각주 —
+     * "회차마다 반복 사용되는 자재(예: OMR, 4회차 구성 기준 4)는 회차 수만큼 반영한 값을,
+     * 세트 전체에 한 번만 필요한 자재(예: 해설강의쿠폰)는 1로 고정한 값을 입력합니다."
+     *
+     * <p>문서가 공통 자재를 두 종류로 나눠 놓았는데 숫자만으로는 구분되지 않는다 —
+     * {@code 4}가 "4회차 × 1"인지 "세트당 4개 고정"인지 알 수 없다. 이 플래그가 그 구분이다.
+     * 회차 전용 자재({@code roundProduct != null})에는 의미가 없다.
+     */
+    @Column(name = "per_round", nullable = false)
+    private boolean perRound;
+
     public static MaterialBom of(Product setProduct, Product roundProduct,
-                                 Material material, int qtyPerSet) {
+                                 Material material, int qtyPerSet, Boolean perRound) {
         MaterialBom b = new MaterialBom();
         b.setProduct = setProduct;
         b.roundProduct = roundProduct;
         b.material = material;
         b.qtyPerSet = qtyPerSet;
+        // 회차 전용 자재는 애초에 회차에 붙어 있어 '반복' 개념이 없다 — 공통일 때만 켠다.
+        b.perRound = (roundProduct == null) && Boolean.TRUE.equals(perRound);
         return b;
     }
 
-    public void updateQty(int qtyPerSet) {
+    public void updateQty(int qtyPerSet, Boolean perRound) {
         this.qtyPerSet = qtyPerSet;
+        if (perRound != null) {
+            this.perRound = isCommon() && perRound;
+        }
     }
 
     /** 공통 매칭 여부(회차 미지정). */
     public boolean isCommon() {
         return roundProduct == null;
+    }
+
+    /**
+     * 회차 하나당 소요수량.
+     *
+     * <p>회차 전용 자재는 입력값 그대로. <b>공통 반복형</b>은 세트당 수량이 이미
+     * "회차 수만큼 반영한 값"이므로 <b>회차 수로 나눠야</b> 회차당 수량이 나온다(OMR 4 ÷ 4회차 = 1).
+     * 공통 1회형은 회차 단독으로는 나가지 않으므로 0이다 — 세트를 사야 붙는 자재다.
+     */
+    public long qtyPerRound(int roundCount) {
+        if (!isCommon()) {
+            return qtyPerSet;
+        }
+        if (!perRound || roundCount <= 0) {
+            return 0L;
+        }
+        return (long) qtyPerSet / roundCount;
     }
 }

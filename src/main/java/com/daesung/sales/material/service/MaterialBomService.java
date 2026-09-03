@@ -52,9 +52,9 @@ public class MaterialBomService {
 
         materialBomRepository.findMatch(setProductId, req.roundProductId(), req.materialId())
                 .ifPresentOrElse(
-                        existing -> existing.updateQty(req.qtyPerSet()),
+                        existing -> existing.updateQty(req.qtyPerSet(), req.perRound()),
                         () -> materialBomRepository.save(MaterialBom.of(set, round,
-                                materialService.getOrThrow(req.materialId()), req.qtyPerSet())));
+                                materialService.getOrThrow(req.materialId()), req.qtyPerSet(), req.perRound())));
 
         return list(setProductId);
     }

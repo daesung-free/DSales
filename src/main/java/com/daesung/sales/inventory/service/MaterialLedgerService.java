@@ -52,35 +52,42 @@ public class MaterialLedgerService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                         "세트 상품이 없습니다. id=" + setProductId));
 
-        List<MaterialBom> boms = materialBomRepository.findBySet(setProductId);
+        List<MaterialBom> all = materialBomRepository.findBySet(setProductId);
+
+        // ★회차 수는 **거르기 전에** 센다. 공통 반복형 자재의 회차당 소요량이
+        //   "세트당수량 ÷ 회차수"라서, 1회만 골랐다고 회차수가 1이 되면 OMR이 4장으로 뻥튀기된다.
+        Set<Long> allRoundIds = new HashSet<>();
+        all.forEach(b -> {
+            if (!b.isCommon()) {
+                allRoundIds.add(b.getRoundProduct().getId());
+            }
+        });
+        int roundCount = allRoundIds.size();
+
+        List<MaterialBom> boms = all;
         // 회차를 골랐으면 그 회차 전용 + 공통만 남긴다(문서의 "1회 선택 시" 화면).
         if (roundProductId != null) {
-            boms = boms.stream()
+            boms = all.stream()
                     .filter(b -> b.isCommon()
                             || roundProductId.equals(b.getRoundProduct().getId()))
                     .toList();
         }
 
+        // 공통 자재가 볼 '회차 단독 출고'의 범위: 회차를 골랐으면 그 회차만, 아니면 세트의 모든 회차.
+        Set<Long> commonRoundScope = (roundProductId != null)
+                ? Set.of(roundProductId) : allRoundIds;
+
         // 출고수량은 세트와 각 회차를 한 번에 읽는다 — 자재마다 조회하면 같은 상품을 여러 번 센다.
         Set<Long> ids = new HashSet<>();
         ids.add(setProductId);
-        boms.forEach(b -> {
-            if (!b.isCommon()) {
-                ids.add(b.getRoundProduct().getId());
-            }
-        });
+        ids.addAll(allRoundIds);        // 공통 자재가 모든 회차의 단독출고를 봐야 한다
         Map<Long, Long> consumed = consumedMap(ids, fromDate, toDate);
         long setQty = consumed.getOrDefault(setProductId, 0L);
 
         List<MaterialLedgerRow> rows = new ArrayList<>();
         for (MaterialBom b : boms) {
             long fromSet = setQty * b.getQtyPerSet();
-            // ★공통 자재의 '회차 단독 출고분'은 0이다.
-            //   회차만 단품으로 팔렸을 때 범용 자재(OMR 등)가 몇 개 필요한지 문서에 정의가 없다.
-            //   임의로 곱하면 실제로 나가지 않은 자재를 소비한 것으로 만든다 → 확인 전까지 0.
-            long fromRound = b.isCommon()
-                    ? 0L
-                    : consumed.getOrDefault(b.getRoundProduct().getId(), 0L) * b.getQtyPerSet();
+            long fromRound = roundConsumption(b, roundCount, commonRoundScope, consumed);
 
             rows.add(new MaterialLedgerRow(
                     b.getMaterial().getId(), b.getMaterial().getCode(), b.getMaterial().getName(),
@@ -93,6 +100,37 @@ public class MaterialLedgerService {
                 : productRepository.findById(roundProductId).map(Product::getName).orElse(null);
         return new MaterialLedgerResponse(fromDate, toDate, set.getId(), set.getCode(), set.getName(),
                 roundProductId, roundName, setQty, rows);
+    }
+
+    /**
+     * <b>회차 단독 출고분</b> — 세트를 사지 않고 회차만 팔린 만큼 나간 자재 수량.
+     *
+     * <p>회차 전용 자재(시험지·해설지)는 간단하다: 그 회차의 단독출고 × 세트당수량.
+     *
+     * <p>★<b>공통 자재</b>가 문제였다. 구조보완요청안 각주가 공통 자재를 두 종류로 나눠 놓았는데
+     * ("회차마다 반복 사용되는 자재(OMR, 4회차 기준 <b>4</b>)는 회차 수만큼 반영한 값을,
+     * 세트 전체에 한 번만 필요한 자재(쿠폰)는 <b>1</b>로 고정") 숫자만으로는 구분이 안 된다 —
+     * {@code 4}가 "4회차 × 1"인지 "세트당 4개 고정"인지 알 수 없었다.
+     * 그래서 {@code per_round} 플래그(V61)를 두고 이제 이렇게 나눈다.
+     * <pre>
+     *   반복형  회차당 = 세트당수량 ÷ 회차수 (OMR 4 ÷ 4회차 = 1) → 회차 단독출고에도 나간다
+     *   1회형   0 — 세트를 사야 붙는 자재라 회차만 사면 나가지 않는다
+     * </pre>
+     */
+    private long roundConsumption(MaterialBom b, int roundCount,
+                                  Set<Long> commonRoundScope, Map<Long, Long> consumed) {
+        if (!b.isCommon()) {
+            return consumed.getOrDefault(b.getRoundProduct().getId(), 0L) * b.getQtyPerSet();
+        }
+        long perRound = b.qtyPerRound(roundCount);
+        if (perRound == 0) {
+            return 0L;      // 1회형이거나 회차가 없다
+        }
+        long qty = 0;
+        for (Long rid : commonRoundScope) {
+            qty += consumed.getOrDefault(rid, 0L) * perRound;
+        }
+        return qty;
     }
 
     /** 상품별 소요 기준 출고량(양수). 이벤트가 없는 상품은 맵에 없다 → 호출부가 0으로 읽는다. */
