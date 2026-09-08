@@ -72,7 +72,11 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ec2-user
           key: ${{ secrets.EC2_SSH_KEY }}
-          envs: REGISTRY,ECR_PW,DB_HOST,DB_SECRET_ID,REDIS_HOST,JWT_SECRET,AWS_REGION
+          # ‼️appleboy/ssh-action은 **여기 나열된 것만** 원격 셸로 넘긴다.
+          #   step의 env: 에만 적으면 러너에서만 살아 있고 원격에서는 빈 값이 된다 —
+          #   docker run -e VAR="" 로 들어가 앱은 기본값으로 조용히 뜬다(2026-09-08에 이걸로 한 번 헤맸다).
+          #   env: 에 값을 추가하면 이 줄에도 반드시 같이 추가할 것.
+          envs: REGISTRY,ECR_PW,DB_HOST,DB_SECRET_ID,REDIS_HOST,JWT_SECRET,AWS_REGION,COOKIE_SECURE,COOKIE_SAME_SITE
           # ★DB 계정/비번을 -e 로 넣지 않는다. 넣으면 환경변수가 application-aws.yml 보다 우선순위가 높아
           #   Secrets Manager 조회를 무력화한다(=로테이션 장애 재발). DB_HOST/DB_SECRET_ID 만 전달.
           script: |
