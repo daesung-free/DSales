@@ -107,6 +107,8 @@ jobs:
               -e SPRING_DATA_REDIS_HOST="$REDIS_HOST" \
               -e SPRING_DATA_REDIS_PORT=6379 \
               -e DAESUNG_SECURITY_JWTSECRET="$JWT_SECRET" \
+              -e DAESUNG_SECURITY_COOKIESECURE="$COOKIE_SECURE" \
+              -e DAESUNG_SECURITY_COOKIESAMESITE="$COOKIE_SAME_SITE" \
               "$REGISTRY/dsales:latest"
             docker image prune -f
         env:
@@ -116,6 +118,13 @@ jobs:
           DB_SECRET_ID: ${{ secrets.DB_SECRET_ID }}
           REDIS_HOST: ${{ secrets.REDIS_HOST }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          # ★프론트(Amplify)와 API 도메인이 다르므로 refresh 쿠키는 SameSite=None 이어야 한다.
+          #   Strict/Lax면 브라우저가 쿠키를 안 보내 30분 뒤 재발급이 실패한다(조용히 로그아웃).
+          #   None 은 Secure 필수 → API에 https(Caddy 등)가 붙은 뒤에만 켠다.
+          #   ‼️둘이 어긋나면 앱이 기동을 거부한다(JwtProperties.assertCookiePolicy) — 반쯤 적용된 배포 방지.
+          #   https 전에는 아래 두 줄을 각각 false / Strict 로 둘 것.
+          COOKIE_SECURE: ${{ vars.COOKIE_SECURE || 'false' }}
+          COOKIE_SAME_SITE: ${{ vars.COOKIE_SAME_SITE || 'Strict' }}
           AWS_REGION: ${{ env.AWS_REGION }}
 
       # 배포가 "컨테이너는 떴는데 DB 못 붙음" 상태로 조용히 성공 처리되는 것을 막는다.
