@@ -42,6 +42,10 @@
             <Class name="com.daesung.sales.closing.service.TaxService"/>
             <Class name="com.daesung.sales.sale.service.SaleReportService"/>
             <Class name="com.daesung.sales.dsre.gateway.JdbcDsreGateway"/>
+            <!-- 쿠키 SameSite 값("None"/"Strict"/"Lax") 비교. 설정에서 온 ASCII 토큰이고
+                 toUpperCase에 Locale.ROOT를 명시했다. 이 값은 저장·출력이 아니라
+                 기동 시 정합성 검사에만 쓰인다. -->
+            <Class name="com.daesung.sales.auth.config.JwtProperties"/>
         </Or>
     </Match>
 

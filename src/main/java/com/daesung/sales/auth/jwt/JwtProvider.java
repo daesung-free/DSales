@@ -35,6 +35,9 @@ public class JwtProvider {
             log.error("★★★ 기본 더미 JWT 시크릿 사용 중 — 토큰 위조(관리자 사칭) 위험. "
                     + "운영 배포 시 반드시 DAESUNG_SECURITY_JWTSECRET 환경변수로 실제 시크릿 주입할 것. ★★★");
         }
+        // 쿠키 정책(SameSite=None인데 Secure가 꺼져 있음)도 여기서 함께 막는다 —
+        // 런타임에 드러나면 "30분 뒤 로그아웃된다"는 증상으로만 보여 원인을 못 찾는다.
+        props.assertCookiePolicy();
         this.key = Keys.hmacShaKeyFor(secret.getBytes(StandardCharsets.UTF_8));
         this.accessMinutes = props.accessTokenMinutesOrDefault();
     }

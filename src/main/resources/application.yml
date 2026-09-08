@@ -53,13 +53,24 @@ daesung:
     biz-status: "제조"        # 업태
     biz-item: "출판업"        # 종목
     tel: ""            # 거래명세서 공급자 블록 전화번호(실물 양식 항목)
+  # CORS 허용 오리진. 프론트가 별도 도메인이라 명시 필요(자격증명 전송이라 "*" 불가).
+  cors:
+    allowed-origins: "http://localhost:3000,http://localhost:5173"
+    # Amplify는 브랜치마다 서브도메인이 생긴다 → 앱 ID를 고정한 패턴으로 한 번에 허용.
+    # (develop.d1z41nzmh4zrdi.amplifyapp.com 등)
+    allowed-origin-patterns: "https://*.d1z41nzmh4zrdi.amplifyapp.com"
   # 인증/JWT. ★jwt-secret은 배포 시 환경변수(DAESUNG_SECURITY_JWT-SECRET)로 override — 아래는 로컬 개발 전용 더미.
   security:
     jwt-secret: "local-dev-only-change-me-please-32bytes-minimum-secret-key"
     access-token-minutes: 30
     refresh-token-days: 14
-    # refresh 쿠키 Secure 플래그. 현재 라이브/로컬은 http라 false. ★https(ALB) 도입 시 true로.
+    # refresh 쿠키 Secure 플래그. 현재 라이브/로컬은 http라 false. ★https 도입 시 true로.
     cookie-secure: false
+    # refresh 쿠키 SameSite. 로컬(프론트·API 같은 호스트)은 Strict로 충분하다.
+    # ★프론트와 API 도메인이 다르면(Amplify ↔ API 서버) 반드시 None —
+    #   Strict/Lax면 브라우저가 쿠키를 아예 안 보내 30분 뒤 재발급이 실패한다.
+    #   ‼️None은 Secure 필수라 https가 먼저다(둘이 어긋나면 기동 시 막는다).
+    cookie-same-site: Strict
   # DSRE2(기존 라이브 유지) 연결. 기본 off — 켜면 별도 DataSource로 함수 호출/조회.
   # ★운영 접속정보는 배포 시 시크릿으로 주입. 로컬은 docker dsre-mysql(3307) 복제본.
   dsre:
