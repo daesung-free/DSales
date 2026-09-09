@@ -406,6 +406,11 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
      * 계산서신고: 거래처×상품×과세구분 집계(품목 라인). 취소 제외, 반품 차감.
      * tax_bucket: 'FREE'(면세, tax=0) / 'TAXABLE'(과세). 순매출 0인 품목은 제외.
      * 반환 Object[]: [partnerId, partnerName, productId, productName, taxBucket, supply, tax].
+     *
+     * <p>★<b>과세구분 필터는 WHERE에서 건다</b>('ALL'이면 미적용).
+     * 다 읽어 온 뒤 자바에서 거르면 계산서 장수·합계는 걸러진 것으로 나오는데
+     * 집계(HAVING 순매출 0 제외)는 거르기 전 기준이라 <b>둘이 어긋날 수 있다</b>.
+     * 세무 신고에 쓰는 숫자라 한 곳에서 자른다.
      */
     @Query(value = """
             SELECT s.partner_id, pt.name, s.product_id, p.name,
@@ -418,13 +423,16 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
             WHERE s.canceled = false
               AND s.sales_date BETWEEN :fromDate AND :toDate
               AND (CAST(:partnerId AS SIGNED) IS NULL OR s.partner_id = :partnerId)
+              AND (:taxType = 'ALL'
+                   OR CASE WHEN s.tax = 0 THEN 'FREE' ELSE 'TAXABLE' END = :taxType)
             GROUP BY s.partner_id, pt.name, s.product_id, p.name, CASE WHEN s.tax = 0 THEN 'FREE' ELSE 'TAXABLE' END
             HAVING COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN -s.supply_amount ELSE s.supply_amount END),0) <> 0
             ORDER BY pt.name, s.partner_id, tax_bucket, p.name
             """, nativeQuery = true)
     List<Object[]> taxInvoiceLines(@Param("fromDate") LocalDate fromDate,
                                    @Param("toDate") LocalDate toDate,
-                                   @Param("partnerId") Long partnerId);
+                                   @Param("partnerId") Long partnerId,
+                                   @Param("taxType") String taxType);
 
     /**
      * 계산서·세금계산서 월별신고(38p): 월×발행유형으로 매출/반품/세액 집계. 취소 제외.

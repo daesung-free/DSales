@@ -120,16 +120,31 @@ public class TaxController {
     }
 
     @Operation(summary = "계산서신고 데이터 조회",
-            description = "거래처×과세구분 단위 계산서(품목=도서별) 목록. 면세'05'/과세'01', 공급가액·세액·합계검증. "
-                    + "공급자(자사)는 설정 주입. 홈택스 파일 export는 후속 엔드포인트. 기간 미지정 시 올해 1/1~오늘.")
+            description = """
+                    거래처×과세구분 단위 계산서(품목=도서별) 목록. 면세'05'/과세'01', 공급가액·세액·합계검증.
+                    공급자(자사)는 설정 주입. 기간 미지정 시 올해 1/1~오늘.
+
+                    ### 과세구분 필터(`taxType`)
+                    `FREE`(면세) / `TAXABLE`(과세) / 미지정=전체.
+
+                    ‼️**알 수 없는 값은 400으로 거부**한다. 예전에는 조용히 '전체'로 넘겼는데,
+                    그러면 오타 하나에 **과세·면세가 뒤섞인 목록이 걸러진 척** 돌아온다.
+                    세무 신고에 쓰는 화면이라 조용한 실패가 가장 위험하다.
+
+                    필터는 **SQL에서 건다.** 다 읽어 온 뒤 자바에서 거르면 계산서 장수·합계는
+                    걸러진 기준인데 집계(순매출 0 제외)는 거르기 전 기준이라 둘이 어긋난다.
+
+                    export도 **같은 필터**를 받는다 — 화면과 파일의 범위가 다르면 안 된다.""")
     @GetMapping("/tax-invoices")
     public ApiResponse<TaxInvoiceResponse> taxInvoices(
             @Parameter(description = "시작일(yyyy-MM-dd, 미지정 시 올해 1/1)") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
             @Parameter(description = "종료일(yyyy-MM-dd=작성일자, 미지정 시 오늘)") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
-            @Parameter(description = "거래처 id 필터") @RequestParam(required = false) Long partnerId) {
-        return ApiResponse.success(taxService.taxInvoices(fromDate, toDate, partnerId));
+            @Parameter(description = "거래처 id 필터") @RequestParam(required = false) Long partnerId,
+            @Parameter(description = "과세구분 필터 — FREE(면세, 계산서 05) / TAXABLE(과세, 세금계산서 01). 미지정=전체. ‼️알 수 없는 값은 400으로 거부한다(조용히 전체로 넘기면 뒤섞인 목록이 걸러진 척 나간다)")
+            @RequestParam(required = false) String taxType) {
+        return ApiResponse.success(taxService.taxInvoices(fromDate, toDate, partnerId, taxType));
     }
 
     @Operation(summary = "계산서신고 홈택스 파일(xlsx) 다운로드",
@@ -142,8 +157,10 @@ public class TaxController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
             @Parameter(description = "종료일(yyyy-MM-dd=작성일자)") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
-            @Parameter(description = "거래처 id 필터") @RequestParam(required = false) Long partnerId) {
-        byte[] xlsx = taxService.exportTaxInvoices(fromDate, toDate, partnerId);
+            @Parameter(description = "거래처 id 필터") @RequestParam(required = false) Long partnerId,
+            @Parameter(description = "과세구분 필터 — FREE(면세, 계산서 05) / TAXABLE(과세, 세금계산서 01). 미지정=전체. ‼️알 수 없는 값은 400으로 거부한다(조용히 전체로 넘기면 뒤섞인 목록이 걸러진 척 나간다)")
+            @RequestParam(required = false) String taxType) {
+        byte[] xlsx = taxService.exportTaxInvoices(fromDate, toDate, partnerId, taxType);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_DISPOSITION, "attachment; filename=\"tax-invoices.xlsx\"")
                 .contentType(MediaType.parseMediaType(

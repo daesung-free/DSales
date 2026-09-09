@@ -1,6 +1,8 @@
 package com.daesung.sales.closing.service;
 
 import com.daesung.sales.closing.config.SupplierProperties;
+import com.daesung.sales.common.exception.BusinessException;
+import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.closing.dto.InvoiceAdjustmentResponse;
 import com.daesung.sales.closing.dto.RevenueReportResponse;
 import com.daesung.sales.closing.dto.TaxFilingResponse;
@@ -151,9 +153,11 @@ public class TaxService {
      * 공급자(자사)는 설정 주입. 기간 미지정 시 올해 1/1~오늘, 작성일자=종료일(말일).
      */
     @Transactional(readOnly = true)
-    public TaxInvoiceResponse taxInvoices(LocalDate fromDate, LocalDate toDate, Long partnerId) {
+    public TaxInvoiceResponse taxInvoices(LocalDate fromDate, LocalDate toDate, Long partnerId,
+                                          String taxType) {
         LocalDate from = (fromDate != null) ? fromDate : LocalDate.now().withDayOfYear(1);
         LocalDate to = (toDate != null) ? toDate : LocalDate.now();
+        String filter = normalizeTaxType(taxType);
 
         // (거래처, 과세구분) → 품목 라인 누적. LinkedHashMap로 조회 순서 유지.
         record Key(long partnerId, String taxBucket) {}
@@ -161,7 +165,7 @@ public class TaxService {
         Map<Key, String> nameByKey = new LinkedHashMap<>();
         Map<Key, long[]> totalByKey = new LinkedHashMap<>(); // [supply, tax]
 
-        for (Object[] r : saleRepository.taxInvoiceLines(from, to, partnerId)) {
+        for (Object[] r : saleRepository.taxInvoiceLines(from, to, partnerId, filter)) {
             Key key = new Key(num(r[0]), (String) r[4]);
             nameByKey.putIfAbsent(key, (String) r[1]);
             itemsByKey.computeIfAbsent(key, k -> new ArrayList<>())
@@ -194,8 +198,10 @@ public class TaxService {
 
     /** 계산서 데이터를 홈택스 대량발행 xlsx로 export. 공급받는자 전체 세무정보를 Partner에서 로드. */
     @Transactional(readOnly = true)
-    public byte[] exportTaxInvoices(LocalDate fromDate, LocalDate toDate, Long partnerId) {
-        TaxInvoiceResponse data = taxInvoices(fromDate, toDate, partnerId);
+    public byte[] exportTaxInvoices(LocalDate fromDate, LocalDate toDate, Long partnerId,
+                                    String taxType) {
+        // ★화면과 같은 필터로 만든다. 다운로드만 조건이 빠지면 화면에 없던 건이 파일에 실린다.
+        TaxInvoiceResponse data = taxInvoices(fromDate, toDate, partnerId, taxType);
         List<Long> ids = data.invoices().stream()
                 .map(TaxInvoiceResponse.Invoice::partnerId)
                 .distinct()
@@ -205,6 +211,14 @@ public class TaxService {
         return excelExporter.export(data, partners, supplier);
     }
 
+    /**
+     * 과세구분 필터 정규화. 미지정(null/공백)은 <b>전체</b>다.
+     *
+     * <p>★<b>모르는 값은 조용히 전체로 넘기지 않는다.</b> 예전에는 그랬는데,
+     * 그러면 {@code taxType=TAXABL} 같은 오타 하나에 <b>과세·면세가 뒤섞인 목록</b>이
+     * 걸러진 결과인 척 돌아온다. 세무 신고에 쓰는 숫자라 조용한 실패가 가장 위험하다
+     * (개발팀 점검 2026-09-09 P0-4가 정확히 이 증상을 지적했다).
+     */
     private static String normalizeTaxType(String taxType) {
         if (taxType == null || taxType.isBlank()) {
             return "ALL";
@@ -212,7 +226,8 @@ public class TaxService {
         String t = taxType.trim().toUpperCase(Locale.ROOT);
         return switch (t) {
             case "FREE", "TAXABLE", "ALL" -> t;
-            default -> "ALL";
+            default -> throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "과세구분 값을 알 수 없습니다: " + taxType + " (FREE=면세 / TAXABLE=과세 / 미지정=전체)");
         };
     }
 
