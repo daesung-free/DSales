@@ -77,6 +77,24 @@ class CorsIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("★운영 프론트 도메인(sales.d-dlab.link)이 허용된다")
+    void 운영_프론트_도메인() {
+        String prod = "https://sales.d-dlab.link";
+        assertThat(preflight(prod).getHeaders().getAccessControlAllowOrigin())
+                .as("여기가 막히면 프론트를 새 주소로 옮기는 순간 API가 전부 차단된다")
+                .isEqualTo(prod);
+    }
+
+    @Test
+    @DisplayName("‼️API 도메인(sales-api…)은 허용 목록이 아니다 — 오리진은 브라우저가 여는 주소다")
+    void api_도메인은_오리진이_아니다() {
+        // 자기 자신을 오리진으로 넣는 실수를 막는다. 여기 넣어도 아무 효과가 없고,
+        // 진짜 필요한 프론트 도메인을 빠뜨린 걸 못 알아채게 만든다.
+        assertThat(preflight("https://sales-api.d-dlab.link").getHeaders().getAccessControlAllowOrigin())
+                .isNull();
+    }
+
+    @Test
     @DisplayName("로컬 개발 서버는 계속 허용 — 프론트 개발이 막히면 안 된다")
     void 로컬은_그대로() {
         assertThat(preflight("http://localhost:5173").getHeaders().getAccessControlAllowOrigin())

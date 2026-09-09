@@ -26,7 +26,8 @@ public class WebConfig implements WebMvcConfigurer {
      * 운영/스테이징 도메인은 배포 환경변수로 덮어쓴다 —
      * {@code DAESUNG_CORS_ALLOWED-ORIGINS=https://a.com,https://b.com}
      */
-    @Value("${daesung.cors.allowed-origins:http://localhost:3000,http://localhost:5173}")
+    @Value("${daesung.cors.allowed-origins:"
+            + "https://sales.d-dlab.link,http://localhost:3000,http://localhost:5173}")
     private List<String> allowedOrigins;
 
     /**
