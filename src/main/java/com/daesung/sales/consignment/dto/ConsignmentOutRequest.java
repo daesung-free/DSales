@@ -33,7 +33,20 @@ public record ConsignmentOutRequest(
             @NotNull Long productId,
 
             @Schema(description = "출고 수량(양수)", example = "1000", requiredMode = Schema.RequiredMode.REQUIRED)
-            @Positive int qty
+            @Positive int qty,
+
+            @Schema(description = """
+                    정가(원). **미입력 시 도서 마스터 정가**를 쓴다.
+                    출고 시점 값이 미결에 박혀 정산 화면의 공급가액 바탕이 된다.""", example = "10000")
+            Integer unitPrice,
+
+            @Schema(description = """
+                    공급률(%). 미입력 시 **거래처×대분류 매핑 → 도서 기본공급률** 순으로 자동조회한다
+                    (매출등록과 같은 우선순위).""", example = "70")
+            Integer supplyRate,
+
+            @Schema(description = "할인액(원). 미입력 시 거래처×대분류 매핑값. 있으면 공급률 대신 금액에 쓰인다")
+            Integer discountAmount
     ) {
     }
 }

@@ -71,12 +71,31 @@ public class ConsignmentOut extends BaseEntity {
     @Column(nullable = false, length = 10)
     private ConsignmentStatus status = ConsignmentStatus.OPEN;
 
+    /**
+     * 출고 시점 정가·공급률·할인액. <b>나간 물건의 조건은 나갈 때 박힌다.</b>
+     *
+     * <p>정산 화면이 공급가액을 만들려면 이 셋이 필요하다. 조회 시점에 도서 마스터에서
+     * 끌어오면, 출고 뒤 공급률이 바뀌었을 때 미결 정산 금액이 조용히 달라진다
+     * (발주처 확정 2026-08-05 §2.2 — "공급률은 <b>원 출고건 값</b>을 기준으로 표시").
+     *
+     * <p>V62 이전에 생긴 미결은 null일 수 있다 — 그때는 값이 없었다.
+     */
+    @Column(name = "unit_price")
+    private Integer unitPrice;
+
+    @Column(name = "supply_rate")
+    private Integer supplyRate;
+
+    @Column(name = "discount_amount")
+    private Integer discountAmount;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "origin_txn_id")
     private InventoryTxn originTxn;
 
     public static ConsignmentOut create(String sourceOutNo, Product product, Partner partner,
-                                        int totalQty, InventoryTxn originTxn) {
+                                        int totalQty, InventoryTxn originTxn,
+                                        Integer unitPrice, Integer supplyRate, Integer discountAmount) {
         ConsignmentOut c = new ConsignmentOut();
         c.sourceOutNo = sourceOutNo;
         c.product = product;
@@ -88,6 +107,9 @@ public class ConsignmentOut extends BaseEntity {
         c.remainingQty = totalQty;
         c.status = ConsignmentStatus.OPEN;
         c.originTxn = originTxn;
+        c.unitPrice = unitPrice;
+        c.supplyRate = supplyRate;
+        c.discountAmount = discountAmount;
         return c;
     }
 

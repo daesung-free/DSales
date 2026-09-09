@@ -27,15 +27,37 @@ public record ConsignPendingResponse(
             @Schema(description = "누적 정산수량") int settledQty,
             @Schema(description = "미결 잔여수량") int remainingQty,
             @Schema(description = "정산상태 코드(OPEN/PARTIAL/CLOSED)") ConsignmentStatus status,
-            @Schema(description = "정산상태명(미정산/부분정산/정산완료)", example = "부분정산") String statusName
+            @Schema(description = "정산상태명(미정산/부분정산/정산완료)", example = "부분정산") String statusName,
+
+            @Schema(description = """
+                    출고 시점 정가(원). **원 출고건 값**이다 — 도서 마스터를 다시 읽지 않는다.
+                    출고 뒤 정가가 바뀌어도 이 미결의 정산 금액은 흔들리지 않는다.
+                    V62 이전에 생긴 미결은 null일 수 있다.""")
+            Integer unitPrice,
+
+            @Schema(description = "출고 시점 공급률(%). 담당자가 정산 시 수정할 수 있다(발주처 확정 2026-08-05 §2.2)")
+            Integer supplyRate,
+
+            @Schema(description = "출고 시점 할인액(원). 있으면 공급률 대신 금액에 쓰인다")
+            Integer discountAmount,
+
+            @Schema(description = """
+                    **미결 잔여수량 기준** 공급가액(참고값). 서버가 금액 단일소스(Amounts)로 계산한다.
+                    ‼️화면이 입력수량에 따라 미리보기를 만들 때 반올림이 달라질 수 있다 —
+                    **확정 금액은 정산 시 서버가 다시 계산한 값**이다.
+                    정가·공급률이 없는 옛 미결은 null.""")
+            Long remainingSupplyAmount
     ) {
         /** 코드에서 한글명을 채워 생성 — 화면이 매번 매핑표를 들고 있지 않게. */
         public Line(Long consignmentOutId, String sourceOutNo, Long productId, String productCode,
                     String productName, int originalQty, int totalQty, int returnedQty,
-                    int settledQty, int remainingQty, ConsignmentStatus status) {
+                    int settledQty, int remainingQty, ConsignmentStatus status,
+                    Integer unitPrice, Integer supplyRate, Integer discountAmount,
+                    Long remainingSupplyAmount) {
             this(consignmentOutId, sourceOutNo, productId, productCode, productName,
                     originalQty, totalQty, returnedQty, settledQty, remainingQty, status,
-                    status == null ? null : status.label());
+                    status == null ? null : status.label(),
+                    unitPrice, supplyRate, discountAmount, remainingSupplyAmount);
         }
     }
 }

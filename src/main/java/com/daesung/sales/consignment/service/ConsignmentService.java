@@ -96,10 +96,26 @@ public class ConsignmentService {
             InventoryTxn outLeg = inventoryService.moveStock(
                     product, from, to, item.qty(), req.processedDate(), "위탁출고 자동이고");
 
-            // 2) 미결원장 생성
+            // 2) 미결원장 생성 — 출고 시점 단가를 함께 박는다.
+            //    ★매출등록(createEntries)과 **같은 우선순위**로 정한다: 입력값 > 거래처×대분류 매핑 > 도서 기본.
+            //      규칙이 둘이면 같은 물건이 경로에 따라 다른 금액이 된다.
+            //    ★여기서 확정해 저장하는 이유: 정산은 나중에 일어난다. 그 사이 공급률이 바뀌어도
+            //      나간 물건의 조건은 나갈 때 값이어야 한다(발주처 확정 2026-08-05 §2.2).
+            Integer unitPrice = (item.unitPrice() != null) ? item.unitPrice() : product.getPrice();
+            Integer supplyRate = item.supplyRate();
+            if (supplyRate == null) {
+                supplyRate = partnerSupplyRateService.rateFor(product, partner.getId());
+            }
+            if (supplyRate == null) {
+                supplyRate = product.getSupplyRate();
+            }
+            Integer discount = (item.discountAmount() != null)
+                    ? item.discountAmount() : partnerSupplyRateService.discountFor(product, partner.getId());
+
             String outNo = "OUT-" + datePart + "-" + sequenceService.next(SequenceService.SEQ_CONSIGNMENT);
             ConsignmentOut co = consignmentOutRepository.save(
-                    ConsignmentOut.create(outNo, product, partner, item.qty(), outLeg));
+                    ConsignmentOut.create(outNo, product, partner, item.qty(), outLeg,
+                            unitPrice, supplyRate, discount));
 
             lines.add(new ConsignmentOutResponse.Line(
                     co.getId(), outNo, product.getId(), product.getCode(), item.qty(),
@@ -108,6 +124,21 @@ public class ConsignmentService {
         }
         return new ConsignmentOutResponse(
                 partner.getId(), partner.getName(), from.getId(), to.getId(), lines);
+    }
+
+    /**
+     * 미결 잔여수량 기준 공급가액(참고값).
+     *
+     * <p>★<b>금액은 서버가 만든다.</b> 화면이 정가×공급률을 직접 곱하면 반올림 규약이 갈려
+     * 정산 후 금액과 미리보기가 1원씩 어긋난다. 계산은 {@code Amounts} 한 곳에서만 한다.
+     * 출고 시점 단가가 없는 옛 미결은 null을 준다 — 지어내지 않는다.
+     */
+    private static Long remainingSupply(ConsignmentOut co, Product p) {
+        if (co.getUnitPrice() == null || co.getSupplyRate() == null || co.getRemainingQty() <= 0) {
+            return null;
+        }
+        return Amounts.of(co.getUnitPrice(), co.getSupplyRate(), co.getRemainingQty(),
+                p.isTaxFree(), null, co.getDiscountAmount()).supplyAmount();
     }
 
     /** 거래처별 미결(잔여>0) 조회. */
@@ -123,7 +154,9 @@ public class ConsignmentService {
             lines.add(new ConsignPendingResponse.Line(
                     co.getId(), co.getSourceOutNo(), p.getId(), p.getCode(), p.getName(),
                     co.getOriginalQty(), co.getTotalQty(), co.getReturnedQty(),
-                    co.getSettledQty(), co.getRemainingQty(), co.getStatus()));
+                    co.getSettledQty(), co.getRemainingQty(), co.getStatus(),
+                    co.getUnitPrice(), co.getSupplyRate(), co.getDiscountAmount(),
+                    remainingSupply(co, p)));
         }
         return new ConsignPendingResponse(partner.getId(), partner.getName(), lines);
     }
