@@ -102,14 +102,18 @@ jobs:
             # 앱과 DSRE2 복제본을 같은 사용자 네트워크에 둔다.
             # 앱이 컨테이너라 localhost:3307 로는 호스트의 DB에 닿지 못한다 —
             # 사용자 네트워크에 묶으면 컨테이너 이름(dsre-mariadb)이 그대로 DNS가 된다.
+            # ★로그 드라이버를 json-file 로 둔다(awslogs 아님).
+            #   awslogs 는 도커에 로그를 남기지 않아 `docker logs` 도, Dozzle 같은 뷰어도 아무것도 못 본다.
+            #   개발서버는 로그를 계속 들여다봐야 해서 로컬 보관 + 뷰어 쪽을 택했다.
+            #   ⚠️대가: CloudWatch 에 쌓이지 않고, 컨테이너를 지우면 그 로그도 함께 사라진다.
+            #     max-size/max-file 로 로테이션을 걸어 디스크가 차는 것만 막는다(최대 150MB).
             docker network create dsales-net 2>/dev/null || true
             docker network connect dsales-net dsre-mariadb 2>/dev/null || true
             docker run -d --name dsales --restart unless-stopped -p 8080:8080 \
               --network dsales-net \
-              --log-driver=awslogs \
-              --log-opt awslogs-region="$AWS_REGION" \
-              --log-opt awslogs-group=/dsales/app \
-              --log-opt awslogs-create-group=true \
+              --log-driver=json-file \
+              --log-opt max-size=50m \
+              --log-opt max-file=3 \
               -e SPRING_PROFILES_ACTIVE=aws \
               -e AWS_REGION="$AWS_REGION" \
               -e DB_HOST="$DB_HOST" \
