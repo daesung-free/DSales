@@ -66,6 +66,13 @@ public class SaleController {
     private final SalesUploadService salesUploadService;
     private final ExcelExportUtil excel;
 
+    /**
+     * 엑셀 한 장에 담는 최대 행수. 조회 화면의 페이지 크기(200)와 무관하게 전량을 담기 위한 상한이다.
+     * ★무제한으로 두지 않는 이유: 기간을 안 주고 내려받으면 전 기간이 메모리에 한 번에 올라온다.
+     *   넘치면 잘라 내는 것이 아니라 <b>기간을 좁히라고 알려주는</b> 편이 낫다(조용한 누락 방지).
+     */
+    private static final int EXPORT_MAX = 50_000;
+
     @Operation(summary = "통합 매출 조회(7p 출고/반품조회 · 12p 통합매출조회)",
             description = """
                     기간·거래처와 **표준 구분값 축**으로 조회한다. 기본은 취소건 제외.
@@ -121,6 +128,64 @@ public class SaleController {
                 MultiSelect.merge(shipmentType, shipmentTypes),
                 MultiSelect.merge(partnerId, partnerIds),
                 includeCanceled, pageReq.toPageable()));
+    }
+
+    @Operation(summary = "통합 매출 조회 엑셀 다운로드(12p)",
+            description = """
+                    조회(`GET /sales`)와 **같은 필터**를 받아 그 결과를 엑셀로 내린다.
+
+                    ★필터를 똑같이 받는 이유: 다운로드만 조건이 빠지면 **화면에 없던 건이 파일에 실린다.**
+                    담당자는 화면을 믿고 파일을 그대로 보고서에 붙인다.
+
+                    ★페이징은 적용하지 않는다 — 파일은 **조건에 맞는 전량**이다.
+                    화면 2페이지를 보다 내려받았는데 101~200행만 나오면 자료가 빠진 줄 모른다.
+
+                    ‼️브라우저에서 `<a href>`로 이 주소를 열면 **인증 헤더가 실리지 않아 401**이다.
+                    fetch로 토큰을 붙여 받은 뒤 파일로 저장해야 한다(개발팀 점검 2026-09-09 P0-5).""")
+    @GetMapping("/export")
+    public ResponseEntity<byte[]> exportSales(
+            @Parameter(description = "시작일(yyyy-MM-dd)") @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
+            @Parameter(description = "종료일(yyyy-MM-dd)") @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @RequestParam(required = false) SalesCategory salesCategory,
+            @RequestParam(required = false) List<SalesCategory> salesCategories,
+            @RequestParam(required = false) TradeClass tradeClass,
+            @RequestParam(required = false) List<TradeClass> tradeClasses,
+            @RequestParam(required = false) ShipmentType shipmentType,
+            @RequestParam(required = false) List<ShipmentType> shipmentTypes,
+            @RequestParam(required = false) Long partnerId,
+            @RequestParam(required = false) List<Long> partnerIds,
+            @RequestParam(defaultValue = "false") boolean includeCanceled) {
+        List<Col> cols = List.of(
+                new Col("매출번호", "salesNo"), new Col("매출일자", "salesDate"),
+                new Col("거래처코드", "partnerCode"), new Col("도시명", "partnerCityName"),
+                new Col("거래처명1", "partnerName1"), new Col("거래처명2", "partnerName"),
+                new Col("거래처구분", "clientCategory"), new Col("지역", "region"),
+                new Col("학교코드", "schoolCode"), new Col("학교/학원명", "schoolName"),
+                new Col("대분류", "majorCategoryName"), new Col("세부구분", "salesDivisionName"),
+                new Col("분류코드", "catCode"), new Col("분류명", "catName"),
+                new Col("도서코드", "productCode"), new Col("도서명", "productName"),
+                new Col("학년", "grade"), new Col("회차", "bookRound"),
+                new Col("거래분류", "tradeClassName"), new Col("출고유형", "shipmentType"),
+                new Col("창고", "warehouseName"),
+                new Col("정가", "unitPrice"), new Col("공급률(%)", "supplyRate"),
+                new Col("할인액", "discountAmount"), new Col("수량", "qty"),
+                new Col("공급가액", "supplyAmount"), new Col("세액", "tax"),
+                new Col("총금액", "totalAmount"),
+                new Col("취소", "canceled"), new Col("메모", "memo"));
+
+        // ★페이징 없이 전량. PageRequestDto 상한(200)에 걸리지 않도록 서비스에 직접 큰 페이지를 준다.
+        var page = saleService.search(startDate, endDate,
+                MultiSelect.merge(salesCategory, salesCategories),
+                MultiSelect.merge(tradeClass, tradeClasses),
+                MultiSelect.merge(shipmentType, shipmentTypes),
+                MultiSelect.merge(partnerId, partnerIds),
+                includeCanceled,
+                org.springframework.data.domain.PageRequest.of(0, EXPORT_MAX));
+        byte[] xlsx = excel.toXlsx("통합매출조회", cols, page.getContent(),
+                Heading.period("통합 매출 조회", startDate, endDate));
+        return excel.asDownload(xlsx, "통합매출조회.xlsx");
     }
 
     @Operation(summary = "수기 매출 등록(일반)",
