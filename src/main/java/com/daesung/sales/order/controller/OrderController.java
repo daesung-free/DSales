@@ -110,21 +110,35 @@ public class OrderController {
             description = """
                     신청일 기간으로 DSRE2 주문을 조회한다. 진행상태는 DSRE2 원본값을 한글명과 함께 돌려준다.
 
+                    · **기간을 생략하면 올해 1/1~오늘**이다(다른 조회 API와 같은 규칙).
+                    · 응답은 다른 목록 API와 같은 **페이지 형태**(`content`/`totalElements`)다.
+                      ⚠️단 DSRE2 조회는 저장함수로 인원을 계산하며 한 번에 결과를 만들어
+                      SQL 페이징이 없다. 전량을 받아 서버에서 자르므로 **총건수는 항상 전체**다.
+
                     · 상태값: A 접수완료 / G 상품검수 / S 상품준비중 / W 발송준비중 / D 발송완료 / C 삭제
                     · ⚠️ 취소분은 **본사·물류가 삭제한 건만** C로 조회된다.
                       특약점(지사)이 삭제한 건은 원본 행이 지워져 조회되지 않는다.
                     · 인원은 DSRE2 저장함수(FUNC_REQINWON_GET) 산출값이다.""")
     @GetMapping
-    public ApiResponse<List<DsreOrderRow>> orders(
-            @Parameter(description = "신청일 시작(yyyy-MM-dd)", required = true)
-            @RequestParam(name = "fromDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
-            @Parameter(description = "신청일 종료(yyyy-MM-dd)", required = true)
-            @RequestParam(name = "toDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+    public ApiResponse<com.daesung.sales.common.response.PageResponse<DsreOrderRow>> orders(
+            @Parameter(description = "신청일 시작(yyyy-MM-dd). 미지정 시 올해 1월 1일")
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @Parameter(description = "신청일 종료(yyyy-MM-dd). 미지정 시 오늘")
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @Parameter(description = "페이지(0부터)") @RequestParam(defaultValue = "0") int page,
+            @Parameter(description = "페이지 크기") @RequestParam(defaultValue = "100") int size,
             @Parameter(description = "진행상태(미지정=전체)") @RequestParam(required = false) OrderState state,
             @Parameter(description = "거래처코드(미지정=전체)") @RequestParam(required = false) String custCode,
             @Parameter(description = "구분 ALL/NORMAL(정상)/ACCIDENT(사고). 미지정=전체")
             @RequestParam(required = false, defaultValue = "ALL") LogisMode mode) {
-        return ApiResponse.success(dsreGateway.findOrders(fromDate, toDate, state, custCode, mode));
+        // ★날짜를 필수로 두었더니 화면이 못 불렀다(파라미터를 안 실어 400).
+        //   다른 조회 API는 이미 기간을 생략하면 올해로 잡는다 — /orders만 예외였다.
+        LocalDate from = (fromDate != null) ? fromDate : LocalDate.now().withDayOfYear(1);
+        LocalDate to = (toDate != null) ? toDate : LocalDate.now();
+        // ★DSRE2 조회는 저장함수로 인원을 계산하며 한 번에 결과를 만든다.
+        //   SQL에 LIMIT을 걸면 페이지마다 인원·합계가 달라지므로, 전량을 받아 여기서 자른다.
+        return ApiResponse.success(com.daesung.sales.common.response.PageResponse.ofList(
+                dsreGateway.findOrders(from, to, state, custCode, mode), page, size));
     }
 
     @Operation(summary = "주문·진행상태 엑셀 다운로드")
