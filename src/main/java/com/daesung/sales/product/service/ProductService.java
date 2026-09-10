@@ -102,6 +102,12 @@ public class ProductService {
     @Transactional
     public ProductResponse update(Long id, ProductUpdateRequest req) {
         Product product = getOrThrow(id);
+        // ★수정은 **부분 수정**이다(안 보낸 필드는 유지). 그래서 필수 애너테이션을 뗐는데,
+        //   이름만은 빈 문자열을 막는다 — 이름 없는 상품은 목록·리포트에서 찾을 수 없다.
+        //   null(안 보냄)과 ""(비우겠다)는 다른 의사표시라 여기서 갈라 준다.
+        if (req.name() != null && req.name().isBlank()) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "상품명은 비울 수 없습니다.");
+        }
         salesDivisionService.validateCode(req.salesDivision());
         Map<String, String> before = product.auditSnapshot();
         product.update(req.name(), req.contentType(), req.set(),

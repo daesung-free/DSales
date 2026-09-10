@@ -102,11 +102,10 @@ public class ProductUploadService {
                             r.boolOrNull(H_STOCK)));
                     out.created(r.rowNo(), code);
                 } else {
-                    // ★★빈 칸을 **기존 값으로 채워서** 넘긴다.
-                    //   PUT /masters/products/{id}는 '전체 교체' 의미라 null이 그대로 덮어쓴다
-                    //   (Product.update 참고 — Boolean만 keep, 나머지는 대입).
-                    //   그건 그 API의 계약이니 건드리지 않고, **업로드의 '부분 수정' 의미는 여기서 만든다**.
-                    //   안 그러면 정가만 고치려고 두 열만 채워 올린 파일이 분류·공급률·이름을 통째로 날린다.
+                    // 빈 칸은 기존 값으로 채워 넘긴다.
+                    // ※Product.update 가 이제 null을 "유지"로 다루므로(2026-09-10) 여기서 채우지 않아도
+                    //   결과는 같다. 그래도 남겨 두는 이유는 **업로드가 무엇을 보내는지 이 자리에서 읽히게**
+                    //   하기 위해서다 — 엔티티 규칙이 또 바뀌어도 업로드 동작은 흔들리지 않는다.
                     productService.update(existing.getId(), new ProductUpdateRequest(
                             or(r.str(H_NAME), existing.getName()),
                             (content != null) ? content : existing.getContentType(),

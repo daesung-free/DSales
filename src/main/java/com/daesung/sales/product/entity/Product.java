@@ -126,9 +126,10 @@ public class Product extends BaseEntity {
 
     /** 32p 확장 필드(상품년도·상품구분·기본공급률) 설정 — 등록·수정 시 사용. */
     public void applyExtra(Integer productYear, String productType, Integer supplyRate) {
-        this.productYear = productYear;
-        this.productType = productType;
-        this.supplyRate = supplyRate;
+        // update()와 같은 규칙 — null은 "안 보냈다"이지 "지워라"가 아니다.
+        this.productYear = keep(productYear, this.productYear);
+        this.productType = keep(productType, this.productType);
+        this.supplyRate = keep(supplyRate, this.supplyRate);
     }
 
     /** 수정(코드는 불변). */
@@ -143,16 +144,20 @@ public class Product extends BaseEntity {
                        Boolean taxFree, String grade, String catCode, String catName, Boolean useYn,
                        String salesDivision, Boolean ledgerVisible, Boolean webVisible,
                        Boolean stockManaged) {
-        this.name = name;
-        this.contentType = contentType;
+        // ★null = "안 보냈다" = 기존 값 유지. 예전에는 Boolean만 그랬고 나머지는 그대로 대입해,
+        //   화면이 정가만 고치려고 일부 필드만 보내면 분류코드·학년이 조용히 지워졌다.
+        //   29개 필드를 하나도 빠뜨리지 않고 되돌려 보내야만 안전한 API였다.
+        //   지우고 싶으면 빈 문자열("")을 보낸다 — 그건 "비운다"는 의사표시라 그대로 저장된다.
+        this.name = keep(name, this.name);
+        this.contentType = keep(contentType, this.contentType);
         this.set = keep(set, this.set);
-        this.price = price;
+        this.price = keep(price, this.price);
         this.taxFree = keep(taxFree, this.taxFree);
-        this.grade = grade;
-        this.catCode = catCode;
-        this.catName = catName;
+        this.grade = keep(grade, this.grade);
+        this.catCode = keep(catCode, this.catCode);
+        this.catName = keep(catName, this.catName);
         this.useYn = keep(useYn, this.useYn);
-        this.salesDivision = salesDivision;
+        this.salesDivision = keep(salesDivision, this.salesDivision);
         this.ledgerVisible = keep(ledgerVisible, this.ledgerVisible);
         this.webVisible = keep(webVisible, this.webVisible);
         this.stockManaged = keep(stockManaged, this.stockManaged);
@@ -212,6 +217,16 @@ public class Product extends BaseEntity {
 
     /** 요청에 값이 없으면(null) 기존 값을 그대로 둔다. */
     private static boolean keep(Boolean incoming, boolean current) {
+        return (incoming == null) ? current : incoming;
+    }
+
+    /**
+     * 위와 같은 규칙의 일반형. <b>null은 "안 보냈다"</b>이지 "지워라"가 아니다.
+     *
+     * <p>지우려는 의사는 빈 문자열로 표현한다 — 그건 값이 실려 온 것이라 그대로 저장된다.
+     * 이 구분이 없으면 화면이 필드 하나만 빠뜨려도 조용히 데이터가 사라진다.
+     */
+    private static <T> T keep(T incoming, T current) {
         return (incoming == null) ? current : incoming;
     }
 

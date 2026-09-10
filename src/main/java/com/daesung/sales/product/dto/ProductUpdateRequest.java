@@ -17,11 +17,14 @@ import jakarta.validation.constraints.NotNull;
  */
 public record ProductUpdateRequest(
 
-        @Schema(description = "상품명", example = "2026 D.ARCHIVE 국어 세트", requiredMode = Schema.RequiredMode.REQUIRED)
-        @NotBlank String name,
+        @Schema(description = """
+                상품명. **미지정(null)이면 기존 값 유지**.
+                ‼️빈 문자열은 거부한다 — 이름 없는 상품은 목록에서 찾을 수 없다.""",
+                example = "2026 D.ARCHIVE 국어 세트")
+        String name,
 
-        @Schema(description = "콘텐츠구분", example = "SELF", requiredMode = Schema.RequiredMode.REQUIRED)
-        @NotNull ContentType contentType,
+        @Schema(description = "콘텐츠구분. 미지정이면 기존 값 유지", example = "SELF")
+        ContentType contentType,
 
         @Schema(description = "세트 여부", example = "true")
         Boolean set,
