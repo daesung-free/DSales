@@ -10,6 +10,7 @@ import com.daesung.sales.product.dto.BomRegisterRequest;
 import com.daesung.sales.product.dto.BomResponse;
 import com.daesung.sales.product.dto.ProductFlagBulkRequest;
 import com.daesung.sales.product.dto.ProductFlagBulkResult;
+import com.daesung.sales.product.dto.ProductCategoryRow;
 import com.daesung.sales.product.dto.ProductCreateRequest;
 import com.daesung.sales.product.dto.ProductResponse;
 import com.daesung.sales.product.dto.ProductUpdateRequest;
@@ -54,6 +55,17 @@ public class ProductService {
         // 세부구분 마스터는 몇 줄짜리라 한 번에 읽어 맵으로 쓴다 — 상품마다 조회하면 목록 한 장에 수백 번이 된다.
         Map<String, SalesDivision> divisions = divisionsByCode();
         return PageResponse.of(page.map(p -> ProductResponse.from(p, divisions.get(p.getSalesDivision()))));
+    }
+
+    /**
+     * 쓰이고 있는 분류코드 목록(도서 등록 화면 선택용).
+     * 마스터 테이블이 아니라 실제 사용 중인 값의 집계다 — {@link ProductCategoryRow} 참고.
+     */
+    @Transactional(readOnly = true)
+    public List<ProductCategoryRow> usedCategories() {
+        return productRepository.findUsedCategories().stream()
+                .map(a -> new ProductCategoryRow(a.getCatCode(), a.getCatName(), a.getProductCount()))
+                .toList();
     }
 
     public ProductResponse findById(Long id) {

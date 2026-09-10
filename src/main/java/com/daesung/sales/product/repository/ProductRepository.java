@@ -1,13 +1,45 @@
 package com.daesung.sales.product.repository;
 
 import com.daesung.sales.product.entity.Product;
+import java.util.List;
 import java.util.Optional;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.Query;
 
 public interface ProductRepository extends JpaRepository<Product, Long> {
     Optional<Product> findByCode(String code);
+
+    /**
+     * 쓰이고 있는 분류코드·분류명 목록(도서 등록 화면 선택용).
+     *
+     * <p>★분류 마스터가 아니라 <b>실제 사용 중인 값의 집계</b>다. 정본에 분류 등록 화면이 없어
+     * 분류코드는 도서에 직접 입력된다 — 그 값들을 모아 보여줘 타이핑을 줄이는 것이 목적이다.
+     *
+     * <p>★<b>코드와 이름을 함께 묶는다.</b> 코드만 뽑으면 같은 코드에 이름이 갈려 있어도
+     * 한 줄로 보여 문제가 감춰진다. 갈려 있으면 두 줄로 나오는 편이 낫다.
+     *
+     * <p>사용여부(useYn)가 꺼진 도서도 포함한다 — 과거 매출이 그 분류를 가리키고 있어
+     * 리포트에는 계속 나온다. 목록에서 빼면 담당자가 "없는 분류"로 알고 새로 만든다.
+     */
+    @Query("""
+            select p.catCode as catCode, p.catName as catName, count(p) as productCount
+            from Product p
+            where p.catCode is not null and p.catCode <> ''
+            group by p.catCode, p.catName
+            order by p.catCode asc, p.catName asc
+            """)
+    List<CategoryAgg> findUsedCategories();
+
+    /** {@link #findUsedCategories} 투영. */
+    interface CategoryAgg {
+        String getCatCode();
+
+        String getCatName();
+
+        long getProductCount();
+    }
 
     Page<Product> findByCodeContainingIgnoreCaseOrNameContainingIgnoreCase(
             String code, String name, Pageable pageable);

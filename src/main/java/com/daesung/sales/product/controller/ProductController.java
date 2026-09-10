@@ -186,4 +186,31 @@ public class ProductController {
         return ApiResponse.success(uploadService.uploadBom(file));
     }
 
+
+    @Operation(summary = "분류코드 선택 목록(32p 도서관리)",
+            description = """
+                    도서 등록·수정 화면의 **분류코드 콤보박스**에 쓸 목록.
+                    이미 쓰이고 있는 `분류코드 + 분류명` 조합을 사용 건수와 함께 준다.
+
+                    ### ★분류 마스터가 아니다
+                    정본(1탭 32p)은 분류코드·분류명을 **도서 기본정보의 입력 항목**으로 둔다 —
+                    분류를 따로 등록·관리하는 화면이 없다. 레거시도 도서 테이블에 직접 넣었다.
+                    그래서 이 목록은 **실제 사용 중인 값을 모아 보여주는 것**이고,
+                    새 분류는 여전히 직접 입력할 수 있다.
+
+                    ### 왜 필요한가
+                    형식 검증(`[영문1][연도4][영문·숫자1~3]`)은 **오타를 못 잡는다.**
+                    `K202601`을 `K202602`로 잘못 치면 형식은 통과하고, 리포트에 없던 분류가
+                    한 줄 더 생겨 매출이 조용히 쪼개진다. 고르게 하면 그 경로가 줄어든다.
+
+                    ### 읽는 법
+                    · 같은 코드에 분류명이 갈려 있으면 **여러 줄로 나온다** — 숨기지 않는다.
+                      건수 1짜리가 비슷한 이름 옆에 있으면 오타를 의심할 자리다.
+                    · 사용여부가 꺼진 도서의 분류도 포함한다. 과거 매출이 그 분류를 가리켜
+                      리포트에는 계속 나오는데, 목록에서 빼면 담당자가 "없는 분류"로 알고 또 만든다.""")
+    @GetMapping("/categories")
+    public ApiResponse<java.util.List<com.daesung.sales.product.dto.ProductCategoryRow>> categories() {
+        return ApiResponse.success(productService.usedCategories());
+    }
+
 }
