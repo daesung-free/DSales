@@ -61,6 +61,14 @@ public record PartnerCreateRequest(
         @Schema(description = "우편번호", example = "13588") String zip,
         @Schema(description = "관할지역 — '지역'과 별개 축", example = "경남권") String zone2,
         @Schema(description = "등록일(거래 시작)", example = "2026-01-01") LocalDate startDate,
-        @Schema(description = "만료일 — 값이 있으면 만료 거래처로 분류", example = "2026-12-31") LocalDate endDate
+        @Schema(description = "만료일 — 값이 있으면 만료 거래처로 분류", example = "2026-12-31") LocalDate endDate,
+
+        // ── 담보(여신) ──
+        // ‼️화면 신규등록에는 담보 입력란이 있는데 여기 필드가 없어 **입력값이 통째로 버려졌다**
+        //   (2026-09-11 점검에서 발견 — 담보 500만원을 넣고 등록해도 null 로 저장됐다).
+        //   담보가 비면 외상매출현황의 담보비율·경고등급이 전부 안 나온다.
+        @Schema(description = "담보금액(여신한도)", example = "5000000") Long assureAmount,
+        @Schema(description = "담보 만기", example = "2027-01-01") LocalDate assureExpiry,
+        @Schema(description = "담보 내용", example = "부동산 근저당") String assureNote
 ) {
 }

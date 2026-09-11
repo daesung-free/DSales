@@ -77,6 +77,14 @@ public interface DsreGateway {
     java.util.List<SchoolRefRow> readSchoolRefs();
 
     /**
+     * DSRE2 거래처 원본 전량({@code tbl_cust_info}).
+     *
+     * <p>★거래처 실데이터는 DSRE2가 원본이다. 우리 마스터는 그걸 받아 쓰는 쪽이다.
+     * ‼️학교 동기화가 이 표를 조인하므로 <b>거래처를 먼저</b> 맞춰야 학교에 거래처명이 붙는다.
+     */
+    java.util.List<ClientRefRow> readClientRefs();
+
+    /**
      * 주문·진행상태 조회(읽기 전용). 근거: 레거시 조회 SQL(FM_DSRE_RegStateChng.cs).
      *
      * <p>상태 전이는 DSRE2 데스크톱이 수행하고 우리는 읽기만 한다(발주처 확정 2026-08-11
