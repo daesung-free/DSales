@@ -120,19 +120,18 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
         JsonNode rows = data(get("/stock/ledger?warehouseId=" + wh)).path("content");
         assertThat(codes(rows)).doesNotContain("MF-EXAM");
 
-        // 대조: 재고관리 상품(기본 true)은 이벤트가 남고 **재고가 음수로 간다**.
-        // ★2026-08-31 발주처 확정으로 음수재고 차단을 제거했다 —
-        //   "입고 전 출시/출고되는 상품은 재고 (–)로 처리되며 마이너스 표시가 정상".
-        //   예전에는 여기서 NEGATIVE_STOCK으로 거부했다.
+        // 대조: 재고관리 상품(기본 true)은 재고를 검사하므로 입고 없이 출고하면 **막힌다**.
+        // ★차단은 한 번 걷어냈다가(발주처 2026-08-31) 다시 넣었다(개발팀 점검 2026-09-11).
+        //   두 지시가 갈려 설정 daesung.inventory.allow-negative-stock 으로 뒤집게 해 뒀고,
+        //   기본값은 차단이다. 이 테스트가 그 기본값을 고정한다.
         Long book = createId("/masters/products",
                 Map.of("code", "MF-BOOK", "name", "일반교재", "contentType", "SELF"));
-        JsonNode ok = post("/sales/entries", Map.of(
+        JsonNode blocked = post("/sales/entries", Map.of(
                 "salesDate", "2026-04-15", "partnerId", ownerFallback(), "warehouseId", wh,
                 "items", List.of(Map.of("productId", book, "shipmentType", "NORMAL_SHIP",
                         "unitPrice", 10000, "supplyRate", 100, "qty", 30))));
-        assertThat(ok.path("success").asBoolean()).as("입고 없이도 출고된다: %s", ok).isTrue();
-        assertThat(ok.path("data").path("items").get(0).path("stockBalance").asInt())
-                .as("재고는 음수로 남는다").isEqualTo(-30);
+        assertThat(blocked.path("success").asBoolean()).as("입고 없는 출고는 막힌다: %s", blocked).isFalse();
+        assertThat(blocked.path("error").path("message").asText()).contains("재고가 부족");
     }
 
     @Test

@@ -61,6 +61,13 @@ daesung:
     # Amplify는 브랜치마다 서브도메인이 생긴다 → 앱 ID를 고정한 패턴으로 한 번에 허용.
     # (develop.d1z41nzmh4zrdi.amplifyapp.com 등)
     allowed-origin-patterns: "https://*.d1z41nzmh4zrdi.amplifyapp.com"
+  # 재고 정책.
+  inventory:
+    # 재고가 음수가 되는 차감(폐기·출고·이고·조립)을 허용할지.
+    #   false = 차단 — 개발팀 점검(2026-09-11) 지적 반영. 현재고보다 많은 폐기가 그대로 통과했다.
+    #   true  = 허용 — 발주처 화면검토(2026-08-31) "재고 음수 차단 로직은 적용되면 안됩니다".
+    # ★지시가 갈려 있어 설정으로 뺐다. 확정되면 여기만 바꾸면 된다(재배포 불요, 환경변수 override 가능).
+    allow-negative-stock: false
   # 인증/JWT. ★jwt-secret은 배포 시 환경변수(DAESUNG_SECURITY_JWT-SECRET)로 override — 아래는 로컬 개발 전용 더미.
   security:
     jwt-secret: "local-dev-only-change-me-please-32bytes-minimum-secret-key"
