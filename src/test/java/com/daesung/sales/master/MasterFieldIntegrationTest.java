@@ -537,6 +537,18 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
         // 매출 원장 등록 확인(9월 격리)
         JsonNode all = data(get("/sales?startDate=2026-09-05&endDate=2026-09-05")).path("content");
         assertThat(all).isNotEmpty();
+
+        // ★업로드도 재고를 뺀다. 예전엔 이게 빠져 있어 올린 만큼 매출은 서는데 재고는 그대로였고,
+        //   제품수불부와 순매출 조회의 수량이 딱 업로드분만큼 어긋났다(2026-09-11 점검).
+        //   양식에 창고 칸이 없어 물류창고에서 나간다.
+        long uploaded = 0;
+        for (JsonNode row : data(get("/stock/ledger?fromDate=2026-09-01&toDate=2026-09-30"
+                + "&keyword=01&size=50")).path("content")) {
+            if ("01".equals(row.path("productCode").asText())) {
+                uploaded += row.path("sale").asLong();
+            }
+        }
+        assertThat(uploaded).as("업로드 10부가 재고에서 빠져야 한다").isEqualTo(-10);
     }
 
     private byte[] buildUploadXlsx() throws Exception {

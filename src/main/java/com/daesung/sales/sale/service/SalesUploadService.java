@@ -5,6 +5,8 @@ import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.common.money.Amounts;
 import com.daesung.sales.common.sequence.SequenceService;
+import com.daesung.sales.inventory.entity.TxnType;
+import com.daesung.sales.inventory.service.InventoryService;
 import com.daesung.sales.partner.entity.Partner;
 import com.daesung.sales.partner.repository.PartnerRepository;
 import com.daesung.sales.product.entity.Product;
@@ -14,6 +16,9 @@ import com.daesung.sales.sale.entity.Sale;
 import com.daesung.sales.sale.repository.SaleRepository;
 import com.daesung.sales.salestype.entity.SalesCategory;
 import com.daesung.sales.salestype.entity.ShipmentType;
+import com.daesung.sales.warehouse.entity.Warehouse;
+import com.daesung.sales.warehouse.entity.WarehouseType;
+import com.daesung.sales.warehouse.repository.WarehouseRepository;
 import java.io.IOException;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -49,6 +54,8 @@ public class SalesUploadService {
 
     private final SaleRepository saleRepository;
     private final PartnerRepository partnerRepository;
+    private final WarehouseRepository warehouseRepository;
+    private final InventoryService inventoryService;
     private final ProductRepository productRepository;
     private final com.daesung.sales.product.service.PartnerSupplyRateService partnerSupplyRateService;
     private final SequenceService sequenceService;
@@ -133,6 +140,17 @@ public class SalesUploadService {
                     sale.applyDiscount(discount);
                     sale.applyUploadDetail(str(row, 2), null, intOrNull(row, 5));   // 학교코드·(학교명 미구현)·회차
                     saleRepository.save(sale);
+
+                    // ★재고도 같이 뺀다. 업로드만 이게 빠져 있어서, 올린 만큼 매출은 서는데
+                    //   재고는 그대로였다 — 제품수불부와 순매출 조회의 수량이 어긋나는 원인이었다
+                    //   (2026-09-11 점검: 국어 개념 교재 수불부 103,515 / 순매출 103,518, 차이가
+                    //   곧 업로드분이었다). 이중 장부가 갈라지면 어느 쪽이 맞는지 알 수 없게 된다.
+                    // ‼️양식(12컬럼)에 창고 칸이 없다 — 물류창고로 보낸다. 업로드로 받는 구분은
+                    //   정상출고·증정용·교사용뿐이고 위탁은 전용 화면이라, 실물은 물류창고에서 나간다.
+                    if (product.isStockManaged()) {
+                        inventoryService.applyShipment(product, mainWarehouse(), -qty,
+                                TxnType.OUTBOUND, kind.shipmentType(), date, salesNo, "매출 엑셀 업로드");
+                    }
 
                     imported++;
                     lines.add(new SalesUploadResponse.Line(rowNo, "IMPORTED", salesNo,
@@ -259,5 +277,19 @@ public class SalesUploadService {
             return null;
         }
         return (int) Math.round(d <= 1.0 ? d * 100 : d);
+    }
+
+    /**
+     * 업로드분이 나갈 물류창고.
+     *
+     * <p>표준 양식에 창고 칸이 없어 서버가 정한다. 실물창고가 여럿이면 <b>가장 먼저 만든 것</b>을 쓴다
+     * — 창고를 고르는 규칙이 정해지면 그때 양식에 칸을 넣어야 한다.
+     * 하나도 없으면 재고를 어디서 뺄지 알 수 없으므로 올리지 않고 막는다.
+     */
+    private Warehouse mainWarehouse() {
+        return warehouseRepository.findByType(WarehouseType.MAIN).stream()
+                .min(java.util.Comparator.comparing(Warehouse::getId))
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                        "물류창고가 없습니다. 창고관리에서 물류창고를 먼저 등록하세요."));
     }
 }
