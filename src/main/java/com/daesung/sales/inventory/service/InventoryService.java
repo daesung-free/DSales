@@ -282,11 +282,16 @@ public class InventoryService {
         for (Object[] r : inventoryTxnRepository.stockLedger(from, to, productId, warehouseId, whType)) {
             long closing = num(r[15]);
             long cached = num(r[16]);
+            long sale = num(r[10]);          // 음수(재고를 깎는다)
+            long salesReturn = num(r[13]);   // 양수(되돌아온다)
+            // 순매출수량 = 매출 − 반품. 원장은 매출을 음수로 적으므로 부호를 뒤집어 뺀다.
+            // ‼️교사용·증정은 무가라 순매출에 안 들어간다 — 순매출조회(SaleRepository)와 같은 정의다.
+            long netSaleQty = (-sale) - salesReturn;
             result.add(new StockLedgerRow(
                     num(r[0]), (String) r[1], (String) r[2], num(r[3]), (String) r[4],
                     num(r[5]), num(r[6]), num(r[7]), num(r[8]), num(r[9]),
-                    num(r[10]), num(r[11]), num(r[12]), num(r[13]), num(r[14]),
-                    closing, cached, closing == cached));
+                    sale, num(r[11]), num(r[12]), salesReturn, num(r[14]),
+                    netSaleQty, closing, cached, closing == cached));
         }
 
         String kw = (keyword == null || keyword.isBlank())

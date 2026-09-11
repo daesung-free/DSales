@@ -24,6 +24,11 @@ public record StockLedgerRow(
         @Schema(description = "교사용(음수)") long teacher,
         @Schema(description = "반품(양수)") long salesReturn,
         @Schema(description = "재고실사 조정(순증감)") long adjust,
+        @Schema(description = """
+                순매출수량 = 매출 − 반품. **교사용·증정은 무가라 들어가지 않는다.**
+                ★화면에서 직접 더하지 말 것 — 2026-09-11 점검에서 수불부 3,029(매출+교사용+반품) vs
+                순매출조회 3,006(매출−반품)으로 갈렸다. 정본은 순매출조회 쪽이고 이 값이 그것과 같다.""")
+        long netSaleQty,
         @Schema(description = "현재재고(마감)") long closing,
         @Schema(description = "캐시 잔량(inventory.qty)") long cachedBalance,
         @Schema(description = "이벤트합계=캐시 일치 여부") boolean reconciled
