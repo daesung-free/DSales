@@ -167,4 +167,23 @@ class UploadAndFilterIntegrationTest extends IntegrationTestSupport {
         assertThat(data(get("/stock/ledger?fromDate=" + YEAR + "-01-01&toDate=" + YEAR + "-12-31"
                 + "&keyword=없는도서xyz")).path("content")).isEmpty();
     }
+
+    @Test
+    @DisplayName("★날짜 파라미터는 startDate/fromDate 둘 다 받는다 — 이름이 갈려 조용히 전체조회 되던 문제")
+    void 날짜_파라미터_별칭() {
+        String a = "?startDate=" + YEAR + "-01-01&endDate=" + YEAR + "-12-31&size=100";
+        String b = "?fromDate=" + YEAR + "-01-01&toDate=" + YEAR + "-12-31&size=100";
+
+        long byStart = data(get("/sales" + a)).path("totalElements").asLong();
+        long byFrom = data(get("/sales" + b)).path("totalElements").asLong();
+
+        assertThat(byStart).as("기존 이름으로 조회되던 건").isPositive();
+        assertThat(byFrom).as("별칭으로도 같은 결과여야 한다").isEqualTo(byStart);
+
+        // ‼️이름이 안 맞으면 400이 아니라 null이 되어 필터가 통째로 사라진다 —
+        //   화면은 "조회됐다"고 믿는데 실은 전체기간이다. 그 상태와 구분되는지 본다.
+        long narrowed = data(get("/sales?fromDate=" + YEAR + "-03-01&toDate=" + YEAR + "-03-31&size=100"))
+                .path("totalElements").asLong();
+        assertThat(narrowed).as("좁힌 기간이 실제로 먹어야 한다").isLessThan(byFrom);
+    }
 }

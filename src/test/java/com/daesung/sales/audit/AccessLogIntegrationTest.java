@@ -62,7 +62,12 @@ class AccessLogIntegrationTest extends IntegrationTestSupport {
         assertThat(row.path("action").asText()).isEqualTo("DOWNLOAD");
         assertThat(row.path("actionName").asText()).isEqualTo("다운로드");
         assertThat(row.path("username").asText()).isEqualTo("admin");
-        assertThat(row.path("fileName").asText()).as("무슨 파일을 받았는지").isNotEmpty();
+        // ★한글이 그대로 읽혀야 한다. 헤더는 RFC 5987(`filename*=UTF-8''%EA%B1%B0...`)로 나가므로
+        //   디코딩을 빠뜨리면 담당자 화면에 %EA%B1%B0... 가 찍힌다 — 무슨 파일인지 알 수 없다.
+        assertThat(row.path("fileName").asText()).as("무슨 파일을 받았는지")
+                .isNotEmpty()
+                .doesNotContain("%")
+                .contains("거래처");
         assertThat(row.path("fileSize").asLong()).as("얼마나 가져갔는지").isPositive();
     }
 

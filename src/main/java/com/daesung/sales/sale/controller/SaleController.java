@@ -99,10 +99,18 @@ public class SaleController {
                     · `tradeClasses`와 `salesCategories`를 같이 주면 **교집합**이다(별개 축이라 둘 다 만족).""")
     @GetMapping
     public ApiResponse<PageResponse<SaleResponse>> list(
-            @Parameter(description = "시작일(yyyy-MM-dd)") @RequestParam(required = false)
+            @Parameter(description = "시작일(yyyy-MM-dd). `fromDate`로 보내도 된다")
+            @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
-            @Parameter(description = "종료일(yyyy-MM-dd)") @RequestParam(required = false)
+            @Parameter(description = "종료일(yyyy-MM-dd). `toDate`로 보내도 된다")
+            @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @Parameter(description = "시작일 별칭 — 다른 조회 API가 쓰는 이름")
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @Parameter(description = "종료일 별칭 — 다른 조회 API가 쓰는 이름")
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @Parameter(description = "구분(상세) — 회계구분 SALE/FREE/RETURN (단건. 다중은 salesCategories)")
             @RequestParam(required = false) SalesCategory salesCategory,
             @Parameter(description = "구분(상세) **다중선택** — 예: SALE,RETURN")
@@ -128,7 +136,7 @@ public class SaleController {
             @RequestParam(required = false) String keyword,
             @Parameter(description = "취소건 포함 여부(기본 false)") @RequestParam(defaultValue = "false") boolean includeCanceled,
             @ParameterObject PageRequestDto pageReq) {
-        return ApiResponse.success(saleService.search(startDate, endDate,
+        return ApiResponse.success(saleService.search(either(startDate, fromDate), either(endDate, toDate),
                 MultiSelect.merge(salesCategory, salesCategories),
                 MultiSelect.merge(tradeClass, tradeClasses),
                 MultiSelect.merge(shipmentType, shipmentTypes),
@@ -152,10 +160,18 @@ public class SaleController {
                     fetch로 토큰을 붙여 받은 뒤 파일로 저장해야 한다(개발팀 점검 2026-09-09 P0-5).""")
     @GetMapping("/export")
     public ResponseEntity<byte[]> exportSales(
-            @Parameter(description = "시작일(yyyy-MM-dd)") @RequestParam(required = false)
+            @Parameter(description = "시작일(yyyy-MM-dd). `fromDate`로 보내도 된다")
+            @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate startDate,
-            @Parameter(description = "종료일(yyyy-MM-dd)") @RequestParam(required = false)
+            @Parameter(description = "종료일(yyyy-MM-dd). `toDate`로 보내도 된다")
+            @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate endDate,
+            @Parameter(description = "시작일 별칭 — 다른 조회 API가 쓰는 이름")
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @Parameter(description = "종료일 별칭 — 다른 조회 API가 쓰는 이름")
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @RequestParam(required = false) SalesCategory salesCategory,
             @RequestParam(required = false) List<SalesCategory> salesCategories,
             @RequestParam(required = false) TradeClass tradeClass,
@@ -187,7 +203,7 @@ public class SaleController {
                 new Col("취소", "canceled"), new Col("메모", "memo"));
 
         // ★페이징 없이 전량. PageRequestDto 상한(200)에 걸리지 않도록 서비스에 직접 큰 페이지를 준다.
-        var page = saleService.search(startDate, endDate,
+        var page = saleService.search(either(startDate, fromDate), either(endDate, toDate),
                 MultiSelect.merge(salesCategory, salesCategories),
                 MultiSelect.merge(tradeClass, tradeClasses),
                 MultiSelect.merge(shipmentType, shipmentTypes),
@@ -197,7 +213,7 @@ public class SaleController {
                 includeCanceled,
                 org.springframework.data.domain.PageRequest.of(0, EXPORT_MAX));
         byte[] xlsx = excel.toXlsx("통합매출조회", cols, page.getContent(),
-                Heading.period("통합 매출 조회", startDate, endDate));
+                Heading.period("통합 매출 조회", either(startDate, fromDate), either(endDate, toDate)));
         return excel.asDownload(xlsx, "통합매출조회.xlsx");
     }
 
@@ -659,5 +675,17 @@ public class SaleController {
         cols.add(new com.daesung.sales.common.excel.ExcelExportUtil.Col("합계[계]", "total"));
         byte[] xlsx = excel.toXlsx("응시현황(기간별)", cols, res.rows());
         return excel.asDownload(xlsx, "응시현황_기간별_" + fromDate + "_" + toDate + ".xlsx");
+    }
+
+    /**
+     * 날짜 파라미터 별칭 합치기.
+     *
+     * <p>★{@code /sales}는 {@code startDate/endDate}, 나머지 조회 API는 {@code fromDate/toDate}를
+     * 쓰고 있었다. 이름을 한쪽으로 바꾸면 이미 붙어 있는 화면이 조용히 전체기간 조회가 된다
+     * (파라미터가 안 맞으면 400이 아니라 <b>null이 되어 필터가 사라진다</b>).
+     * 그래서 바꾸지 않고 <b>둘 다 받는다.</b> 둘 다 오면 원래 이름을 쓴다.
+     */
+    private static LocalDate either(LocalDate primary, LocalDate alias) {
+        return (primary != null) ? primary : alias;
     }
 }

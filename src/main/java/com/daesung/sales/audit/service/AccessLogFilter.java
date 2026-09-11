@@ -159,16 +159,78 @@ public class AccessLogFilter extends OncePerRequestFilter {
         return trim(cleaned, 500);
     }
 
+    /** {@code filename*=UTF-8''...} 우선. 없으면 {@code filename="..."}. */
+    private static final java.util.regex.Pattern FILENAME_EXT =
+            java.util.regex.Pattern.compile("filename\\*=UTF-8''([^;\\s]+)", java.util.regex.Pattern.CASE_INSENSITIVE | java.util.regex.Pattern.UNICODE_CASE);
+    private static final java.util.regex.Pattern FILENAME_PLAIN =
+            java.util.regex.Pattern.compile("filename=\"?([^\";]+)\"?", java.util.regex.Pattern.CASE_INSENSITIVE | java.util.regex.Pattern.UNICODE_CASE);
+    /** 메일용 인코딩 워드 {@code =?UTF-8?Q?..?=} / {@code =?UTF-8?B?..?=}. */
+    private static final java.util.regex.Pattern MIME_WORD =
+            java.util.regex.Pattern.compile("=\\?UTF-8\\?([QB])\\?(.+?)\\?=", java.util.regex.Pattern.CASE_INSENSITIVE | java.util.regex.Pattern.UNICODE_CASE);
+
+    /**
+     * 다운로드 파일명 추출.
+     *
+     * <p>★한글 파일명은 헤더에 인코딩돼 나간다. 여기서 풀지 않으면 담당자 화면에
+     * {@code %EA%B1%B0%EB%9E%98...} 나 {@code =?UTF-8?Q?=EA=B1=B0...?=} 가 찍혀
+     * <b>무슨 파일을 받아 갔는지 알 수 없다</b> — 이 표를 만든 이유 자체가 없어진다.
+     */
     private static String fileNameOf(String disposition) {
         if (disposition == null) {
             return null;
         }
-        java.util.regex.Matcher m = java.util.regex.Pattern
-                .compile("filename\\*?=(?:UTF-8'')?\"?([^\";]+)\"?").matcher(disposition);
-        if (!m.find()) {
+        java.util.regex.Matcher ext = FILENAME_EXT.matcher(disposition);
+        if (ext.find()) {
+            return trim(percentDecode(ext.group(1)), 200);
+        }
+        java.util.regex.Matcher plain = FILENAME_PLAIN.matcher(disposition);
+        if (!plain.find()) {
             return null;
         }
-        return trim(java.net.URLDecoder.decode(m.group(1), java.nio.charset.StandardCharsets.UTF_8), 200);
+        String raw = plain.group(1);
+        java.util.regex.Matcher word = MIME_WORD.matcher(raw);
+        if (word.find()) {
+            return trim(decodeMimeWord(word.group(1), word.group(2)), 200);
+        }
+        return trim(percentDecode(raw), 200);
+    }
+
+    private static String percentDecode(String s) {
+        try {
+            // ‼️URLDecoder는 '+'를 공백으로 바꾼다. 파일명의 '+'는 진짜 '+'라 미리 지켜 둔다.
+            return java.net.URLDecoder.decode(s.replace("+", "%2B"), java.nio.charset.StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException e) {
+            return s;   // 인코딩이 아니면 원문 그대로
+        }
+    }
+
+    /** Q(quoted-printable) / B(base64) 인코딩 워드를 푼다. */
+    private static String decodeMimeWord(String encoding, String text) {
+        try {
+            // ★equalsIgnoreCase 대신 두 글자를 직접 본다 — 정규식이 [QB] 한 글자만 잡아 오므로
+            //   이것으로 충분하고, 로케일에 따라 대소문자 변환이 달라지는 문제도 없다.
+            if ("B".equals(encoding) || "b".equals(encoding)) {
+                return new String(java.util.Base64.getDecoder().decode(text),
+                        java.nio.charset.StandardCharsets.UTF_8);
+            }
+            // Q: '_'는 공백, '=XX'는 16진 바이트
+            byte[] buf = new byte[text.length()];
+            int n = 0;
+            for (int i = 0; i < text.length(); i++) {
+                char c = text.charAt(i);
+                if (c == '_') {
+                    buf[n++] = ' ';
+                } else if (c == '=' && i + 2 < text.length()) {
+                    buf[n++] = (byte) Integer.parseInt(text.substring(i + 1, i + 3), 16);
+                    i += 2;
+                } else {
+                    buf[n++] = (byte) c;
+                }
+            }
+            return new String(buf, 0, n, java.nio.charset.StandardCharsets.UTF_8);
+        } catch (IllegalArgumentException e) {
+            return text;
+        }
     }
 
     private static Long sizeOf(HttpServletResponse res) {

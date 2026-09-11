@@ -26,7 +26,11 @@ public record ConsignReturnRequest(
             @Schema(description = "미결(consignment_out) id", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
             @NotNull Long consignmentOutId,
 
-            @Schema(description = "반품 수량(≤ 미결 잔여, 초과 시 409)", example = "20", requiredMode = Schema.RequiredMode.REQUIRED)
+            @Schema(description = """
+                    반품 수량. ★미결 잔여를 넘어도 **차단하지 않는다** — 발주처 확정(2026-08-31)에 따라
+                    응답 `overWarning`에 경고 문구만 담고 등록은 진행한다(초과분은 담당자가 수기 정리).
+                    ‼️예전 설명은 "초과 시 409"였는데, 차단을 걷어낸 뒤에도 문구가 남아 있었다.""",
+                    example = "20", requiredMode = Schema.RequiredMode.REQUIRED)
             @Positive int returnQty,
 
             @Schema(description = "메모") String memo

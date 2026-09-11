@@ -297,11 +297,15 @@ public class ExcelExportUtil {
 
     /** xlsx byte[] → 첨부 다운로드 응답(파일명 UTF-8 인코딩). */
     public ResponseEntity<byte[]> asDownload(byte[] xlsx, String filename) {
+        // ★헤더를 직접 만든다. ContentDisposition.filename(name, UTF_8) 은 MIME 인코딩 워드
+        //   (`=?UTF-8?Q?=EA=B1=B0...?=`)로 내보내는데, 이건 메일용 형식이라 HTTP에서는
+        //   브라우저마다 해석이 갈리고 접근로그에도 그 문자열이 그대로 남았다(2026-09-11 발견).
+        //   RFC 6266 권장 형식인 `filename*=UTF-8''<percent>` 로 내보내고,
+        //   그걸 못 읽는 구형 클라이언트를 위해 ASCII fallback `filename=` 을 함께 둔다.
         String encoded = URLEncoder.encode(filename, StandardCharsets.UTF_8).replace("+", "%20");
-        ContentDisposition cd = ContentDisposition.attachment()
-                .filename(filename, StandardCharsets.UTF_8).build();
         HttpHeaders headers = new HttpHeaders();
-        headers.setContentDisposition(cd);
+        headers.set(HttpHeaders.CONTENT_DISPOSITION,
+                "attachment; filename=\"" + encoded + "\"; filename*=UTF-8''" + encoded);
         headers.setContentType(MediaType.parseMediaType(
                 "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"));
         return ResponseEntity.ok().headers(headers).body(xlsx);
