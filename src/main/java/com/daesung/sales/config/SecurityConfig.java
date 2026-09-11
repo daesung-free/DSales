@@ -53,6 +53,8 @@ public class SecurityConfig {
                         // 표를 잘못 고쳐 스스로를 잠그면 되돌릴 길이 없어진다)
                         .requestMatchers("/api/v1/auth/users").hasRole("ADMIN")
                         .requestMatchers("/api/v1/permissions/**").hasRole("ADMIN")
+                        // 행위기록은 관리자만 — 남의 다운로드 기록이 아무나 보이면 그 자체가 감시로 읽힌다.
+                        .requestMatchers("/api/v1/audit/access-log/**").hasRole("ADMIN")
                         // 자기 계정 관련은 역할과 무관하게 인증만 되면 허용.
                         // ‼️로그아웃은 쓰기(POST)라, 권한 표에 /auth/** 화면이 없으면
                         //   deny-by-default에 걸려 403이 된다 — 로그인한 사람이 로그아웃을
