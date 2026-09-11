@@ -78,7 +78,7 @@ class DuffLedgerIntegrationTest extends IntegrationTestSupport {
         JsonNode d = detail().get(0);
 
         assertThat(d.path("schoolName").asText()).isEqualTo("A고");
-        assertThat(d.path("grade").asText()).as("도서명 파싱이 아니라 상품 마스터 학년").isEqualTo("고3");
+        assertThat(d.path("grade").asText()).as("도서명 파싱이 아니라 상품 마스터 학년").isEqualTo("3");
         assertThat(d.path("procType").asText()).isIn("처리", "비처리");
         assertThat(d.path("examMonth").asText())
                 .as("BOM 시행예정일에서 온다(레거시는 도서명을 잘라 만들었다)")

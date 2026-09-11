@@ -2,6 +2,7 @@ package com.daesung.sales.partner.service;
 
 import com.daesung.sales.audit.entity.MasterEntityType;
 import com.daesung.sales.audit.service.MasterChangeLogService;
+import com.daesung.sales.common.code.MasterCodes;
 import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.common.response.PageResponse;
@@ -77,7 +78,7 @@ public class PartnerService {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "이미 존재하는 거래처코드: " + req.code());
         });
         Partner partner = Partner.create(req.code(), req.name(), req.type());
-        partner.applyNames(req.cityName(), req.name1(), req.region(), req.clientCategory());
+        partner.applyNames(req.cityName(), req.name1(), req.region(), MasterCodes.clientCategory(req.clientCategory()));
         partner.updateContact(req.bossId(), req.tel1(), req.tel2(), req.cellPhone(), req.fax(),
                 req.zip(), req.zone2(), req.startDate(), req.endDate());
         return PartnerResponse.from(partnerRepository.save(partner));
@@ -93,7 +94,7 @@ public class PartnerService {
     public PartnerResponse update(Long id, PartnerUpdateRequest req) {
         Partner partner = getOrThrow(id);
         Map<String, String> before = partner.auditSnapshot();
-        partner.update(req.name(), req.cityName(), req.name1(), req.region(), req.clientCategory(), req.type());
+        partner.update(req.name(), req.cityName(), req.name1(), req.region(), MasterCodes.clientCategory(req.clientCategory()), req.type());
         partner.updateCredit(req.assureAmount(), req.assureExpiry(), req.assureNote());
         partner.updateTaxInfo(req.bizNo(), req.bossName(), req.addr1(), req.addr2(),
                 req.bizStatus(), req.bizItem(), req.email1(), req.email2());
@@ -108,4 +109,21 @@ public class PartnerService {
         return partnerRepository.findById(id)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "거래처가 없습니다. id=" + id));
     }
+
+    /** 쓰이는 지역 목록(선택용). 마스터가 아니라 사용 중인 값의 집계다. */
+    @Transactional(readOnly = true)
+    public java.util.List<java.util.Map<String, Object>> usedRegions() {
+        return partnerRepository.findUsedRegions().stream()
+                .map(u -> java.util.Map.<String, Object>of("value", u.getValue(), "usedCount", u.getUsedCount()))
+                .toList();
+    }
+
+    /** 쓰이는 관할지역 목록. region과 별개 축이라 따로 낸다. */
+    @Transactional(readOnly = true)
+    public java.util.List<java.util.Map<String, Object>> usedZones() {
+        return partnerRepository.findUsedZones().stream()
+                .map(u -> java.util.Map.<String, Object>of("value", u.getValue(), "usedCount", u.getUsedCount()))
+                .toList();
+    }
+
 }

@@ -122,4 +122,31 @@ public class PartnerController {
                                                @Valid @RequestBody PartnerUpdateRequest req) {
         return ApiResponse.success(partnerService.update(id, req));
     }
+
+    @Operation(summary = "코드값 목록(거래처 등록 화면 선택용)",
+            description = """
+                    거래처 등록·수정 화면의 **셀렉트 채우기**용. 한 번에 네 축을 준다.
+
+                    | 축 | 성격 | 값 |
+                    |---|---|---|
+                    | `clientCategories` | **고정** | 특약점·기타학원·B2B·대성·자사몰 (정본 확정) |
+                    | `regions` | 열림 | 쓰이는 값 + 건수. 새 값 입력 가능 |
+                    | `zones` | 열림 | 관할지역. region과 **별개 축**이다(정본 4탭에 둘 다 있음) |
+
+                    ### 고정과 열림을 왜 나누나
+                    거래처구분은 정본이 5값으로 못 박았다 — 서버가 그 밖의 값을 **400으로 거부**한다.
+                    지역은 정해진 목록이 없어 막을 수 없다. 대신 쓰이는 값을 보여줘 고르게 하고,
+                    새 지역은 그대로 입력할 수 있게 둔다(분류코드와 같은 방식).
+
+                    ### 읽는 법
+                    `usedCount`가 1인 값이 비슷한 이름 옆에 있으면 **오타를 의심할 자리**다 —
+                    `경남`과 `경상남도`가 섞이면 필터에서 한쪽이 통째로 빠진다.""")
+    @GetMapping("/codes")
+    public ApiResponse<java.util.Map<String, Object>> codes() {
+        return ApiResponse.success(java.util.Map.of(
+                "clientCategories", com.daesung.sales.common.code.MasterCodes.CLIENT_CATEGORY,
+                "regions", partnerService.usedRegions(),
+                "zones", partnerService.usedZones()));
+    }
+
 }

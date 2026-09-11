@@ -15,6 +15,8 @@ public record ProductResponse(
         Integer price,
         boolean taxFree,
         String grade,
+
+        String gradeName,   // 학년 표기(3 → 3학년). 저장값은 숫자뿐이라 서버가 붙여 준다
         String catCode,
         String catName,
         boolean useYn,
@@ -44,7 +46,7 @@ public record ProductResponse(
         MajorCategory major = (division == null) ? null : division.getMajorCategory();
         return new ProductResponse(
                 p.getId(), p.getCode(), p.getName(), p.getContentType(),
-                p.isSet(), p.getPrice(), p.isTaxFree(), p.getGrade(),
+                p.isSet(), p.getPrice(), p.isTaxFree(), p.getGrade(), com.daesung.sales.common.code.MasterCodes.gradeName(p.getGrade()),
                 p.getCatCode(), p.getCatName(), p.isUseYn(),
                 p.getSalesDivision(),
                 (division == null) ? null : division.getName(),

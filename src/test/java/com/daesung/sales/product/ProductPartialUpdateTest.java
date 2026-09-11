@@ -65,7 +65,7 @@ class ProductPartialUpdateTest extends IntegrationTestSupport {
         assertThat(p.path("price").asInt()).as("고친 값").isEqualTo(15000);
         assertThat(p.path("catCode").asText()).as("‼️예전엔 여기가 지워졌다").isEqualTo("P2069A1");
         assertThat(p.path("catName").asText()).isEqualTo("부분분류");
-        assertThat(p.path("grade").asText()).isEqualTo("고3");
+        assertThat(p.path("grade").asText()).isEqualTo("3");
         assertThat(p.path("supplyRate").asInt()).isEqualTo(70);
         assertThat(p.path("name").asText()).isEqualTo("부분수정도서");
         assertThat(p.path("productYear").asInt()).isEqualTo(2069);
@@ -76,9 +76,11 @@ class ProductPartialUpdateTest extends IntegrationTestSupport {
     @Order(4)
     @DisplayName("빈 문자열은 '비운다'는 뜻 — 그대로 저장된다")
     void 빈문자열은_지움() {
-        put("/masters/products/" + id, Map.of("grade", ""));
+        // ⚠️학년은 코드값 정규화 대상이라 빈 문자열이 null(=미지정)로 접힌다.
+        //   그래서 '비우기'는 정규화를 타지 않는 자유 입력 항목으로 확인한다.
+        put("/masters/products/" + id, Map.of("catName", ""));
 
-        assertThat(product().path("grade").asText()).isEmpty();
+        assertThat(product().path("catName").asText()).isEmpty();
         assertThat(product().path("catCode").asText()).as("다른 필드는 그대로").isEqualTo("P2069A1");
     }
 

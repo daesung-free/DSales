@@ -471,7 +471,7 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
         // 학교·학년·분류·회차 축
         assertThat(row.path("schoolCode").asText()).isEqualTo("SCHOOL-1");
         assertThat(row.path("schoolName").asText()).isEqualTo("진주고");
-        assertThat(row.path("grade").asText()).isEqualTo("고2");                   // 학년=상품 속성
+        assertThat(row.path("grade").asText()).isEqualTo("2");                   // 학년=상품 속성
         assertThat(row.path("catCode").asText()).isEqualTo("S2026A02");
         assertThat(row.path("catName").asText()).isEqualTo("국어모의고사");
         assertThat(row.path("bookRound").asInt()).isEqualTo(4);                    // 회차

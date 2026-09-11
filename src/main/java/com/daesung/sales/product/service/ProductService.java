@@ -3,6 +3,7 @@ package com.daesung.sales.product.service;
 import com.daesung.sales.common.audit.CurrentAuditor;
 import com.daesung.sales.audit.entity.MasterEntityType;
 import com.daesung.sales.audit.service.MasterChangeLogService;
+import com.daesung.sales.common.code.MasterCodes;
 import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.common.response.PageResponse;
@@ -90,6 +91,8 @@ public class ProductService {
 
     @Transactional
     public ProductResponse create(ProductCreateRequest req) {
+        // ★값이 정해진 항목은 저장 직전에 좁힌다. 화면 셀렉트만 믿으면 API 직접 호출로 뚫린다.
+        String grade = MasterCodes.grade(req.grade());
         productRepository.findByCode(req.code()).ifPresent(p -> {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "이미 존재하는 상품코드: " + req.code());
         });
@@ -98,7 +101,7 @@ public class ProductService {
         salesDivisionService.validateCode(req.salesDivision());
         Product product = Product.create(
                 req.code(), req.name(), req.contentType(), req.set(),
-                req.price(), req.taxFree(), req.grade(),
+                req.price(), req.taxFree(), grade,
                 req.catCode(), req.catName(), req.useYnOrDefault(),
                 req.salesDivision(), req.ledgerVisibleOrDefault(), req.webVisibleOrDefault(),
                 req.stockManagedOrDefault());
@@ -114,6 +117,7 @@ public class ProductService {
     @Transactional
     public ProductResponse update(Long id, ProductUpdateRequest req) {
         Product product = getOrThrow(id);
+        String grade = MasterCodes.grade(req.grade());
         // ★수정은 **부분 수정**이다(안 보낸 필드는 유지). 그래서 필수 애너테이션을 뗐는데,
         //   이름만은 빈 문자열을 막는다 — 이름 없는 상품은 목록·리포트에서 찾을 수 없다.
         //   null(안 보냄)과 ""(비우겠다)는 다른 의사표시라 여기서 갈라 준다.
@@ -123,7 +127,7 @@ public class ProductService {
         salesDivisionService.validateCode(req.salesDivision());
         Map<String, String> before = product.auditSnapshot();
         product.update(req.name(), req.contentType(), req.set(),
-                req.price(), req.taxFree(), req.grade(),
+                req.price(), req.taxFree(), grade,
                 req.catCode(), req.catName(), req.useYn(),
                 req.salesDivision(), req.ledgerVisible(), req.webVisible(), req.stockManaged());
         product.applyExtra(req.productYear(), req.productType(), req.supplyRate());
