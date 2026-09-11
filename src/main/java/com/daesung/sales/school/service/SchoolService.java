@@ -18,17 +18,24 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Set;
 import lombok.RequiredArgsConstructor;
-import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-/** 학교/학원 마스터(35p) + DSRE '가져오기'(보존형 동기화). */
+/**
+ * 학교/학원 마스터(35p) + DSRE '가져오기'(보존형 동기화).
+ *
+ * <p>★<b>학교는 조회할 때 자동으로 맞추지 않는다</b> — [가져오기] 버튼으로만 돈다.
+ * 거래처는 74건짜리 한 표라 화면을 열 때마다 읽어도 되지만, 학교는 지사×학교 매핑이라
+ * 규모가 다르고 <b>수기로 넣은 값(학교/학원구분·거래처구분·메모)이 섞여 있다</b>.
+ * 언제 덮어쓸지는 담당자가 고르는 편이 맞다 — 조회할 때마다 조용히 바뀌면
+ * 자기가 고친 값이 언제 사라졌는지 알 수 없다.
+ * (2026-09-11 결정. 거래처는 {@code PartnerService.findAll} 에서 자동 갱신한다.)
+ */
 @Service
 @RequiredArgsConstructor
-@Slf4j
 @Transactional(readOnly = true)
 public class SchoolService {
 
@@ -37,30 +44,8 @@ public class SchoolService {
 
     /** DSRE 연동은 daesung.dsre.enabled=true일 때만 빈이 존재 → 없을 수 있으므로 Provider로 주입. */
     private final ObjectProvider<DsreGateway> dsreGateway;
-    /** ‼️조회(readOnly) 안에서 쓰려면 프록시를 타야 한다 — 자기호출은 트랜잭션이 안 걸린다. */
-    private final ObjectProvider<SchoolService> self;
-
-    /**
-     * 조회할 때마다 DSRE2 원본을 읽어 반영한다.
-     *
-     * <p>★거래처와 같은 이유다 — 사람이 [가져오기]를 눌러 맞추게 하면 결국 안 누른다.
-     * ‼️여기서 나는 오류는 삼킨다. DSRE2가 잠깐 끊겼다고 학교 목록이 안 열리면 안 된다.
-     * 수동 {@code POST /masters/schools/sync}는 결과 건수를 보고 싶을 때 쓰라고 남겨 둔다.
-     */
-    private void refreshFromDsreQuietly() {
-        DsreGateway gateway = dsreGateway.getIfAvailable();
-        if (gateway == null) {
-            return;
-        }
-        try {
-            self.getObject().merge(gateway.readSchoolRefs());
-        } catch (RuntimeException e) {
-            log.warn("학교 DSRE2 갱신 실패 — 기존 값으로 조회합니다", e);
-        }
-    }
 
     public PageResponse<SchoolResponse> findAll(String keyword, Pageable pageable) {
-        refreshFromDsreQuietly();
         Page<School> page = (keyword == null || keyword.isBlank())
                 ? schoolRepository.findAll(pageable)
                 : schoolRepository.findBySchoolCodeContainingIgnoreCaseOrSchoolNameContainingIgnoreCase(
