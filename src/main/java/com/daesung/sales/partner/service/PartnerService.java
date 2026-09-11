@@ -23,6 +23,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -31,11 +32,14 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 @Transactional(readOnly = true)
 public class PartnerService {
 
     private final PartnerRepository partnerRepository;
     private final ObjectProvider<DsreGateway> dsreGateway;
+    /** ‼️조회(readOnly) 안에서 쓰기를 하려면 프록시를 타야 한다 — 자기호출은 트랜잭션이 안 걸린다. */
+    private final ObjectProvider<PartnerService> self;
     private final MasterChangeLogService masterChangeLogService;
 
     /**
@@ -70,9 +74,35 @@ public class PartnerService {
      * 근거: 거래처관리.vb — {@code where len(endDate) = 0} / {@code >= 0} 분기.
      */
     public PageResponse<PartnerResponse> findAll(String keyword, boolean includeExpired, Pageable pageable) {
+        refreshFromDsreQuietly();
         String kw = (keyword == null || keyword.isBlank()) ? null : keyword.trim();
         return PageResponse.of(partnerRepository.search(kw, includeExpired, pageable)
                 .map(PartnerResponse::from));
+    }
+
+    /**
+     * 조회할 때마다 DSRE2 원본을 읽어 반영한다.
+     *
+     * <p>★<b>사람이 버튼을 눌러 맞추게 하면 결국 안 누른다.</b> 거래처 원본은 DSRE2고
+     * 우리는 받아 쓰는 쪽이니, 화면을 열 때 최신으로 맞추는 것이 맞다.
+     * {@code tbl_cust_info}는 74건 규모라 매 조회에 읽어도 부담이 없다.
+     *
+     * <p>‼️<b>여기서 나는 오류는 삼킨다.</b> DSRE2가 잠깐 끊겼다고 우리 거래처 목록이
+     * 통째로 안 열리면 안 된다 — 그때는 갖고 있던 값으로 보여주고 서버 로그로만 알린다.
+     * 동기화가 목적이 아니라 조회가 목적이다.
+     *
+     * <p>수동 {@code POST /masters/clients/sync}는 그대로 둔다 — 결과 건수를 보고 싶을 때 쓴다.
+     */
+    private void refreshFromDsreQuietly() {
+        DsreGateway gateway = dsreGateway.getIfAvailable();
+        if (gateway == null) {
+            return;   // DSRE 연동 off — 우리 값으로만 조회한다
+        }
+        try {
+            self.getObject().merge(gateway.readClientRefs());
+        } catch (RuntimeException e) {
+            log.warn("거래처 DSRE2 갱신 실패 — 기존 값으로 조회합니다", e);
+        }
     }
 
     public PartnerResponse findById(Long id) {
@@ -110,7 +140,7 @@ public class PartnerService {
      * <p>{@code merge}를 따로 열어 둔 이유: DSRE 연결 없이 이 규칙을 테스트로 고정하기 위함
      * (학교 쪽과 같은 이유다).
      */
-    @Transactional
+    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
     public ClientSyncResult merge(List<ClientRefRow> rows) {
         int added = 0;
         int updated = 0;
