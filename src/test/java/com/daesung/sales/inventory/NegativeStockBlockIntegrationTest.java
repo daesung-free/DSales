@@ -31,7 +31,7 @@ import org.junit.jupiter.api.TestInstance;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 // ★재고를 깎아 가며 검증하므로 순서가 있다. 각 테스트는 직전 잔량을 기준으로 판단한다.
 @org.junit.jupiter.api.TestMethodOrder(org.junit.jupiter.api.MethodOrderer.OrderAnnotation.class)
-@DisplayName("재고 음수 차단(2026-09-11 점검)")
+@DisplayName("재고 음수 — 막지 않고 경고만(발주처 2026-08-31)")
 class NegativeStockBlockIntegrationTest extends IntegrationTestSupport {
 
     private static final String SFX = "-NS" + (System.nanoTime() % 1_000_000L);
@@ -40,11 +40,13 @@ class NegativeStockBlockIntegrationTest extends IntegrationTestSupport {
     private Long wh;
     private Long wh2;
     private Long book;
+    private Long supplier;
+    private Long setBook;
 
     @BeforeAll
     void seed() {
         token();
-        Long sup = createId("/masters/clients",
+        supplier = createId("/masters/clients",
                 Map.of("code", "NSS" + SFX, "name", "인쇄소", "type", "NORMAL"));
         wh = createId("/masters/warehouses", Map.of("code", "NSW" + SFX, "name", "음수창고", "type", "MAIN"));
         wh2 = createId("/masters/warehouses", Map.of("code", "NSW2" + SFX, "name", "음수창고2", "type", "MAIN"));
@@ -60,9 +62,18 @@ class NegativeStockBlockIntegrationTest extends IntegrationTestSupport {
         book = createId("/masters/products", b);
 
         // 딱 100부만 넣는다 — 경계가 분명해야 "막혔다"가 무슨 뜻인지 읽힌다.
-        post("/stock/inbound", Map.of("processedDate", YEAR + "-01-05", "supplierClientId", sup,
+        post("/stock/inbound", Map.of("processedDate", YEAR + "-01-05", "supplierClientId", supplier,
                 "destinationWarehouseId", wh,
                 "items", List.of(Map.of("productId", book, "unitCost", 3000, "qty", 100))));
+
+        // 조립 경고용 세트 — 구성품(book)이 wh2에는 한 부도 없다.
+        Map<String, Object> sb = new HashMap<>(b);
+        sb.put("code", "NSSET" + SFX);
+        sb.put("name", "음수세트");
+        sb.put("set", true);
+        setBook = createId("/masters/products", sb);
+        put("/masters/products/" + setBook + "/bom",
+                Map.of("components", List.of(Map.of("childProductId", book, "ratio", 1))));
     }
 
     /** 창고별 현재고. ‼️기간을 안 주면 기본 범위가 올해라 2074년 이벤트가 통째로 빠진다. */
@@ -79,85 +90,63 @@ class NegativeStockBlockIntegrationTest extends IntegrationTestSupport {
 
     @Test
     @org.junit.jupiter.api.Order(1)
-    @DisplayName("★현재고보다 많은 폐기는 거부되고 재고는 그대로 — 점검에서 터진 바로 그 건")
-    void 폐기_초과() {
-        int before = balance(wh);
+    @DisplayName("★현재고보다 많은 폐기도 통과한다 — 발주처: 마이너스가 정상")
+    void 폐기_초과는_통과() {
+        // ‼️2026-09-11 사내 점검은 이걸 결함으로 봤지만 발주처 기준으로는 정상이다(화면7).
+        //   "입고 전 출고되는 상품은 재고 (−)로 처리되며 … 마이너스로 표시되는 게 정상입니다."
+        JsonNode r = post("/disposals", Map.of(
+                "processedDate", YEAR + "-02-01", "warehouseId", wh,
+                "items", List.of(Map.of("productId", book, "qty", 150))));
+        assertThat(r.path("success").asBoolean()).as("막으면 안 된다: %s", r).isTrue();
+        assertThat(balance(wh)).as("100 − 150").isEqualTo(-50);
 
-        JsonNode r = post("/disposals", Map.of("processedDate", YEAR + "-02-01", "warehouseId", wh,
-                "items", List.of(Map.of("productId", book, "qty", 99_999, "reason", "초과폐기"))));
-
-        assertThat(r.path("success").asBoolean()).as("%s", r).isFalse();
-        assertThat(r.path("error").path("message").asText())
-                .as("현재고와 요청량을 알려 줘야 담당자가 고칠 수 있다")
-                .contains("재고가 부족", String.valueOf(before), "99999");
-
-        assertThat(balance(wh)).as("거부됐으면 재고는 손대지 않은 그대로여야 한다").isEqualTo(before);
+        // ★막지 않는 대신 조용히 넘기지도 않는다 — 오타 하나로 999,999가 지나가면 안 된다.
+        JsonNode w = r.path("data").path("warnings");
+        assertThat(w).as("경고가 실려야: %s", r).isNotEmpty();
+        assertThat(w.get(0).path("code").asText()).isEqualTo("NEGATIVE_STOCK");
+        assertThat(w.get(0).path("balance").asInt()).isEqualTo(-50);
     }
 
     @Test
     @org.junit.jupiter.api.Order(2)
-    @DisplayName("재고 범위 안의 폐기는 통과한다 — 막는 게 목적이 아니라 넘는 것만 막는 것")
-    void 폐기_정상() {
-        int before = balance(wh);
+    @DisplayName("재고 범위 안이면 경고가 없다 — 경고가 늘 붙으면 아무도 안 본다")
+    void 정상범위는_경고없음() {
+        JsonNode r = post("/stock/inbound", Map.of(
+                "processedDate", YEAR + "-02-02", "supplierClientId", supplier,
+                "destinationWarehouseId", wh,
+                "items", List.of(Map.of("productId", book, "unitCost", 3000, "qty", 100))));
+        assertThat(r.path("success").asBoolean()).isTrue();
 
-        JsonNode r = post("/disposals", Map.of("processedDate", YEAR + "-02-02", "warehouseId", wh,
-                "items", List.of(Map.of("productId", book, "qty", 10, "reason", "파손"))));
-
-        assertThat(r.path("success").asBoolean()).as("%s", r).isTrue();
-        assertThat(balance(wh)).isEqualTo(before - 10);
+        JsonNode d = post("/disposals", Map.of(
+                "processedDate", YEAR + "-02-03", "warehouseId", wh,
+                "items", List.of(Map.of("productId", book, "qty", 10))));
+        assertThat(d.path("success").asBoolean()).isTrue();
+        assertThat(d.path("data").path("warnings")).as("음수가 아니면 경고 없음: %s", d).isEmpty();
     }
 
     @Test
     @org.junit.jupiter.api.Order(3)
-    @DisplayName("★재고보다 많은 매출출고도 거부 — 폐기만 막으면 옆문이 열려 있다")
-    void 매출출고_초과() {
-        Long partner = createId("/masters/clients",
-                Map.of("code", "NSP" + SFX, "name", "음수거래처", "type", "NORMAL"));
-
-        JsonNode r = post("/sales/entries", Map.of(
-                "salesDate", YEAR + "-03-01", "partnerId", partner, "warehouseId", wh,
-                "items", List.of(Map.of("productId", book, "shipmentType", "NORMAL_SHIP",
-                        "unitPrice", 10000, "supplyRate", 70, "qty", 5000))));
-
-        assertThat(r.path("success").asBoolean()).as("%s", r).isFalse();
-        assertThat(r.path("error").path("message").asText()).contains("재고가 부족");
+    @DisplayName("★입고 한 번 없는 창고에서 바로 출고 — 이게 발주처가 말한 그 상황이다")
+    void 입고전_출고() {
+        Long fresh = createId("/masters/warehouses",
+                Map.of("code", "NSF" + SFX, "name", "빈창고", "type", "MAIN"));
+        JsonNode r = post("/stock/transfer", Map.of(
+                "processedDate", YEAR + "-03-01", "fromWarehouseId", fresh, "toWarehouseId", wh2,
+                "items", List.of(Map.of("productId", book, "qty", 7))));
+        assertThat(r.path("success").asBoolean()).as("막으면 안 된다: %s", r).isTrue();
+        assertThat(balance(fresh)).isEqualTo(-7);
+        assertThat(r.path("data").path("warnings")).isNotEmpty();
     }
 
     @Test
     @org.junit.jupiter.api.Order(4)
-    @DisplayName("★재고보다 많은 창고이고도 거부 — 없는 물건은 옮길 수도 없다")
-    void 이고_초과() {
-        int before = balance(wh);
-
-        JsonNode r = post("/stock/transfer", Map.of(
-                "processedDate", YEAR + "-03-02", "fromWarehouseId", wh, "toWarehouseId", wh2,
-                "items", List.of(Map.of("productId", book, "qty", 5000))));
-
-        assertThat(r.path("success").asBoolean()).as("%s", r).isFalse();
-        assertThat(r.path("error").path("message").asText()).contains("재고가 부족");
-
-        // ‼️이고는 차감·가산 두 번 움직인다. 한쪽만 돌고 끊기면 재고가 허공에서 늘어난다.
-        assertThat(balance(wh)).as("거부 시 출발 창고 재고 그대로").isEqualTo(before);
-        assertThat(balance(wh2)).as("도착 창고에도 아무것도 생기면 안 된다").isZero();
-    }
-
-    @Test
-    @org.junit.jupiter.api.Order(5)
-    @DisplayName("★위탁창고는 막지 않는다 — 초과정산 허용(발주처 2026-08-31)을 되돌리면 안 된다")
-    void 위탁창고는_예외() {
-        Long owner = createId("/masters/clients",
-                Map.of("code", "NSO" + SFX, "name", "위탁처", "type", "NORMAL"));
-        Long consign = createId("/masters/warehouses", Map.of(
-                "code", "NSC" + SFX, "name", "위탁창고", "type", "CONSIGN",
-                "physicalStock", false, "ownerClientId", owner));
-
-        // 입고 한 번 없는 위탁창고에서 바로 빼 본다 — 실물 창고였다면 막혔을 상황
-        JsonNode r = post("/stock/transfer", Map.of(
-                "processedDate", YEAR + "-04-01", "fromWarehouseId", consign, "toWarehouseId", wh2,
-                "items", List.of(Map.of("productId", book, "qty", 7))));
-
-        assertThat(r.path("success").asBoolean())
-                .as("가상 창고의 음수는 시점 차이지 오입력이 아니다: %s", r).isTrue();
-        assertThat(balance(consign)).as("음수 그대로 남아야 보인다").isEqualTo(-7);
+    @DisplayName("세트 조립도 자재가 모자라면 통과하고 경고만 남는다")
+    // ‼️앞 테스트가 wh2 에 7부를 옮겨 놓는다 — 확실히 음수가 되도록 크게 잡는다.
+    void 조립_자재부족() {
+        JsonNode r = post("/stock/bom", Map.of(
+                "processedDate", YEAR + "-03-02", "warehouseId", wh2,
+                "direction", "ASSEMBLE", "parentProductId", setBook, "workQty", 500));
+        assertThat(r.path("success").asBoolean()).as("막으면 안 된다: %s", r).isTrue();
+        assertThat(r.path("data").path("warnings")).as("경고는 남아야: %s", r).isNotEmpty();
     }
 }

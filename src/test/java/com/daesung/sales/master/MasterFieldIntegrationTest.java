@@ -151,18 +151,21 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
         JsonNode rows = data(get("/stock/ledger?warehouseId=" + wh)).path("content");
         assertThat(codes(rows)).doesNotContain("MF-EXAM");
 
-        // 대조: 재고관리 상품(기본 true)은 재고를 검사하므로 입고 없이 출고하면 **막힌다**.
-        // ★차단은 한 번 걷어냈다가(발주처 2026-08-31) 다시 넣었다(개발팀 점검 2026-09-11).
-        //   두 지시가 갈려 설정 daesung.inventory.allow-negative-stock 으로 뒤집게 해 뒀고,
-        //   기본값은 차단이다. 이 테스트가 그 기본값을 고정한다.
+        // 대조: 재고관리 상품(기본 true)은 재고이벤트가 남는다. 입고 없이 출고해도 **막히지 않는다**.
+        // ★발주처 확정(2026-08-31 화면7): "입고 전 출고되는 상품은 재고 (−)로 처리되며 …
+        //   마이너스로 표시되는 게 정상입니다." 2026-09-11 사내 점검이 이걸 결함으로 보고
+        //   차단을 넣었다가 발주처 기준으로 되돌렸다 — 막는 쪽으로 다시 바꾸기 전에 원문을 확인할 것.
+        //   막지 않는 대신 응답 warnings[] 로 알린다.
         Long book = createId("/masters/products",
                 Map.of("code", "MF-BOOK", "name", "일반교재", "contentType", "SELF"));
-        JsonNode blocked = post("/sales/entries", Map.of(
+        JsonNode passed = post("/sales/entries", Map.of(
                 "salesDate", "2026-04-15", "partnerId", ownerFallback(), "warehouseId", wh,
                 "items", List.of(Map.of("productId", book, "shipmentType", "NORMAL_SHIP",
                         "unitPrice", 10000, "supplyRate", 100, "qty", 30))));
-        assertThat(blocked.path("success").asBoolean()).as("입고 없는 출고는 막힌다: %s", blocked).isFalse();
-        assertThat(blocked.path("error").path("message").asText()).contains("재고가 부족");
+        assertThat(passed.path("success").asBoolean()).as("입고 없는 출고도 통과한다: %s", passed).isTrue();
+        assertThat(passed.path("data").path("items").get(0).path("stockBalance").asInt()).isEqualTo(-30);
+        assertThat(passed.path("data").path("warnings"))
+                .as("막지 않는 대신 경고는 실려야: %s", passed).isNotEmpty();
     }
 
     @Test

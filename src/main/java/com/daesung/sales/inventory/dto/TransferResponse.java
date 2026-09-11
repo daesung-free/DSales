@@ -9,7 +9,8 @@ public record TransferResponse(
         @Schema(description = "출발 창고명") String fromWarehouseName,
         @Schema(description = "도착 창고 id") Long toWarehouseId,
         @Schema(description = "도착 창고명") String toWarehouseName,
-        @Schema(description = "이동 결과 품목") List<Line> items
+        @Schema(description = "이동 결과 품목") List<Line> items,
+        @Schema(description = "재고 경고(차단 아님). 음수가 되면 담긴다") java.util.List<StockWarning> warnings
 ) {
     @Schema(name = "TransferLine")
     public record Line(

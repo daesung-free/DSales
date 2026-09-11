@@ -11,7 +11,8 @@ public record BomWorkResponse(
         @Schema(description = "방향") BomDirection direction,
         @Schema(description = "완제품 결과") Line parent,
         @Schema(description = "작업수량(완제품 기준)") int workQty,
-        @Schema(description = "구성품 결과") List<Line> components
+        @Schema(description = "구성품 결과") List<Line> components,
+        @Schema(description = "재고 경고(차단 아님). 음수가 되면 담긴다") java.util.List<StockWarning> warnings
 ) {
     @Schema(name = "BomWorkLine")
     public record Line(

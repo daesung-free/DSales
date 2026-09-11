@@ -67,7 +67,10 @@ daesung:
     #   false = 차단 — 개발팀 점검(2026-09-11) 지적 반영. 현재고보다 많은 폐기가 그대로 통과했다.
     #   true  = 허용 — 발주처 화면검토(2026-08-31) "재고 음수 차단 로직은 적용되면 안됩니다".
     # ★지시가 갈려 있어 설정으로 뺐다. 확정되면 여기만 바꾸면 된다(재배포 불요, 환경변수 override 가능).
-    allow-negative-stock: false
+    # ★음수 재고는 막지 않는다 — 발주처 확정(2026-08-31 화면7):
+    #   "입고 전 출고되는 상품은 재고 (−)로 처리되며 … 마이너스로 표시되는 게 정상"
+    #   막지 않는 대신 응답 warnings[] 로 알린다. 예외적으로 막아야 하면 true.
+    block-negative-stock: false
   # 인증/JWT. ★jwt-secret은 배포 시 환경변수(DAESUNG_SECURITY_JWT-SECRET)로 override — 아래는 로컬 개발 전용 더미.
   security:
     jwt-secret: "local-dev-only-change-me-please-32bytes-minimum-secret-key"

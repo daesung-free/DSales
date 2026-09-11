@@ -38,6 +38,17 @@ public record SalesEntryResponse(
             @Schema(description = "초과 수량") long exceededQty,
             @Schema(description = "화면에 그대로 띄울 수 있는 문구") String message
     ) {
+        /**
+         * 재고 경고를 같은 모양으로 옮긴다.
+         *
+         * <p>★경고를 두 배열로 나눠 주면 화면이 둘 다 읽어야 하고, 한쪽을 빠뜨리면 조용히 묻힌다.
+         * 출처가 달라도 담당자에게는 "확인할 것" 하나다 — 그래서 한 배열에 합친다.
+         * 반품 관련 칸({@code returnableQty}·{@code exceededQty})은 재고 경고엔 없어 0으로 둔다.
+         */
+        public static Warning ofStock(com.daesung.sales.inventory.dto.StockWarning w) {
+            return new Warning(w.code(), w.productId(), w.productCode(),
+                    0L, -w.delta(), 0L, w.message());
+        }
     }
 
     @Schema(name = "SalesEntryLine")

@@ -59,6 +59,7 @@ public class InventoryService {
     private final PartnerRepository partnerRepository;
     private final BomItemRepository bomItemRepository;
     private final com.daesung.sales.inventory.config.InventoryProperties inventoryProperties;
+    private final StockWarningCollector stockWarningCollector;
 
     /** 일반 입고. 품목마다 (1) 재고이벤트 INBOUND 기록 + (2) 재고 잔량 가산을 한 트랜잭션으로. */
     @Transactional
@@ -111,7 +112,8 @@ public class InventoryService {
             lines.add(new TransferResponse.Line(product.getId(), product.getCode(), item.qty(),
                     balanceOf(product.getId(), from.getId()), balanceOf(product.getId(), to.getId())));
         }
-        return new TransferResponse(from.getId(), from.getName(), to.getId(), to.getName(), lines);
+        return new TransferResponse(from.getId(), from.getName(), to.getId(), to.getName(), lines,
+                stockWarningCollector.drain());
     }
 
     /**
@@ -225,7 +227,7 @@ public class InventoryService {
         }
 
         return new BomWorkResponse(warehouse.getId(), warehouse.getName(), req.direction(),
-                parentLine, req.workQty(), compLines);
+                parentLine, req.workQty(), compLines, stockWarningCollector.drain());
     }
 
 
@@ -248,7 +250,8 @@ public class InventoryService {
                     req.processedDate(), disposalNo, item.reason()));
             lines.add(new DisposalResponse.Line(product.getId(), product.getCode(), item.qty(), balance));
         }
-        return new DisposalResponse(disposalNo, warehouse.getId(), warehouse.getName(), lines);
+        return new DisposalResponse(disposalNo, warehouse.getId(), warehouse.getName(), lines,
+                stockWarningCollector.drain());
     }
 
     /**
@@ -515,23 +518,22 @@ public class InventoryService {
      * 반환값 = 갱신 후 잔량.
      */
     private int applyDelta(Product product, Warehouse warehouse, int delta) {
-        // ★차감이면 먼저 막는다(개발팀 점검 2026-09-11 · 발주처 재지시).
-        //   현재고 5,006인 도서를 99,999 폐기해 잔량이 −94,993이 된 건이 계기다.
-        //   허용으로 되돌리려면 daesung.inventory.allow-negative-stock=true — InventoryProperties 참고.
+        // ★음수 재고는 **막지 않는다**. 발주처 확정(2026-08-31 화면7) 원문 —
+        //   "재고 음수 차단 로직은 적용되면 안됩니다. 입고 전 출고되는 상품은 재고 (−)로 처리되며,
+        //    DSRE에서 수불관리하는 상품도 출고 수량만 나타나 재고가 마이너스로 표시되는 게 정상입니다."
         //
-        // ‼️단 **실물 창고만** 막는다. 위탁창고(physicalStock=false)는 가상 장부라
-        //   음수가 정상적으로 생긴다 — 발주처가 2026-08-31에 초과정산을 허용하라고 못 박았고
-        //   (초과분은 Case1/Case2 반품으로 수기 정리), 초과정산은 곧 위탁창고 재고를 음수로 만든다.
-        //   여기서 같이 막으면 그 지시를 조용히 되돌리게 된다.
-        //   실물이 없는데 마이너스가 찍히는 건 오입력이지만, 가상 창고의 마이너스는 시점 차이다.
-        if (delta < 0 && warehouse.isPhysicalStock() && !inventoryProperties.allowNegative()) {
+        // ‼️이 판단은 두 번 뒤집혔다. 2026-09-11 사내 점검이 "폐기 초과가 통과된다"를 결함으로 보고
+        //   차단을 넣었는데, 발주처 기준으로는 **통과가 정상**이라 다시 걷어냈다.
+        //   되돌리기 전에 위 원문을 반드시 확인할 것 — 막으면 "입고 전 출고"가 통째로 불가능해진다.
+        //
+        //   예외적으로 막아야 할 상황이 생기면 daesung.inventory.block-negative-stock=true.
+        if (delta < 0 && inventoryProperties.blockNegative()) {
             // ‼️"조회해서 비교한 뒤 빼는" 방식은 쓰지 않는다. 두 요청이 같은 잔량을 읽고
             //   둘 다 통과해 음수가 된다(read-modify-write). 조건을 UPDATE 문 안에 넣어
             //   **DB가 행을 잠근 채 판단**하게 한다.
             int ok = inventoryRepository.addQtyIfEnough(product.getId(), warehouse.getId(), delta);
             if (ok == 0) {
                 // 0은 두 가지다 — 재고 부족, 또는 아직 입고된 적 없어 행 자체가 없음.
-                // 어느 쪽이든 빼면 음수다.
                 int current = inventoryRepository
                         .findByProductIdAndWarehouseId(product.getId(), warehouse.getId())
                         .map(Inventory::getQty)
@@ -546,7 +548,7 @@ public class InventoryService {
 
         int updated = inventoryRepository.addQty(product.getId(), warehouse.getId(), delta);
         if (updated == 0) {
-            // 행이 없으면 만든다. (차단 해제 상태에서 첫 거래가 출고면 음수로 시작한다.)
+            // 행이 없으면 만든다. 첫 거래가 출고면 음수로 시작한다 — 그게 "입고 전 출고"다.
             inventoryRepository.save(Inventory.create(product, warehouse, delta));
         }
         int balance = inventoryRepository.findByProductIdAndWarehouseId(product.getId(), warehouse.getId())
@@ -554,12 +556,14 @@ public class InventoryService {
                 .orElse(delta);
 
         // ‼️막지는 않되 조용히 넘기지도 않는다.
-        //   "입고 전 출고"라 정상인 음수와 오입력으로 생긴 음수는 데이터만 봐서는 구분되지 않는다.
-        //   나중에 재고가 안 맞을 때 언제부터 음수였는지 되짚을 단서를 남긴다.
+        //   "입고 전 출고"라 정상인 음수와 오타로 생긴 음수는 데이터만 봐서는 구분되지 않는다.
+        //   담당자가 그 자리에서 알아채도록 응답에 싣고, 나중에 되짚도록 서버 로그에도 남긴다.
         if (balance < 0) {
+            stockWarningCollector.add(com.daesung.sales.inventory.dto.StockWarning.negative(
+                    product.getId(), product.getCode(),
+                    warehouse.getId(), warehouse.getName(), delta, balance));
             // ★로그에는 **숫자 id만** 넣는다. 상품코드·창고명은 마스터에서 온 문자열이라
             //   줄바꿈이 섞이면 로그 한 줄을 위조할 수 있다(정적분석 CRLF_INJECTION_LOGS).
-            //   id로도 어느 건인지 찾을 수 있다.
             log.warn("재고 음수(차단 해제 상태): productId={} warehouseId={} 잔량={} 증감={}",
                     product.getId(), warehouse.getId(), balance, delta);
         }

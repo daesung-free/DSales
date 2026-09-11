@@ -23,9 +23,13 @@ public enum ErrorCode {
     // ⚠️아래 셋은 한때 **차단 → 경고**로 걷어냈던 것들이다(발주처 2026-08-31 회신).
     //   지금 상태가 서로 다르니 섞지 말 것 —
     //
-    //   ★NEGATIVE_STOCK  **다시 던진다**(개발팀 점검 2026-09-11 지적 → 차단 복원).
-    //                    InventoryService.applyDelta. 설정으로 뒤집을 수 있다
-    //                    (daesung.inventory.allow-negative-stock=true → 종전대로 허용).
+    //   ★NEGATIVE_STOCK  **기본적으로 던지지 않는다**. 발주처 확정(2026-08-31 화면7):
+    //                    "재고 음수 차단 로직은 적용되면 안됩니다. 입고 전 출고되는 상품은
+    //                     재고 (−)로 처리되며 … 마이너스로 표시되는 게 정상입니다."
+    //                    막는 대신 응답 warnings[] 에 같은 코드로 담는다(StockWarning).
+    //                    ‼️2026-09-11 사내 점검이 "폐기 초과 통과"를 결함으로 보고 차단을
+    //                      넣었다가 발주처 기준으로 되돌렸다 — 다시 넣기 전에 원문을 확인할 것.
+    //                    예외적으로 막아야 하면 daesung.inventory.block-negative-stock=true.
     //   RETURN_EXCEEDS   여전히 경고. SalesEntryResponse.warnings ("RETURN_EXCEEDS")
     //   OVER_SETTLEMENT  여전히 경고. SettlementDraftResponse.warnings ("OVER_SETTLEMENT")
     //                    ‼️V56에서 DB 제약·엔티티는 걷어냈는데 정산초안 경로에 차단이

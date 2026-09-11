@@ -61,6 +61,7 @@ public class SaleService {
     private final OutTypeLookupService outTypeLookupService;
     private final WarehouseRepository warehouseRepository;
     private final InventoryService inventoryService;
+    private final com.daesung.sales.inventory.service.StockWarningCollector stockWarningCollector;
     private final PeriodLockService periodLockService;
     private final StatusHistoryService statusHistoryService;
     private final SequenceService sequenceService;
@@ -134,6 +135,8 @@ public class SaleService {
             lines.add(new SalesEntryResponse.Line(salesNo, product.getId(), product.getCode(),
                     item.shipmentType(), r.salesCategory(), item.qty(), supplyAmount, tax, totalAmount, stockBalance));
         }
+        // ★재고 경고(음수)를 같은 배열에 합친다 — 화면이 한 곳만 보면 되도록.
+        stockWarningCollector.drain().forEach(w -> warnings.add(SalesEntryResponse.Warning.ofStock(w)));
         return new SalesEntryResponse(partner.getId(), partner.getName(), lines, warnings);
     }
 
@@ -268,6 +271,8 @@ public class SaleService {
             lines.add(new SalesEntryResponse.Line(salesNo, product.getId(), product.getCode(),
                     ShipmentType.RETURN, SalesCategory.RETURN, item.qty(), supplyAmount, tax, totalAmount, stockBalance));
         }
+        // ★재고 경고(음수)를 같은 배열에 합친다 — 화면이 한 곳만 보면 되도록.
+        stockWarningCollector.drain().forEach(w -> warnings.add(SalesEntryResponse.Warning.ofStock(w)));
         return new SalesEntryResponse(partner.getId(), partner.getName(), lines, warnings);
     }
 
