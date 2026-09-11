@@ -54,7 +54,20 @@ public class AppUser extends BaseEntity {
         this.password = encodedPassword;
     }
 
+    /**
+     * 계정 사용 중지. 로그인·토큰재발급이 막힌다({@code AuthService}가 {@code isActive}로 거른다).
+     *
+     * <p>★행을 지우지 않는다 — {@code created_by}·{@code updated_by}가 아이디를 가리키고 있어
+     * 지우면 과거 기록의 작성자를 잃는다. 계정은 <b>끄는</b> 것이지 지우는 것이 아니다.
+     * ‼️이미 발급된 access 토큰은 만료(30분)까지 살아 있다 — stateless JWT라 즉시 끊으려면
+     * refresh를 폐기해 재발급을 막는 것이 최선이다({@code AuthService.setActive}가 같이 한다).
+     */
     public void deactivate() {
         this.active = false;
+    }
+
+    /** 사용 재개. */
+    public void activate() {
+        this.active = true;
     }
 }

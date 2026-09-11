@@ -49,7 +49,8 @@ public final class PermissionDtos {
             @Schema(description = "성명") String name,
             @Schema(description = "역할") Role role,
             @Schema(description = "마감확정 권한") boolean periodLock,
-            @Schema(description = "마감해제 권한") boolean periodUnlock
+            @Schema(description = "마감해제 권한") boolean periodUnlock,
+            @Schema(description = "사용 여부 — false면 로그인이 막힌 계정") boolean active
     ) {
     }
 

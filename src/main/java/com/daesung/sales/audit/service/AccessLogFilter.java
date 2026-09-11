@@ -36,7 +36,7 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @RequiredArgsConstructor
 public class AccessLogFilter extends OncePerRequestFilter {
 
-    private static final String API = "/api/v1";
+    static final String API = "/api/v1";
 
     private final AccessLogService accessLogService;
 
@@ -100,7 +100,7 @@ public class AccessLogFilter extends OncePerRequestFilter {
     }
 
     /** 경로 앞자리로 화면 이름을 붙인다 — 담당자가 경로를 읽을 필요가 없게. */
-    private static String menuOf(String path) {
+    static String menuOf(String path) {
         String p = path.substring(API.length());
         if (p.startsWith("/sales")) {
             return "매출관리";
@@ -129,7 +129,7 @@ public class AccessLogFilter extends OncePerRequestFilter {
         return null;
     }
 
-    private static String username() {
+    static String username() {
         Authentication a = SecurityContextHolder.getContext().getAuthentication();
         if (a == null || a.getName() == null || "anonymousUser".equals(a.getName())) {
             return "(비로그인)";
@@ -137,7 +137,7 @@ public class AccessLogFilter extends OncePerRequestFilter {
         return trim(a.getName(), 50);
     }
 
-    private static String role() {
+    static String role() {
         Authentication a = SecurityContextHolder.getContext().getAuthentication();
         if (a == null || a.getAuthorities() == null) {
             return null;
@@ -151,7 +151,7 @@ public class AccessLogFilter extends OncePerRequestFilter {
      * ★조회조건은 "무엇을 뽑아 갔나"의 단서라 남길 값이지만, 토큰이 섞여 들어오면
      * 그 자체가 유출 경로가 된다.
      */
-    private static String safeQuery(String q) {
+    static String safeQuery(String q) {
         if (q == null || q.isBlank()) {
             return null;
         }
@@ -243,7 +243,7 @@ public class AccessLogFilter extends OncePerRequestFilter {
     }
 
     /** 프록시(Caddy) 뒤라 원격주소는 프록시 IP다. 전달 헤더의 첫 값이 실제 클라이언트다. */
-    private static String clientIp(HttpServletRequest req) {
+    static String clientIp(HttpServletRequest req) {
         String fwd = req.getHeader("X-Forwarded-For");
         if (fwd != null && !fwd.isBlank()) {
             return trim(fwd.split(",")[0].trim(), 45);
@@ -251,7 +251,7 @@ public class AccessLogFilter extends OncePerRequestFilter {
         return trim(req.getRemoteAddr(), 45);
     }
 
-    private static String trim(String v, int max) {
+    static String trim(String v, int max) {
         if (v == null) {
             return null;
         }

@@ -34,7 +34,8 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain securityFilterChain(
             HttpSecurity http, JwtProvider jwtProvider,
-            com.daesung.sales.permission.service.DynamicAuthorizationManager dynamicAuthorizationManager)
+            com.daesung.sales.permission.service.DynamicAuthorizationManager dynamicAuthorizationManager,
+            com.daesung.sales.audit.service.AccessDeniedLogger accessDeniedLogger)
             throws Exception {
         http
                 .csrf(AbstractHttpConfigurer::disable)
@@ -51,7 +52,7 @@ public class SecurityConfig {
                                 "/actuator/health").permitAll()
                         // 계정 생성·권한 관리는 관리자만(권한 표 자체를 바꾸는 경로라 표 밖에 둔다 —
                         // 표를 잘못 고쳐 스스로를 잠그면 되돌릴 길이 없어진다)
-                        .requestMatchers("/api/v1/auth/users").hasRole("ADMIN")
+                        .requestMatchers("/api/v1/auth/users", "/api/v1/auth/users/**").hasRole("ADMIN")
                         .requestMatchers("/api/v1/permissions/**").hasRole("ADMIN")
                         // 행위기록은 관리자만 — 남의 다운로드 기록이 아무나 보이면 그 자체가 감시로 읽힌다.
                         .requestMatchers("/api/v1/audit/access-log/**").hasRole("ADMIN")
@@ -69,9 +70,12 @@ public class SecurityConfig {
                 // 미인증=401(로그인 필요), 인증됐으나 권한부족=403.
                 // ★setStatus 사용(sendError 아님) — sendError는 ERROR 재디스패치를 유발,
                 //   그 재디스패치엔 JWT 필터(OncePerRequestFilter)가 안 돌아 익명 재평가로 401이 덮어씀.
+                // ★403은 AccessDeniedLogger가 받는다 — 상태를 세우고 access_log에 남긴다.
+                //   예전엔 여기 람다가 상태만 세워서, 권한 위반 시도가 감사기록에 한 줄도
+                //   남지 않았다(409·401은 남는데 403만 빠짐 — 2026-09-11 점검).
                 .exceptionHandling(e -> e
                         .authenticationEntryPoint(new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED))
-                        .accessDeniedHandler((req, res, ex) -> res.setStatus(HttpStatus.FORBIDDEN.value())))
+                        .accessDeniedHandler(accessDeniedLogger))
                 .addFilterBefore(new JwtAuthenticationFilter(jwtProvider),
                         UsernamePasswordAuthenticationFilter.class);
         return http.build();

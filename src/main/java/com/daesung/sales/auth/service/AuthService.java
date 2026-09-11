@@ -117,7 +117,46 @@ public class AuthService {
     }
 
     private static UserResponse toUserResponse(AppUser u) {
-        return new UserResponse(u.getId(), u.getUsername(), u.getName(), u.getRole());
+        return new UserResponse(u.getId(), u.getUsername(), u.getName(), u.getRole(), u.isActive());
+    }
+
+    /**
+     * 계정 사용 여부 변경(관리자 전용).
+     *
+     * <p>★<b>지우지 않고 끈다.</b> 감사컬럼(created_by/updated_by)이 아이디를 가리켜서
+     * 행을 지우면 과거 기록의 작성자를 잃는다. 그래서 DELETE가 아니라 이 경로다.
+     *
+     * <p>막아 두는 두 가지 —
+     * <ul>
+     *   <li><b>자기 자신</b>은 못 끈다. 끄는 순간 되돌릴 사람이 없어진다.</li>
+     *   <li><b>마지막 활성 관리자</b>도 못 끈다. 관리자가 0이 되면 계정 관리·권한 표를
+     *       아무도 못 고쳐 서버에 직접 손대야 복구된다.</li>
+     * </ul>
+     *
+     * <p>‼️끌 때 refresh를 모두 폐기한다. access 토큰은 stateless라 만료(30분)까지 살아 있어
+     * <b>즉시 차단되지는 않는다</b> — 재발급을 막아 그 창을 30분으로 묶는 것이 최선이다.
+     */
+    @Transactional
+    public UserResponse setActive(Long userId, boolean active, String actorUsername) {
+        AppUser user = userRepository.findById(userId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "계정이 없습니다. id=" + userId));
+        if (user.isActive() == active) {
+            return toUserResponse(user);   // 멱등 — 같은 요청을 두 번 보내도 오류가 아니다
+        }
+        if (!active) {
+            if (user.getUsername().equals(actorUsername)) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT, "자기 계정은 중지할 수 없습니다.");
+            }
+            if (user.getRole() == Role.ADMIN && userRepository.countByRoleAndActiveTrue(Role.ADMIN) <= 1) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT,
+                        "마지막 관리자 계정은 중지할 수 없습니다. 다른 관리자를 먼저 만드세요.");
+            }
+            user.deactivate();
+            refreshTokenStore.revokeAllByUser(user.getId());   // 재발급 차단
+        } else {
+            user.activate();
+        }
+        return toUserResponse(user);
     }
 
     /** refresh 토큰은 원문 대신 SHA-256 해시로 저장. */

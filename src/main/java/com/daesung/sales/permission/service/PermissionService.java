@@ -93,7 +93,8 @@ public class PermissionService {
                     unlock = f.isGranted();
                 }
             }
-            rows.add(new UserFlagRow(u.getId(), u.getUsername(), u.getName(), u.getRole(), lock, unlock));
+            rows.add(new UserFlagRow(u.getId(), u.getUsername(), u.getName(), u.getRole(), lock, unlock,
+                    u.isActive()));
         }
         return rows;
     }

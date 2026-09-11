@@ -51,6 +51,80 @@ class AuthSecurityIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("★권한거부(403)가 접근로그에 남는다 — 예전엔 403만 통째로 빠져 있었다")
+    void 권한거부_기록() throws Exception {
+        String finance = loginToken("rbac-finance");
+
+        // 관리자 전용 경로를 재무 계정으로 두드린다 — GET이라 평소엔 안 남는 종류다.
+        assertThat(status(HttpMethod.GET, "/audit/access-log", null, finance)).isEqualTo(403);
+
+        JsonNode rows = om.readTree(
+                exchangeRaw(HttpMethod.GET, "/audit/access-log?size=200&actions=DENIED", null, token(), null)
+                        .getBody()).path("data").path("content");
+
+        JsonNode hit = null;
+        for (JsonNode r : rows) {
+            if ("rbac-finance".equals(r.path("username").asText())
+                    && r.path("path").asText().contains("/audit/access-log")) {
+                hit = r;
+                break;
+            }
+        }
+        assertThat(hit).as("403 시도가 DENIED로 남아야 한다").isNotNull();
+        // ★누가 시도했는지가 핵심이다 — 필터를 시큐리티 앞으로 당겼다면 여기가 (비로그인)이 된다.
+        assertThat(hit.path("role").asText()).isEqualTo("FINANCE");
+        assertThat(hit.path("status").asInt()).isEqualTo(403);
+        assertThat(hit.path("success").asBoolean()).isFalse();
+    }
+
+    @Test
+    @DisplayName("★계정 중지 — 지우지 않고 끈다. 자기 자신·마지막 관리자는 막는다")
+    void 계정_중지() throws Exception {
+        createUser("deact-target", "SALES");
+        assertThat(loginToken("deact-target")).isNotBlank();   // 끄기 전엔 로그인된다
+
+        long id = -1;
+        JsonNode users = om.readTree(
+                exchangeRaw(HttpMethod.GET, "/permissions/users", null, token(), null).getBody())
+                .path("data");
+        long adminId = -1;
+        for (JsonNode u : users) {
+            if ("deact-target".equals(u.path("username").asText())) {
+                id = u.path("userId").asLong();
+            }
+            if ("admin".equals(u.path("username").asText())) {
+                adminId = u.path("userId").asLong();
+            }
+        }
+        assertThat(id).isPositive();
+
+        // 중지 → 로그인이 막힌다(401)
+        assertThat(status(HttpMethod.PUT, "/auth/users/" + id + "/active",
+                Map.of("active", false), token())).isEqualTo(200);
+        assertThat(exchangeRaw(HttpMethod.POST, "/auth/login",
+                Map.of("username", "deact-target", "password", "Pw123456!"), null, null)
+                .getStatusCode().value()).isEqualTo(401);
+
+        // 같은 요청을 또 보내도 오류가 아니다(멱등)
+        assertThat(status(HttpMethod.PUT, "/auth/users/" + id + "/active",
+                Map.of("active", false), token())).isEqualTo(200);
+
+        // 재개 → 다시 로그인된다
+        assertThat(status(HttpMethod.PUT, "/auth/users/" + id + "/active",
+                Map.of("active", true), token())).isEqualTo(200);
+        assertThat(loginToken("deact-target")).isNotBlank();
+
+        // ★자기 자신은 못 끈다 — 끄면 되돌릴 사람이 없어진다
+        assertThat(adminId).isPositive();
+        assertThat(status(HttpMethod.PUT, "/auth/users/" + adminId + "/active",
+                Map.of("active", false), token())).isEqualTo(400);
+
+        // 관리자 아닌 계정은 이 경로 자체가 막힌다
+        assertThat(status(HttpMethod.PUT, "/auth/users/" + id + "/active",
+                Map.of("active", false), loginToken("rbac-sales"))).isEqualTo(403);
+    }
+
+    @Test
     @DisplayName("RBAC — 판정이 권한 표(V52)에서 나온다")
     void rbac매트릭스() throws Exception {
         String finance = loginToken("rbac-finance");

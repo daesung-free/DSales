@@ -44,10 +44,17 @@ public final class AuthDtos {
             @Schema(description = "access 토큰 유효(분)") long accessExpiresInMinutes) {
     }
 
+    public record UserActiveRequest(
+            @Schema(description = "true=사용, false=중지", example = "false",
+                    requiredMode = Schema.RequiredMode.REQUIRED)
+            @NotNull Boolean active) {
+    }
+
     public record UserResponse(
             @Schema(description = "사용자 id") Long id,
             @Schema(description = "아이디") String username,
             @Schema(description = "이름") String name,
-            @Schema(description = "역할") Role role) {
+            @Schema(description = "역할") Role role,
+            @Schema(description = "사용 여부 — false면 로그인·토큰재발급이 막힌다") boolean active) {
     }
 }

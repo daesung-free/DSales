@@ -4,6 +4,7 @@ import com.daesung.sales.auth.config.JwtProperties;
 import com.daesung.sales.auth.dto.AuthDtos.LoginRequest;
 import com.daesung.sales.auth.dto.AuthDtos.RefreshRequest;
 import com.daesung.sales.auth.dto.AuthDtos.TokenResponse;
+import com.daesung.sales.auth.dto.AuthDtos.UserActiveRequest;
 import com.daesung.sales.auth.dto.AuthDtos.UserCreateRequest;
 import com.daesung.sales.auth.dto.AuthDtos.UserResponse;
 import com.daesung.sales.auth.service.AuthService;
@@ -11,6 +12,7 @@ import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.common.response.ApiResponse;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
@@ -21,7 +23,9 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseCookie;
 import org.springframework.web.bind.annotation.CookieValue;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -54,6 +58,26 @@ public class AuthController {
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<UserResponse> createUser(@Valid @RequestBody UserCreateRequest req) {
         return ApiResponse.success(authService.createUser(req));
+    }
+
+    @Operation(summary = "계정 사용 중지/재개(관리자 전용)",
+            description = """
+                    계정을 **지우지 않고 끈다**. 끄면 로그인·토큰재발급이 막힌다.
+                    감사컬럼(created_by/updated_by)이 아이디를 가리켜 행을 지우면 과거 기록의
+                    작성자를 잃기 때문에 DELETE가 아니라 이 경로다.
+
+                    ★자기 계정과 **마지막 활성 관리자**는 끌 수 없다(400) — 끄면 되돌릴 사람이 없어진다.
+                    ‼️이미 발급된 access 토큰은 만료(기본 30분)까지 살아 있다. 끌 때 refresh를 모두
+                    폐기해 재발급을 막으므로 차단이 완전해지기까지 최대 그 시간이 걸린다.
+
+                    같은 값을 두 번 보내도 오류가 아니다(멱등).""")
+    @PutMapping("/users/{id}/active")
+    public ApiResponse<UserResponse> setActive(
+            @Parameter(description = "사용자 id", required = true) @PathVariable Long id,
+            @Valid @RequestBody UserActiveRequest req,
+            Principal principal) {
+        return ApiResponse.success(
+                authService.setActive(id, req.active(), principal == null ? null : principal.getName()));
     }
 
     @Operation(summary = "로그인",
