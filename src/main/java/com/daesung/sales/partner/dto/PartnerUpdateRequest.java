@@ -3,6 +3,7 @@ package com.daesung.sales.partner.dto;
 import com.daesung.sales.partner.entity.PartnerType;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 import java.time.LocalDate;
 
 /** 거래처 수정 요청 DTO. 코드(code)는 불변이라 제외. 담보(여신)는 채권 담보비율 계산에 사용. */
@@ -32,14 +33,24 @@ public record PartnerUpdateRequest(
         @Schema(description = "담보 내용(비고)", example = "부동산 근저당")
         String assureNote,
 
-        @Schema(description = "사업자번호", example = "123-45-67890") String bizNo,
+        @Schema(description = """
+                사업자번호. `123-45-67890` 또는 `1234567890`.
+                ‼️형식만 본다 — 국세청 검증은 하지 않는다. 계산서·거래명세서에 그대로 찍히는 값이라
+                자릿수가 안 맞으면 문서가 잘못 나간다.""", example = "123-45-67890")
+        @Pattern(regexp = "^$|^\\d{3}-?\\d{2}-?\\d{5}$",
+                message = "사업자번호는 10자리 숫자여야 합니다(예: 123-45-67890)")
+        String bizNo,
         @Schema(description = "대표자 성명", example = "홍길동") String bossName,
         @Schema(description = "주소", example = "서울시 강남구") String addr1,
         @Schema(description = "상세주소", example = "테헤란로 1") String addr2,
         @Schema(description = "업태", example = "도소매") String bizStatus,
         @Schema(description = "종목", example = "서적") String bizItem,
-        @Schema(description = "이메일1", example = "a@b.com") String email1,
-        @Schema(description = "이메일2") String email2,
+        @Schema(description = "이메일1", example = "a@b.com")
+        @Pattern(regexp = "^$|^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", message = "이메일 형식이 아닙니다")
+        String email1,
+        @Schema(description = "이메일2")
+        @Pattern(regexp = "^$|^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", message = "이메일 형식이 아닙니다")
+        String email2,
 
         // ── 연락처·거래기간(30p 거래처관리) ──
         @Schema(description = "사업자주민번호", example = "800101-1234567") String bossId,

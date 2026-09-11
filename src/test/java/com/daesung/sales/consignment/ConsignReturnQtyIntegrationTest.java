@@ -107,7 +107,7 @@ class ConsignReturnQtyIntegrationTest extends IntegrationTestSupport {
     /** 창고 행들의 기말 재고 합. */
     private long sumClosing(String url) {
         long sum = 0;
-        for (JsonNode r : data(get(url))) {
+        for (JsonNode r : data(get(url)).path("content")) {
             sum += r.path("closing").asLong();
         }
         return sum;

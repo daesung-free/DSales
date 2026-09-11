@@ -76,7 +76,7 @@ class DisposalListIntegrationTest extends IntegrationTestSupport {
 
         // 원장(수불부)에서는 여전히 음수다 — 재고를 깎는 이벤트이기 때문
         JsonNode ledger = data(get("/stock/ledger?fromDate=" + YEAR + "-01-01&toDate=" + YEAR
-                + "-12-31&productId=" + product)).get(0);
+                + "-12-31&productId=" + product)).path("content").get(0);
         assertThat(ledger.path("dispose").asInt()).as("원장은 음수 그대로").isEqualTo(-7);
         assertThat(ledger.path("closing").asInt()).as("100 − 7").isEqualTo(93);
     }

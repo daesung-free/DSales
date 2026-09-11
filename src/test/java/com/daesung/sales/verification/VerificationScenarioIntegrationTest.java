@@ -218,7 +218,7 @@ class VerificationScenarioIntegrationTest extends IntegrationTestSupport {
     }
 
     private JsonNode ledgerRow(Long wh, String code, String from, String to) {
-        JsonNode rows = data(get("/stock/ledger?warehouseId=" + wh + "&fromDate=" + from + "&toDate=" + to));
+        JsonNode rows = data(get("/stock/ledger?warehouseId=" + wh + "&fromDate=" + from + "&toDate=" + to)).path("content");
         for (JsonNode r : rows) {
             if (code.equals(r.path("productCode").asText())) {
                 return r;
@@ -228,7 +228,7 @@ class VerificationScenarioIntegrationTest extends IntegrationTestSupport {
     }
 
     private int balance(Long wh, String code) {
-        JsonNode rows = data(get("/stock/ledger?warehouseId=" + wh));
+        JsonNode rows = data(get("/stock/ledger?warehouseId=" + wh)).path("content");
         for (JsonNode r : rows) {
             if (code.equals(r.path("productCode").asText())) {
                 return r.path("cachedBalance").asInt();

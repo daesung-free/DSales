@@ -113,7 +113,7 @@ public class InventoryController {
                     + "이벤트합계(closing)와 캐시(inventory.qty) 대사(reconciled) 포함. "
                     + "기간 미지정 시 올해 1/1~오늘.")
     @GetMapping("/ledger")
-    public ApiResponse<List<StockLedgerRow>> ledger(
+    public ApiResponse<com.daesung.sales.common.response.PageResponse<StockLedgerRow>> ledger(
             @Parameter(description = "시작일(yyyy-MM-dd, 미지정 시 올해 1/1)") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
             @Parameter(description = "종료일(yyyy-MM-dd, 미지정 시 오늘)") @RequestParam(required = false)
@@ -124,8 +124,16 @@ public class InventoryController {
                     창고구분 MAIN(물류창고)/CONSIGN(위탁창고). 미지정=전체.
                     발주처 요청(2026-08-21): 전체 합산만 보면 **위탁 미결잔여가 실제로 어느 창고에
                     남아 있는지** 알 수 없다.""")
-            @RequestParam(required = false) com.daesung.sales.warehouse.entity.WarehouseType warehouseType) {
-        return ApiResponse.success(inventoryService.stockLedger(fromDate, toDate, productId, warehouseId, warehouseType));
+            @RequestParam(required = false) com.daesung.sales.warehouse.entity.WarehouseType warehouseType,
+            @Parameter(description = "키워드 — 도서코드·도서명·창고명을 한 번에 훑는다(부분일치)")
+            @RequestParam(required = false) String keyword,
+            @Parameter(description = "페이지(0부터)") @RequestParam(defaultValue = "0") int page,
+            @Parameter(description = "페이지 크기") @RequestParam(defaultValue = "100") int size) {
+        // ★집계 후 자른다. SQL에 LIMIT을 걸면 페이지마다 이월·마감이 달라진다
+        //   (수불부는 상품×창고로 묶은 뒤라야 이월이 정확하다). 총건수는 전체를 준다.
+        return ApiResponse.success(com.daesung.sales.common.response.PageResponse.ofList(
+                inventoryService.stockLedger(fromDate, toDate, productId, warehouseId, warehouseType, keyword),
+                page, size));
     }
 
     @Operation(summary = "제품수불부 엑셀 다운로드", description = "이월/입고/이고/조립해체/폐기/매출/무상/교사용/반품/조정/현재재고.")

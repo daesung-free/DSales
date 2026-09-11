@@ -96,7 +96,7 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
         inbound(wh, visible);
         inbound(wh, hidden);
 
-        JsonNode rows = data(get("/stock/ledger?warehouseId=" + wh));
+        JsonNode rows = data(get("/stock/ledger?warehouseId=" + wh)).path("content");
         assertThat(codes(rows)).contains("MF-VIS").doesNotContain("MF-HID");
     }
 
@@ -117,7 +117,7 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
         assertThat(r.path("success").asBoolean()).as("재고 미관리 상품 매출 성공: %s", r).isTrue();
 
         // 재고이벤트 없음 → 제품수불부에 해당 상품 행 없음
-        JsonNode rows = data(get("/stock/ledger?warehouseId=" + wh));
+        JsonNode rows = data(get("/stock/ledger?warehouseId=" + wh)).path("content");
         assertThat(codes(rows)).doesNotContain("MF-EXAM");
 
         // 대조: 재고관리 상품(기본 true)은 이벤트가 남고 **재고가 음수로 간다**.
@@ -480,8 +480,13 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
     @Test
     @DisplayName("매출 엑셀 업로드 — 표준양식 파싱→일괄등록(공급률 0.75→75, 위탁출고 거부)")
     void 매출엑셀업로드() throws Exception {
-        createId("/masters/products",
-                Map.of("code", "UP01", "name", "업로드도서", "contentType", "SELF", "price", 10000));   // 분류 UP + 도서 01
+        // ★발주처 표준양식은 분류코드·도서코드를 **따로** 받는다 —
+        //   "⚠분류코드마다 01부터 재사용되므로 분류코드 없이는 특정 불가".
+        //   예전에는 두 값을 이어붙여 상품코드(UP01)와 대조했는데, 그러면 실제 마스터
+        //   (도서코드가 전역 고유)로는 어떤 값도 맞지 않아 업로드가 100% 실패했다(2026-09-11 발견).
+        createId("/masters/products", Map.of("code", "01", "name", "업로드도서",
+                "contentType", "SELF", "price", 10000,
+                "catCode", "U2026A", "catName", "업로드분류"));
         createId("/masters/clients", Map.of("code", "UPCUST", "name", "업로드거래처", "type", "NORMAL"));
 
         JsonNode r = uploadXlsx(buildUploadXlsx());
@@ -505,7 +510,7 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
             d.createCell(0).setCellValue("2026-09-05");
             d.createCell(1).setCellValue("UPCUST");
             d.createCell(2).setCellValue("10002");
-            d.createCell(3).setCellValue("UP");
+            d.createCell(3).setCellValue("U2026A");
             d.createCell(4).setCellValue("01");
             d.createCell(5).setCellValue(0);
             d.createCell(6).setCellValue(10000);

@@ -81,6 +81,9 @@ public class PartnerService {
         partner.applyNames(req.cityName(), req.name1(), req.region(), MasterCodes.clientCategory(req.clientCategory()));
         partner.updateContact(req.bossId(), req.tel1(), req.tel2(), req.cellPhone(), req.fax(),
                 req.zip(), req.zone2(), req.startDate(), req.endDate());
+        // 등록 시점에 사업자정보도 함께 받는다 — 비워 두면 계산서·거래명세서가 빈 칸으로 나간다.
+        partner.updateTaxInfo(req.bizNo(), req.bossName(), req.addr1(), req.addr2(),
+                req.bizStatus(), req.bizItem(), req.email1(), req.email2());
         return PartnerResponse.from(partnerRepository.save(partner));
     }
 

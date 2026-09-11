@@ -12,6 +12,19 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
     Optional<Product> findByCode(String code);
 
     /**
+     * 분류코드 + 도서코드로 찾는다(매출 엑셀 업로드용).
+     *
+     * <p>★발주처 표준양식이 두 칸을 따로 받는다 —
+     * "⚠분류코드마다 01부터 재사용되므로 <b>분류코드 없이는 특정 불가</b>"(매출 업로드양식_샘플).
+     * 레거시는 도서코드가 분류 안에서만 고유했다.
+     *
+     * <p>‼️그런데 우리 마스터는 도서코드를 <b>전역 고유</b>로 쓴다(BK-K2026-1).
+     * 두 체계가 섞여 있어 호출부가 <b>이것을 먼저 보고, 못 찾으면 도서코드 단독</b>으로 한 번 더 찾는다.
+     * 어느 한쪽만 지원하면 다른 체계로 만든 양식이 통째로 실패한다.
+     */
+    Optional<Product> findByCatCodeAndCode(String catCode, String code);
+
+    /**
      * 쓰이고 있는 분류코드·분류명 목록(도서 등록 화면 선택용).
      *
      * <p>★분류 마스터가 아니라 <b>실제 사용 중인 값의 집계</b>다. 정본에 분류 등록 화면이 없어

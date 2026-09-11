@@ -115,7 +115,7 @@ class DisposalSummaryIntegrationTest extends IntegrationTestSupport {
 
     private List<String> codesIn(String url) {
         List<String> out = new java.util.ArrayList<>();
-        data(get(url)).forEach(n -> out.add(n.path("productCode").asText()));
+        data(get(url)).path("content").forEach(n -> out.add(n.path("productCode").asText()));
         return out;
     }
 }

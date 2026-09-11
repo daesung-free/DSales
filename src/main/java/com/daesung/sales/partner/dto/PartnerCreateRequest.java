@@ -4,6 +4,7 @@ import com.daesung.sales.partner.entity.PartnerType;
 import java.time.LocalDate;
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Pattern;
 
 /** 거래처 등록 요청 DTO. type 미지정 시 NORMAL. */
 public record PartnerCreateRequest(
@@ -25,6 +26,31 @@ public record PartnerCreateRequest(
 
         @Schema(description = "정산유형(NORMAL=정상판매, CONSIGN=후정산/위탁, 미지정 시 NORMAL)", example = "CONSIGN")
         PartnerType type,
+
+        // ── 사업자 정보(30p 거래처관리) ──
+        //    ★등록 때부터 받는다. 예전에는 수정에만 있어, 새 거래처를 만들면
+        //      계산서·거래명세서에 찍힐 사업자번호가 비어 있는 채로 남았다.
+        @Schema(description = """
+                사업자번호. `123-45-67890` 또는 `1234567890`.
+                ‼️형식만 본다 — 국세청 검증은 하지 않는다. 계산서·거래명세서에 그대로 찍히는 값이라
+                자릿수가 안 맞으면 문서가 잘못 나간다.""", example = "123-45-67890")
+        @Pattern(regexp = "^$|^\\d{3}-?\\d{2}-?\\d{5}$",
+                message = "사업자번호는 10자리 숫자여야 합니다(예: 123-45-67890)")
+        String bizNo,
+
+        @Schema(description = "대표자 성명", example = "홍길동") String bossName,
+        @Schema(description = "주소", example = "서울시 강남구") String addr1,
+        @Schema(description = "상세주소", example = "테헤란로 1") String addr2,
+        @Schema(description = "업태", example = "도소매") String bizStatus,
+        @Schema(description = "종목", example = "서적") String bizItem,
+
+        @Schema(description = "이메일1", example = "a@b.com")
+        @Pattern(regexp = "^$|^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", message = "이메일 형식이 아닙니다")
+        String email1,
+
+        @Schema(description = "이메일2")
+        @Pattern(regexp = "^$|^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$", message = "이메일 형식이 아닙니다")
+        String email2,
 
         // ── 연락처·거래기간(30p 거래처관리, 레거시 custData 대응) ──
         @Schema(description = "사업자주민번호", example = "800101-1234567") String bossId,

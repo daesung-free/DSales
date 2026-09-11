@@ -258,12 +258,20 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
      * 빈 컬렉션을 {@code in ()} 으로 넘기면 DB마다 다르게 깨지므로 플래그로 분기한다
      * ({@code MultiSelect.orPlaceholder} 참고).
      */
-    @Query("select s from Sale s "
+    // ‼️창고는 **left join** 이어야 한다. `s.warehouse.id` 라고만 쓰면 JPQL이 inner join을 만들어
+    //   창고가 없는 과거 매출(업로드분 등)이 조건과 무관하게 통째로 사라진다.
+    @Query("select s from Sale s left join s.warehouse w "
             + "where (:from is null or s.salesDate >= :from) "
             + "and (:to is null or s.salesDate <= :to) "
             + "and (:anyCategory = true or s.salesCategory in :salesCategories) "
             + "and (:anyShipmentType = true or s.shipmentType in :shipmentTypes) "
             + "and (:anyPartner = true or s.partner.id in :partnerIds) "
+            + "and (:anyWarehouse = true or w.id in :warehouseIds) "
+            // 키워드는 담당자가 화면에서 치는 값이다 — 거래처명·도서명·도서코드·매출번호·학교명을 함께 훑는다.
+            // 어느 칸에 쳤는지 기억하고 고르게 하면 실무에서 안 쓴다.
+            + "and (:keyword is null or lower(s.partner.name) like :keyword "
+            + "     or lower(s.product.name) like :keyword or lower(s.product.code) like :keyword "
+            + "     or lower(s.salesNo) like :keyword or lower(coalesce(s.schoolName, '')) like :keyword) "
             + "and (:includeCanceled = true or s.canceled = false)")
     Page<Sale> search(@Param("from") LocalDate from,
                       @Param("to") LocalDate to,
@@ -273,6 +281,9 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
                       @Param("shipmentTypes") Collection<ShipmentType> shipmentTypes,
                       @Param("anyPartner") boolean anyPartner,
                       @Param("partnerIds") Collection<Long> partnerIds,
+                      @Param("anyWarehouse") boolean anyWarehouse,
+                      @Param("warehouseIds") Collection<Long> warehouseIds,
+                      @Param("keyword") String keyword,
                       @Param("includeCanceled") boolean includeCanceled,
                       Pageable pageable);
 

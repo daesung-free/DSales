@@ -367,7 +367,7 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
         assertThat(line.path("stockBalance").asLong()).isEqualTo(990);   // 980 +10 자동 복구
 
         // 수불부: 매출 20·반품 +10, 현재재고 990(1000−20+10)
-        JsonNode led = data(get("/stock/ledger?warehouseId=" + wh));
+        JsonNode led = data(get("/stock/ledger?warehouseId=" + wh)).path("content");
         JsonNode row = rowWhere(led, "productCode", "RI-BK");
         assertThat(row.path("salesReturn").asLong()).isEqualTo(10);
         assertThat(row.path("closing").asLong()).isEqualTo(990);

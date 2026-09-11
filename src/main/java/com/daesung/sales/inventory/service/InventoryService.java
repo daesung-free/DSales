@@ -258,6 +258,20 @@ public class InventoryService {
     public List<StockLedgerRow> stockLedger(LocalDate fromDate, LocalDate toDate,
                                             Long productId, Long warehouseId,
                                             WarehouseType warehouseType) {
+        return stockLedger(fromDate, toDate, productId, warehouseId, warehouseType, null);
+    }
+
+    /**
+     * 제품수불부. {@code keyword}는 도서코드·도서명·창고명을 함께 훑는다(부분일치).
+     *
+     * <p>★키워드는 <b>메모리에서</b> 거른다. 집계 쿼리가 상품×창고로 묶은 뒤에 걸러야
+     * 이월·마감이 정확하다 — SQL WHERE에 넣으면 걸러진 행만으로 이월을 다시 계산하게 된다.
+     * 수불부는 화면 한 장 분량(수천 행)이라 메모리에서 걸러도 부담이 없다.
+     */
+    @Transactional(readOnly = true)
+    public List<StockLedgerRow> stockLedger(LocalDate fromDate, LocalDate toDate,
+                                            Long productId, Long warehouseId,
+                                            WarehouseType warehouseType, String keyword) {
         LocalDate from = (fromDate != null) ? fromDate : LocalDate.now().withDayOfYear(1);
         LocalDate to = (toDate != null) ? toDate : LocalDate.now();
 
@@ -273,7 +287,21 @@ public class InventoryService {
                     num(r[10]), num(r[11]), num(r[12]), num(r[13]), num(r[14]),
                     closing, cached, closing == cached));
         }
-        return result;
+
+        String kw = (keyword == null || keyword.isBlank())
+                ? null : keyword.trim().toLowerCase(java.util.Locale.ROOT);
+        if (kw == null) {
+            return result;
+        }
+        return result.stream()
+                .filter(r -> contains(r.productCode(), kw) || contains(r.productName(), kw)
+                        || contains(r.warehouseName(), kw))
+                .toList();
+    }
+
+    /** 키워드 부분일치(대소문자 무시). null 필드는 안 맞는 것으로 본다. */
+    private static boolean contains(String v, String kw) {
+        return v != null && v.toLowerCase(java.util.Locale.ROOT).contains(kw);
     }
 
     /** 입고/대체 내역이 다루는 재고이벤트 — 입고·이고·세트조립·세트해체. */

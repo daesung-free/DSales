@@ -169,7 +169,7 @@ class InventoryEngineIntegrationTest extends IntegrationTestSupport {
 
     /** 창고×상품 현재 재고(inventory.qty 캐시) — 제품수불부 cachedBalance. */
     private int balance(Long wh, String code) {
-        JsonNode rows = data(get("/stock/ledger?warehouseId=" + wh));
+        JsonNode rows = data(get("/stock/ledger?warehouseId=" + wh)).path("content");
         for (JsonNode r : rows) {
             if (code.equals(r.path("productCode").asText())) {
                 return r.path("cachedBalance").asInt();

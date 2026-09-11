@@ -429,6 +429,8 @@ public class SaleService {
                                              List<TradeClass> tradeClasses,
                                              List<ShipmentType> shipmentTypes,
                                              List<Long> partnerIds,
+                                             List<Long> warehouseIds,
+                                             String keyword,
                                              boolean includeCanceled, Pageable pageable) {
         List<SalesCategory> categories = salesCategories;
         if (!MultiSelect.isAny(tradeClasses)) {
@@ -455,6 +457,11 @@ public class SaleService {
         for (SalesDivision d : salesDivisionRepository.findAll()) {
             divisions.put(d.getCode(), d);
         }
+        // 키워드는 소문자 + 양쪽 와일드카드. 공백만 들어오면 조건에서 뺀다 —
+        // 빈 검색어로 전체가 사라지면 담당자는 데이터가 없는 줄 안다.
+        String kw = (keyword == null || keyword.isBlank())
+                ? null : "%" + keyword.trim().toLowerCase(java.util.Locale.ROOT) + "%";
+
         Page<Sale> page = saleRepository.search(from, to,
                 MultiSelect.isAny(categories),
                 MultiSelect.orPlaceholder(categories, SalesCategory.SALE),
@@ -462,7 +469,9 @@ public class SaleService {
                 MultiSelect.orPlaceholder(shipmentTypes, ShipmentType.NORMAL_SHIP),
                 MultiSelect.isAny(partnerIds),
                 MultiSelect.orPlaceholder(partnerIds, 0L),
-                includeCanceled, pageable);
+                MultiSelect.isAny(warehouseIds),
+                MultiSelect.orPlaceholder(warehouseIds, 0L),
+                kw, includeCanceled, pageable);
         return PageResponse.of(
                 page.map(s -> SaleResponse.from(s, divisions.get(s.getProduct().getSalesDivision()))));
     }

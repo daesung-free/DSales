@@ -19,6 +19,7 @@ import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Optional;
 import lombok.RequiredArgsConstructor;
 import org.apache.poi.ss.usermodel.Cell;
 import org.apache.poi.ss.usermodel.CellType;
@@ -87,7 +88,8 @@ public class SalesUploadService {
                 }
                 int rowNo = r + 1;
                 String custCode = str(row, 1);
-                String productCode = safe(str(row, 3)) + safe(str(row, 4));   // 분류+도서 조합
+                String catCode = str(row, 3);
+                String bookCode = str(row, 4);
                 int qty = intVal(row, 8);
                 try {
                     Kind kind = mapKind(str(row, 10));
@@ -102,8 +104,7 @@ public class SalesUploadService {
 
                     Partner partner = partnerRepository.findByCode(custCode)
                             .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "거래처 없음: " + custCode));
-                    Product product = productRepository.findByCode(productCode)
-                            .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "도서 없음(분류+도서): " + productCode));
+                    Product product = findProduct(catCode, bookCode);
 
                     Integer unitPrice = intOrNull(row, 6);
                     if (unitPrice == null) {
@@ -135,17 +136,53 @@ public class SalesUploadService {
 
                     imported++;
                     lines.add(new SalesUploadResponse.Line(rowNo, "IMPORTED", salesNo,
-                            custCode, productCode, qty, amt.supplyAmount(), null));
+                            custCode, label(catCode, bookCode), qty, amt.supplyAmount(), null));
                 } catch (BusinessException e) {
                     failed++;
                     lines.add(new SalesUploadResponse.Line(rowNo, "ERROR", null,
-                            custCode, productCode, qty, 0, e.getMessage()));
+                            custCode, label(catCode, bookCode), qty, 0, e.getMessage()));
                 }
             }
         } catch (IOException e) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "엑셀 파일을 읽을 수 없습니다: " + e.getMessage());
         }
         return new SalesUploadResponse(imported, failed, lines);
+    }
+
+    /**
+     * 양식의 <b>분류코드 + 도서코드</b>로 상품을 찾는다.
+     *
+     * <p>★두 체계를 모두 받는다.
+     * <pre>
+     *   ① 분류코드 + 도서코드   발주처 표준양식(도서코드가 분류 안에서만 고유: S2026A02 + 01)
+     *   ② 도서코드 단독         우리 마스터의 전역 고유코드(BK-K2026-1)
+     * </pre>
+     * 예전에는 두 값을 <b>문자열로 이어붙여</b>({@code catCode + bookCode}) 전역코드와 대조했다.
+     * 그러면 {@code K202601BK-K2026-1} 같은 값을 찾게 되어 <b>어떤 마스터로도 맞지 않는다</b> —
+     * 업로드가 구조적으로 100% 실패했다(2026-09-11 발견).
+     *
+     * <p>★①을 먼저 본다. ②만 지원하면 표준양식이 통째로 실패하고,
+     * ①만 지원하면 지금 마스터로 만든 파일이 전부 실패한다.
+     */
+    private Product findProduct(String catCode, String bookCode) {
+        if (bookCode == null || bookCode.isBlank()) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "도서코드가 비어 있습니다");
+        }
+        if (catCode != null && !catCode.isBlank()) {
+            Optional<Product> byPair = productRepository.findByCatCodeAndCode(catCode, bookCode);
+            if (byPair.isPresent()) {
+                return byPair.get();
+            }
+        }
+        return productRepository.findByCode(bookCode)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                        "도서 없음: " + label(catCode, bookCode)
+                                + " (분류코드+도서코드 조합, 또는 도서코드 단독으로 찾습니다)"));
+    }
+
+    /** 오류·결과 표시용 라벨. 분류코드가 있으면 함께 보여야 담당자가 어느 줄인지 안다. */
+    private static String label(String catCode, String bookCode) {
+        return (catCode == null || catCode.isBlank()) ? safe(bookCode) : catCode + "/" + safe(bookCode);
     }
 
     // ── POI 셀 헬퍼 ──
