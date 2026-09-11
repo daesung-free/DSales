@@ -47,7 +47,8 @@ class ConsignPendingPriceIntegrationTest extends IntegrationTestSupport {
         partner = createId("/masters/clients", Map.of("code", "CPC" + SFX, "name", "위탁거래처", "type", "NORMAL"));
         Long sup = createId("/masters/clients", Map.of("code", "CPS" + SFX, "name", "인쇄", "type", "NORMAL"));
         main = createId("/masters/warehouses", Map.of("code", "CPM" + SFX, "name", "물류창고", "type", "MAIN"));
-        consign = createId("/masters/warehouses", Map.of("code", "CPG" + SFX, "name", "위탁창고", "type", "CONSIGN"));
+        consign = createId("/masters/warehouses", Map.of("code", "CPG" + SFX, "name", "위탁창고",
+                "type", "CONSIGN", "ownerClientId", partner));   // 위탁창고는 소속 거래처 필수
 
         Map<String, Object> b = new HashMap<>();
         b.put("code", "CPB" + SFX);

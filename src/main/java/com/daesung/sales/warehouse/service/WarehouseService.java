@@ -9,6 +9,7 @@ import com.daesung.sales.warehouse.dto.WarehouseCreateRequest;
 import com.daesung.sales.warehouse.dto.WarehouseResponse;
 import com.daesung.sales.warehouse.dto.WarehouseUpdateRequest;
 import com.daesung.sales.warehouse.entity.Warehouse;
+import com.daesung.sales.warehouse.entity.WarehouseType;
 import com.daesung.sales.warehouse.repository.WarehouseRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Page;
@@ -41,8 +42,9 @@ public class WarehouseService {
         warehouseRepository.findByCode(req.code()).ifPresent(w -> {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "이미 존재하는 창고코드: " + req.code());
         });
+        Partner owner = ownerFor(req.type(), req.ownerClientId(), null);
         Warehouse warehouse = Warehouse.create(req.code(), req.name(), req.type(),
-                req.physicalStockOrDefault(), resolveOwner(req.ownerClientId()));
+                req.physicalStockOrDefault(), owner);
         warehouse.applyExtra(req.useYn(), req.memo());
         return WarehouseResponse.from(warehouseRepository.save(warehouse));
     }
@@ -50,9 +52,39 @@ public class WarehouseService {
     @Transactional
     public WarehouseResponse update(Long id, WarehouseUpdateRequest req) {
         Warehouse warehouse = getOrThrow(id);
-        warehouse.update(req.name(), req.type(), req.physicalStock(), resolveOwner(req.ownerClientId()));
+        Partner owner = ownerFor(req.type(), req.ownerClientId(), warehouse.getOwnerClient());
+        warehouse.update(req.name(), req.type(), req.physicalStock(), owner);
         warehouse.applyExtra(req.useYn(), req.memo());
         return WarehouseResponse.from(warehouse);
+    }
+
+    /**
+     * 창고유형에 맞는 소속거래처를 정한다.
+     *
+     * <p>★<b>위탁창고는 소속 거래처가 반드시 있어야 한다.</b> 위탁 미결정산이
+     * {@code 창고 ↔ 거래처} 매핑으로 도는 구조라, 소속이 없는 위탁창고에 재고가 들어가면
+     * <b>그 미결을 누구 것으로 정산할지 특정할 수 없다.</b>
+     * ‼️예전엔 이 검증이 화면에만 있었다 — API를 직접 부르면 소속 없는 위탁창고가
+     * 그대로 만들어졌다(2026-09-11 점검에서 발견, D-12).
+     *
+     * <p>★<b>수정 때 안 보낸 소속은 지우지 않는다.</b> {@code Warehouse.update}는 받은 값을
+     * 그대로 덮어쓰므로, 이름만 고치려고 {@code ownerClientId}를 빼면 소속이 조용히 날아갔다.
+     * 도서 수정에서 같은 문제를 부분 수정으로 고친 적이 있다(7d8361f) — 여기도 같은 규칙이다.
+     *
+     * <p>물류창고는 소속이 없는 것이 정상이라 무엇이 오든 {@code null}로 만든다.
+     *
+     * @param current 수정 전 소속(신규 등록이면 {@code null})
+     */
+    private Partner ownerFor(WarehouseType type, Long ownerClientId, Partner current) {
+        if (type != WarehouseType.CONSIGN) {
+            return null;   // 물류창고는 소속 없음
+        }
+        Partner owner = (ownerClientId != null) ? resolveOwner(ownerClientId) : current;
+        if (owner == null) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "위탁창고는 소속 거래처를 지정해야 합니다.");
+        }
+        return owner;
     }
 
     /** 소속거래처 id → Partner(없으면 예외). null이면 소속 없음. */

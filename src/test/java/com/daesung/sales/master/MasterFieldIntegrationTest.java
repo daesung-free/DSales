@@ -75,13 +75,44 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
         assertThat(d.path("ownerClientName").asText()).isEqualTo("소속거래처A");
 
         // 미지정 시 유형 기본값: CONSIGN→false
-        JsonNode consign = data(post("/masters/warehouses",
-                Map.of("code", "MF-WH-C2", "name", "위탁창고2", "type", "CONSIGN")));
+        JsonNode consign = data(post("/masters/warehouses", Map.of(
+                "code", "MF-WH-C2", "name", "위탁창고2", "type", "CONSIGN", "ownerClientId", owner)));
         assertThat(consign.path("physicalStock").asBoolean()).isFalse();
         // MAIN→true
         JsonNode main = data(post("/masters/warehouses",
                 Map.of("code", "MF-WH-M", "name", "물류창고", "type", "MAIN")));
         assertThat(main.path("physicalStock").asBoolean()).isTrue();
+    }
+
+    @Test
+    @DisplayName("★위탁창고는 소속 거래처 없이 만들 수 없다 — 화면이 아니라 서버가 막는다")
+    void 위탁창고_소속거래처_필수() {
+        // ‼️예전엔 이 검증이 화면에만 있어, API를 직접 부르면 소속 없는 위탁창고가
+        //   그대로 만들어졌다(2026-09-11 점검 D-12). 위탁 미결정산이 창고↔거래처 매핑으로
+        //   도는 구조라, 소속이 없으면 그 미결을 누구 것으로 정산할지 특정할 수 없다.
+        JsonNode denied = post("/masters/warehouses",
+                Map.of("code", "MF-WH-NOOWN", "name", "소속없는위탁", "type", "CONSIGN"));
+        assertThat(denied.path("error").path("code").asText())
+                .as("소속 없는 위탁창고는 거부되어야: %s", denied)
+                .isEqualTo("INVALID_INPUT");
+
+        // 물류창고는 소속이 없는 것이 정상이다
+        Long mainId = createId("/masters/warehouses",
+                Map.of("code", "MF-WH-M2", "name", "물류창고2", "type", "MAIN"));
+        assertThat(mainId).isPositive();
+
+        // ★수정 때 안 보낸 소속은 지우지 않는다.
+        //   Warehouse.update가 받은 값을 그대로 덮어써서, 이름만 고치려고 ownerClientId를 빼면
+        //   소속이 조용히 날아갔다(도서에서 같은 문제를 부분수정으로 고친 적이 있다).
+        Long owner = createId("/masters/clients",
+                Map.of("code", "MF-OWN2", "name", "소속거래처B", "type", "NORMAL"));
+        Long whId = createId("/masters/warehouses", Map.of(
+                "code", "MF-WH-KEEP", "name", "유지위탁", "type", "CONSIGN", "ownerClientId", owner));
+        JsonNode renamed = data(put("/masters/warehouses/" + whId,
+                Map.of("name", "이름만변경", "type", "CONSIGN")));
+        assertThat(renamed.path("name").asText()).isEqualTo("이름만변경");
+        assertThat(renamed.path("ownerClientId").asLong())
+                .as("소속이 유지되어야: %s", renamed).isEqualTo(owner);
     }
 
     @Test
@@ -171,10 +202,11 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
     @DisplayName("정산내역서 — 위탁출고→부분정산→내역서(매출금액·미결현황)")
     void 정산내역서() {
         Long main = createId("/masters/warehouses", Map.of("code", "CS-MAIN", "name", "물류창고", "type", "MAIN"));
-        Long consign = createId("/masters/warehouses", Map.of("code", "CS-CONS", "name", "위탁창고", "type", "CONSIGN"));
+        Long partner = createId("/masters/clients", Map.of("code", "CS-CUST", "name", "위탁거래처", "type", "NORMAL"));
+        Long consign = createId("/masters/warehouses", Map.of("code", "CS-CONS", "name", "위탁창고",
+                "type", "CONSIGN", "ownerClientId", partner));   // 위탁창고는 소속 거래처 필수
         Long p = createId("/masters/products",
                 Map.of("code", "CS-BK", "name", "위탁도서", "contentType", "SELF", "price", 10000));
-        Long partner = createId("/masters/clients", Map.of("code", "CS-CUST", "name", "위탁거래처", "type", "NORMAL"));
         inbound(main, p);   // 물류창고 재고 100
 
         // 위탁출고 100 (물류→위탁)
@@ -212,9 +244,10 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
     @DisplayName("위탁정산 매출 취소 → 미결원장 복원(감사 결함 수정)")
     void 위탁정산취소_미결복원() {
         Long main = createId("/masters/warehouses", Map.of("code", "CX-MAIN", "name", "물류", "type", "MAIN"));
-        Long consign = createId("/masters/warehouses", Map.of("code", "CX-CONS", "name", "위탁", "type", "CONSIGN"));
-        Long p = createId("/masters/products", Map.of("code", "CX-BK", "name", "취소도서", "contentType", "SELF", "price", 10000));
         Long partner = createId("/masters/clients", Map.of("code", "CX-CUST", "name", "취소거래처", "type", "NORMAL"));
+        Long consign = createId("/masters/warehouses", Map.of("code", "CX-CONS", "name", "위탁",
+                "type", "CONSIGN", "ownerClientId", partner));   // 위탁창고는 소속 거래처 필수
+        Long p = createId("/masters/products", Map.of("code", "CX-BK", "name", "취소도서", "contentType", "SELF", "price", 10000));
         inbound(main, p);
 
         Long coId = data(post("/consignment/out", Map.of(
@@ -259,9 +292,10 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
     @DisplayName("위탁 반품 — 역-자동이고(위탁→물류 재고복귀) + 미결원장 축소, 초과분은 Case1")
     void 위탁반품() {
         Long main = createId("/masters/warehouses", Map.of("code", "CR-MAIN", "name", "물류", "type", "MAIN"));
-        Long consign = createId("/masters/warehouses", Map.of("code", "CR-CONS", "name", "위탁", "type", "CONSIGN"));
-        Long p = createId("/masters/products", Map.of("code", "CR-BK", "name", "위탁반품도서", "contentType", "SELF"));
         Long partner = createId("/masters/clients", Map.of("code", "CR-CUST", "name", "위탁반품거래처", "type", "NORMAL"));
+        Long consign = createId("/masters/warehouses", Map.of("code", "CR-CONS", "name", "위탁",
+                "type", "CONSIGN", "ownerClientId", partner));   // 위탁창고는 소속 거래처 필수
+        Long p = createId("/masters/products", Map.of("code", "CR-BK", "name", "위탁반품도서", "contentType", "SELF"));
         inbound(main, p);   // 물류 100
 
         // 위탁출고 100 → 물류 0, 위탁 100
@@ -299,10 +333,11 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
     @DisplayName("위탁정산 동시성 — 동시 정산 2건이 모두 반영된다(lost update 없음, 이슈#97)")
     void 위탁정산_동시성() throws Exception {
         Long main = createId("/masters/warehouses", Map.of("code", "CC-MAIN", "name", "물류", "type", "MAIN"));
-        Long consign = createId("/masters/warehouses", Map.of("code", "CC-CONS", "name", "위탁", "type", "CONSIGN"));
+        Long partner = createId("/masters/clients", Map.of("code", "CC-CUST", "name", "위탁동시성거래처", "type", "NORMAL"));
+        Long consign = createId("/masters/warehouses", Map.of("code", "CC-CONS", "name", "위탁",
+                "type", "CONSIGN", "ownerClientId", partner));   // 위탁창고는 소속 거래처 필수
         Long p = createId("/masters/products",
                 Map.of("code", "CC-BK", "name", "위탁동시성도서", "contentType", "SELF", "price", 10000));
-        Long partner = createId("/masters/clients", Map.of("code", "CC-CUST", "name", "위탁동시성거래처", "type", "NORMAL"));
         inbound(main, p);   // 물류 100
 
         // 위탁출고 100 → 미결 잔여 100
