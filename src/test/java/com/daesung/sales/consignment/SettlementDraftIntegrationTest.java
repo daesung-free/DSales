@@ -80,18 +80,29 @@ class SettlementDraftIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("초과정산은 저장 시점에 막는다 — 확정까지 갔다가 거절당하지 않게")
-    void 초과정산_저장차단() {
+    @DisplayName("★초과정산은 막지 않고 경고한다 — 발주처 확정(2026-08-31 화면9)")
+    void 초과정산은_경고() {
+        // 원문: "자동 차단하던 기존 로직은 제거. 초과 시 경고 알림(alert)만 표시하고,
+        //        이후 처리는 담당자가 수기로 입력·등록할 수 있도록".
+        // ⚠️V56에서 DB 제약·엔티티는 걷어냈는데 정산초안 경로에 차단이 남아 있었다.
         JsonNode r = post("/sales/settlement/draft", Map.of(
                 "salesDate", YEAR + "-03-10",
                 "input", List.of(Map.of("pendingId", outId, "settleQty", 999))));
 
-        assertThat(r.path("success").asBoolean()).isFalse();
-        assertThat(r.path("error").path("code").asText()).isEqualTo("OVER_SETTLEMENT");
+        assertThat(r.path("success").asBoolean()).as("저장은 된다: %s", r).isTrue();
+
+        JsonNode w = data(r).path("warnings");
+        assertThat(w).as("★초과분을 숨기지 않는다 — 조용히 통과시키면 담당자가 모른다").hasSize(1);
+        assertThat(w.get(0).path("code").asText()).isEqualTo("OVER_SETTLEMENT");
+        assertThat(w.get(0).path("requestedQty").asInt()).isEqualTo(999);
+        assertThat(w.get(0).path("exceededQty").asInt()).isPositive();
+        assertThat(w.get(0).path("message").asText()).contains("미결 잔여를 초과");
+
+        del("/sales/settlement/draft/" + data(r).path("draftId").asText());
     }
 
     @Test
-    @DisplayName("같은 미결이 여러 줄이면 합쳐서 잔여와 비교한다 — 줄마다 보면 합이 넘는다")
+    @DisplayName("같은 미결이 여러 줄이면 합쳐서 본다 — 줄마다 보면 각각은 통과하고 합만 넘는다")
     void 같은미결_여러줄_합산검사() {
         JsonNode r = post("/sales/settlement/draft", Map.of(
                 "salesDate", YEAR + "-03-10",
@@ -99,8 +110,13 @@ class SettlementDraftIntegrationTest extends IntegrationTestSupport {
                         Map.of("pendingId", outId, "settleQty", 60),
                         Map.of("pendingId", outId, "settleQty", 60))));   // 각 60은 통과, 합 120은 초과
 
-        assertThat(r.path("success").asBoolean()).isFalse();
-        assertThat(r.path("error").path("code").asText()).isEqualTo("OVER_SETTLEMENT");
+        assertThat(r.path("success").asBoolean()).isTrue();
+
+        JsonNode w = data(r).path("warnings");
+        assertThat(w).as("★합쳐서 **한 번만** 경고한다 — 줄마다 띄우면 같은 말이 반복된다").hasSize(1);
+        assertThat(w.get(0).path("requestedQty").asInt()).as("60+60 합산").isEqualTo(120);
+
+        del("/sales/settlement/draft/" + data(r).path("draftId").asText());
     }
 
     @Test

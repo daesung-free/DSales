@@ -20,8 +20,29 @@ public record SettlementDraftResponse(
         @Schema(description = "초안 상세행") List<Line> lines,
         @Schema(description = "정산수량 합") int totalQty,
         @Schema(description = "총금액 합") long totalAmount,
-        @Schema(description = "메모") String memo
+        @Schema(description = "메모") String memo,
+
+        @Schema(description = """
+                경고. **저장은 됐지만 확인이 필요한 것**을 담는다 — 비어 있으면 이상 없음.
+                화면은 이 배열이 비어 있지 않으면 alert을 띄워야 한다.
+                근거: 발주처 확정(2026-08-31 화면9) — "정산+반품 합이 미결잔여를 초과하지 못하도록
+                자동 차단하던 기존 로직은 제거. 초과 시 **경고 알림(alert)만 표시**하고,
+                이후 처리는 담당자가 수기로 입력·등록할 수 있도록".""")
+        List<Warning> warnings
 ) {
+    /** 경고 한 건. <b>실패가 아니다</b> — 저장은 됐고 담당자가 봐야 할 사실이 있을 뿐이다. */
+    @Schema(name = "SettlementDraftWarning")
+    public record Warning(
+            @Schema(description = "경고 코드", example = "OVER_SETTLEMENT") String code,
+            @Schema(description = "미결 id") Long pendingId,
+            @Schema(description = "위탁출고번호") String outNo,
+            @Schema(description = "미결 잔여수량") int remainingQty,
+            @Schema(description = "요청한 정산수량(같은 미결이 여러 줄이면 합계)") int requestedQty,
+            @Schema(description = "초과 수량") int exceededQty,
+            @Schema(description = "화면에 그대로 띄울 수 있는 문구") String message
+    ) {
+    }
+
     @Schema(name = "SettlementDraftLine")
     public record Line(
             @Schema(description = "미결 id(화면의 pendingId)") Long pendingId,
@@ -42,7 +63,12 @@ public record SettlementDraftResponse(
     ) {
     }
 
+    /** 경고 없이(정상) 조립. 목록 조회처럼 저장 시점이 아닌 곳에서 쓴다. */
     public static SettlementDraftResponse from(SettlementDraft d) {
+        return from(d, List.of());
+    }
+
+    public static SettlementDraftResponse from(SettlementDraft d, List<Warning> warnings) {
         List<Line> lines = d.getLines().stream()
                 .map(l -> new Line(
                         l.getConsignmentOut().getId(),
@@ -55,6 +81,6 @@ public record SettlementDraftResponse(
                         l.getConsignmentOut().getRemainingQty()))
                 .toList();
         return new SettlementDraftResponse(d.getDraftNo(), d.getCreatedAt(), d.getSalesDate(),
-                lines, d.getTotalQty(), d.getTotalAmount(), d.getMemo());
+                lines, d.getTotalQty(), d.getTotalAmount(), d.getMemo(), warnings);
     }
 }

@@ -68,7 +68,9 @@ public class ConsignmentController {
                     · 이미 매출로 확정된 분의 반품(Case 1)은 여기가 아니라 반품입고로 처리한다.
 
                     근거: 발주처 확정(확인요청서 v1 2번 No.4 · 이슈#43, 2026-07-29)"""
-                    + "정산수량이 미결 잔여를 초과하면 409(OVER_SETTLEMENT).")
+                    + "★초과해도 막지 않는다 — 발주처 확정(2026-08-31 화면9)으로 자동 차단을 걷어냈다. "
+                    + "초과분은 응답 warnings[]에 담기고(코드 OVER_SETTLEMENT, 잔여·요청·초과수량 포함) "
+                    + "화면이 alert을 띄운 뒤 담당자가 수기로 이어서 처리한다.")
     @PostMapping("/settle")
     @ResponseStatus(HttpStatus.CREATED)
     public ApiResponse<ConsignSettleResponse> settle(@Valid @RequestBody ConsignSettleRequest req) {

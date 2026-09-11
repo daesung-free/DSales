@@ -15,9 +15,12 @@ import com.daesung.sales.consignment.repository.SettlementDraftRepository;
 import com.daesung.sales.product.entity.Product;
 import com.daesung.sales.product.service.PartnerSupplyRateService;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -41,6 +44,9 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class SettlementDraftService {
 
+    private static final org.slf4j.Logger log =
+            org.slf4j.LoggerFactory.getLogger(SettlementDraftService.class);
+
     private static final DateTimeFormatter YYYYMMDD = DateTimeFormatter.BASIC_ISO_DATE;
 
     private final SettlementDraftRepository draftRepository;
@@ -62,16 +68,30 @@ public class SettlementDraftService {
             qtyByPending.merge(i.pendingId(), i.settleQty(), Integer::sum);
         }
 
+        // ★초과해도 막지 않는다. 발주처 확정(2026-08-31 화면9) —
+        //   "정산+반품 합이 미결잔여를 초과하지 못하도록 화면·서버 양쪽에서 자동 차단하던
+        //    기존 로직은 제거. 초과 시 **경고 알림(alert)만 표시**하고, 이후 처리는 담당자가
+        //    수기로 입력·등록할 수 있도록".
+        //   ⚠️V56에서 DB 제약(ck_consign_over)과 엔티티 쪽은 걷어냈는데 **이 경로를 놓쳤다**.
+        //   같은 미결이 여러 줄이면 합쳐서 한 번만 경고한다 — 줄마다 띄우면 같은 말이 반복된다.
+        List<SettlementDraftResponse.Warning> warnings = new ArrayList<>();
+        Set<Long> warned = new HashSet<>();
+
         for (SettlementDraftRequest.Item item : req.input()) {
             ConsignmentOut co = consignmentOutRepository.findById(item.pendingId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                             "미결(위탁출고)이 없습니다. id=" + item.pendingId()));
 
             int total = qtyByPending.get(item.pendingId());
-            if (total > co.getRemainingQty()) {
-                throw new BusinessException(ErrorCode.OVER_SETTLEMENT,
+            if (total > co.getRemainingQty() && warned.add(item.pendingId())) {
+                int over = total - Math.max(co.getRemainingQty(), 0);
+                log.warn("정산 초과(차단 안 함, 발주처 2026-08-31): pendingId={} 잔여={} 정산={} 초과={}",
+                        co.getId(), co.getRemainingQty(), total, over);
+                warnings.add(new SettlementDraftResponse.Warning(
+                        "OVER_SETTLEMENT", co.getId(), co.getSourceOutNo(),
+                        co.getRemainingQty(), total, over,
                         "정산수량이 미결 잔여를 초과했습니다: 잔여 " + co.getRemainingQty()
-                                + ", 정산 " + total + " (미결 " + co.getSourceOutNo() + ")");
+                                + ", 정산 " + total + " (미결 " + co.getSourceOutNo() + ")"));
             }
 
             Product product = co.getProduct();
@@ -85,7 +105,7 @@ public class SettlementDraftService {
             draft.addLine(SettlementDraftLine.of(co, item.settleQty(), unitPrice, supplyRate,
                     amt.supplyAmount(), amt.tax()));
         }
-        return SettlementDraftResponse.from(draftRepository.save(draft));
+        return SettlementDraftResponse.from(draftRepository.save(draft), warnings);
     }
 
     /** 초안 목록(최근 저장순). 전부 매출 미반영이다. */
