@@ -100,7 +100,10 @@ public class PermissionService {
     }
 
     @Transactional
-    public void setUserFlag(Long userId, String flagKey, boolean granted) {
+    public void setUserFlag(Long userId, String rawFlagKey, boolean granted) {
+        // ★키를 먼저 정규화한다. 화면은 조회 응답 필드명(periodLock)을 그대로 되보내는데,
+        //   예전엔 그 문자열이 검증 없이 저장돼 아무도 읽지 않는 행이 생겼다(2026-09-11).
+        String flagKey = UserPermissionFlag.normalizeKey(rawFlagKey);
         userRepository.findById(userId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                         "사용자가 없습니다. id=" + userId));

@@ -118,7 +118,7 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
               COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.txn_type = 'TRANSFER' THEN t.qty ELSE 0 END), 0) AS transfer,
               COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.txn_type IN ('BOM_ASSEMBLE','BOM_DISASSEMBLE') THEN t.qty ELSE 0 END), 0) AS bom,
               COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.txn_type = 'DISPOSE' THEN t.qty ELSE 0 END), 0) AS dispose,
-              COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.shipment_type = 'NORMAL_SHIP' THEN t.qty ELSE 0 END), 0) AS sale,
+              COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.shipment_type IN ('NORMAL_SHIP','CONSIGN_SHIP') THEN t.qty ELSE 0 END), 0) AS sale,
               COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.shipment_type = 'GIFT' THEN t.qty ELSE 0 END), 0) AS free,
               COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.shipment_type = 'TEACHER_USE' THEN t.qty ELSE 0 END), 0) AS teacher,
               COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.shipment_type = 'RETURN' THEN t.qty ELSE 0 END), 0) AS sales_return,
@@ -152,6 +152,13 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
      *
      * <p>기간의 시작(연초)은 호출부가 정한다 — 이 쿼리는 받은 fromDate를 그대로 쓴다.
      *
+     * <p>‼️<b>매출 칸은 NORMAL_SHIP + CONSIGN_SHIP 둘 다</b>다(2026-09-11 정정).
+     * 위탁 <b>정산분</b> 출고가 CONSIGN_SHIP으로 기록되는데 예전엔 어느 칸에도 안 들어가
+     * ① 수불부 매출이 순매출조회보다 적고(실측 503 중 500),
+     * ② <b>컬럼을 다 더해도 현재재고가 안 나왔다</b> — 재고에는 반영되는데 칸이 없었으니까.
+     * 위탁은 "정산 시점에 매출"이 확정 기준이므로 정산분은 매출이 맞다.
+     * (위탁 <b>출고</b> 자체는 매출 행을 만들지 않는다 — 재고 이동 + 미결일 뿐이다.)
+     *
      * <p>반환 Object[]: [catCode, catName, productId, code, name,
      *   opening, inbound, transfer, bom, dispose, sale, free, teacher, salesReturn, adjust, closing].
      */
@@ -162,7 +169,7 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
               COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.txn_type = 'TRANSFER' THEN t.qty ELSE 0 END), 0) AS transfer,
               COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.txn_type IN ('BOM_ASSEMBLE','BOM_DISASSEMBLE') THEN t.qty ELSE 0 END), 0) AS bom,
               COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.txn_type = 'DISPOSE' THEN t.qty ELSE 0 END), 0) AS dispose,
-              COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.shipment_type = 'NORMAL_SHIP' THEN t.qty ELSE 0 END), 0) AS sale,
+              COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.shipment_type IN ('NORMAL_SHIP','CONSIGN_SHIP') THEN t.qty ELSE 0 END), 0) AS sale,
               COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.shipment_type = 'GIFT' THEN t.qty ELSE 0 END), 0) AS free,
               COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.shipment_type = 'TEACHER_USE' THEN t.qty ELSE 0 END), 0) AS teacher,
               COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.shipment_type = 'RETURN' THEN t.qty ELSE 0 END), 0) AS sales_return,
@@ -307,7 +314,7 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
      */
     @Query(value = """
             SELECT product_id,
-              COALESCE(SUM(CASE WHEN shipment_type IN ('NORMAL_SHIP','GIFT','TEACHER_USE') THEN -qty ELSE 0 END), 0)
+              COALESCE(SUM(CASE WHEN shipment_type IN ('NORMAL_SHIP','CONSIGN_SHIP','GIFT','TEACHER_USE') THEN -qty ELSE 0 END), 0)
               + COALESCE(SUM(CASE WHEN txn_type = 'DISPOSE' THEN -qty ELSE 0 END), 0)
               - COALESCE(SUM(CASE WHEN shipment_type = 'RETURN' THEN qty ELSE 0 END), 0)
               + COALESCE(SUM(CASE WHEN txn_type IN ('BOM_ASSEMBLE','BOM_DISASSEMBLE') THEN qty ELSE 0 END), 0)
