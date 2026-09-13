@@ -152,11 +152,14 @@ public class SchoolService {
             if (school == null) {
                 School created = School.create(row.schoolCode(), custCode, row.custName(), row.city(), row.region(),
                         row.schoolName(), row.school(), null, null, null).fromDsre();
+                // 담당 특약점(매출코드)도 DSRE2가 준다 — 레거시 학교관리.vb:86과 같다.
+                created.applyDsrePartnerCodes(row.machulCode(), row.partnerLabel());
                 schoolRepository.save(created);
                 added++;
             } else {
                 // 수기 필드(거래처구분·학교/학원구분·메모)는 건드리지 않는다.
                 school.applyDsreFields(row.custName(), row.city(), row.region(), row.schoolName(), row.school());
+                school.applyDsrePartnerCodes(row.machulCode(), row.partnerLabel());
                 updated++;
             }
         }

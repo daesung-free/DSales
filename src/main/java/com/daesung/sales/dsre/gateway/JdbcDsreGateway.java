@@ -496,7 +496,9 @@ public class JdbcDsreGateway implements DsreGateway {
                        c.CITY_NM                     region,
                        (SELECT ci.CITY_NM FROM tbl_city_info ci
                          WHERE ci.CITY_CD = c.CITY_CD LIMIT 1) city,
-                       COALESCE(s.SCH_NM, h.HAK_NM)  sch_nm
+                       COALESCE(s.SCH_NM, h.HAK_NM)  sch_nm,
+                       c.MACHUL_CD                   machul_cd,
+                       CONCAT(IFNULL(c.CITY_NM,''), ' ', IFNULL(c.CUST_NM,'')) partner_label
                   FROM tbl_cust_ref r
                   LEFT JOIN tbl_cust_info c   ON c.CUST_CD = r.CUST_CD
                   LEFT JOIN tbl_school_info s ON r.MGR_GN = 'S' AND s.MGR_CD = r.MGR_CD
@@ -510,7 +512,9 @@ public class JdbcDsreGateway implements DsreGateway {
                         rs.getString("cust_nm"),
                         rs.getString("city"),
                         rs.getString("region"),
-                        rs.getString("sch_nm")));
+                        rs.getString("sch_nm"),
+                        trim(rs.getString("machul_cd")),
+                        trim(rs.getString("partner_label"))));
     }
 
     // ── 주문·진행상태 조회 (읽기 전용) — 근거: FM_DSRE_RegStateChng.cs 조회 SQL ──────────

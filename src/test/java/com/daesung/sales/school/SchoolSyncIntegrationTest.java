@@ -31,11 +31,42 @@ class SchoolSyncIntegrationTest extends IntegrationTestSupport {
     private SchoolRepository schoolRepository;
 
     private static SchoolRefRow row(String custCode, String schoolCode, String schoolName, String city) {
-        return new SchoolRefRow(custCode, schoolCode, true, "대성지사", city, "서울관할", schoolName);
+        return new SchoolRefRow(custCode, schoolCode, true, "대성지사", city, "서울관할", schoolName,
+                "A10A105", "서울 대성지사");
     }
 
     private School find(String custCode, String schoolCode) {
         return schoolRepository.findByCustCodeAndSchoolCode(custCode, schoolCode).orElseThrow();
+    }
+
+    private static SchoolRefRow rowWithMachul(String custCode, String schoolCode, String machulCode) {
+        return new SchoolRefRow(custCode, schoolCode, true, "대성지사", "서울", "서울관할", "대성고",
+                machulCode, (machulCode == null) ? null : "서울 대성지사");
+    }
+
+    @Test
+    @DisplayName("★담당 특약점(매출코드)을 DSRE MACHUL_CD에서 채운다 — 레거시 학교관리.vb:86과 같다")
+    void 담당특약점_매출코드_채움() {
+        schoolService.merge(List.of(rowWithMachul("S900", "90001", "A10A151")));
+
+        School s = find("S900", "90001");
+        assertThat(s.getMockPartnerCode()).isEqualTo("A10A151");
+        assertThat(s.getIcPartnerCode()).as("레거시는 같은 MACHUL_CD를 양쪽에 넣는다").isEqualTo("A10A151");
+        assertThat(s.getMockPartnerName()).isEqualTo("서울 대성지사");
+    }
+
+    @Test
+    @DisplayName("★MACHUL_CD가 비어 있으면 덮어쓰지 않는다 — DSRE2에 공란인 거래처가 실재한다")
+    void 매출코드_공란이면_유지() {
+        schoolService.merge(List.of(rowWithMachul("S901", "90002", "A10A105")));
+        assertThat(find("S901", "90002").getMockPartnerCode()).isEqualTo("A10A105");
+
+        // 같은 학교가 MACHUL_CD 없이 다시 들어온다
+        schoolService.merge(List.of(rowWithMachul("S901", "90002", null)));
+
+        School after = find("S901", "90002");
+        assertThat(after.getMockPartnerCode()).as("빈 값으로 지워지면 안 된다").isEqualTo("A10A105");
+        assertThat(after.getIcPartnerCode()).isEqualTo("A10A105");
     }
 
     @Test

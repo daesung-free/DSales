@@ -153,9 +153,13 @@ public class School extends BaseEntity {
      * 동기화로 다시 나타난 행은 미사용에서 되살린다.
      */
     /**
-     * 학교/학원검색(29p) 전용 필드. ★<b>DSRE 동기화 대상이 아니다</b> —
-     * 상품군별 담당 특약점은 레거시 {@code schData}에만 있던 축이라 DSRE가 주지 않는다.
-     * 담당자가 수기로 넣고, 동기화가 덮어쓰지 않는다(보존형 동기화 원칙).
+     * 학교/학원검색(29p) 전용 필드. 담당자 수기 입력 경로다.
+     *
+     * <p>‼️<b>정정(2026-09-14)</b>: 예전 주석은 "담당 특약점은 레거시 schData에만 있던 축이라
+     * DSRE가 주지 않는다"고 적혀 있었는데 <b>사실이 아니다</b>. 레거시
+     * {@code 학교관리.vb:86}은 {@code CI.MACHUL_CD}를 두 번 뽑아 {@code mCustCode}·{@code iCustCode}에
+     * 넣는다 — DSRE2가 주는 값이다. 그래서 동기화도 이 값을 채운다
+     * ({@link #applyDsrePartnerCodes}). 수기 입력은 그대로 두되, 동기화가 빈 값으로 덮지는 않는다.
      */
     public void applySearchFields(String cityCode, String partnerLoc,
                                   String mockPartnerCode, String mockPartnerName,
@@ -175,6 +179,28 @@ public class School extends BaseEntity {
         this.schoolName = schoolName;
         this.isSchool = isSchool;
         this.active = true;
+    }
+
+    /**
+     * 담당 특약점 코드 — DSRE2 {@code tbl_cust_info.MACHUL_CD}에서 채운다.
+     * 근거: 레거시 {@code 학교관리.vb:86} — 같은 MACHUL_CD를 모의고사·IC 양쪽에 넣고,
+     * 표시명은 {@code CITY_NM + ' ' + CUST_NM}으로 만든다.
+     *
+     * <p>‼️<b>빈 값이면 덮어쓰지 않는다.</b> MACHUL_CD는 DSRE2 화면에서 사람이 손으로 치는 칸이라
+     * 비어 있는 거래처가 실재한다(2026-09-14 라이브 실측: 17곳). 그걸로 덮으면
+     * 담당자가 수기로 넣어 둔 담당 특약점이 동기화 한 번에 사라진다.
+     */
+    public void applyDsrePartnerCodes(String machulCode, String partnerLabel) {
+        if (machulCode == null || machulCode.isBlank()) {
+            return;
+        }
+        this.mockPartnerCode = machulCode;
+        this.icPartnerCode = machulCode;
+        String label = (partnerLabel == null || partnerLabel.isBlank()) ? null : partnerLabel.trim();
+        if (label != null) {
+            this.mockPartnerName = label;
+            this.icPartnerName = label;
+        }
     }
 
     /** DSRE2에서 사라진 행 처리 — 삭제가 아니라 미사용. */

@@ -11,6 +11,8 @@ package com.daesung.sales.dsre.gateway;
  * @param city       도시명(거래처 CITY_CD → tbl_city_info.CITY_NM)
  * @param region     지역·관할(거래처 CITY_NM 관활명)
  * @param schoolName 학교/학원명(SCH_NM 또는 HAK_NM)
+ * @param machulCode 담당 특약점의 <b>매출코드</b>(MACHUL_CD) — 레거시 {@code schData.mCustCode/iCustCode}
+ * @param partnerLabel 담당 특약점 표시명(레거시와 같게 {@code CITY_NM + ' ' + CUST_NM})
  */
 public record SchoolRefRow(
         String custCode,
@@ -19,6 +21,8 @@ public record SchoolRefRow(
         String custName,
         String city,
         String region,
-        String schoolName
+        String schoolName,
+        String machulCode,
+        String partnerLabel
 ) {
 }
