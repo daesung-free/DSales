@@ -157,50 +157,6 @@ public class Partner extends BaseEntity {
         this.clientCategory = clientCategory;
     }
 
-    /** 담보(여신) 정보 설정. */
-    /**
-     * DSRE2 동기화 — <b>DSRE2가 관리하는 항목만</b> 덮어쓴다.
-     *
-     * <p>★건드리지 않는 것: 담보(금액·만기·내용)·거래처구분·주민번호.
-     * 담보와 거래처구분은 우리 쪽 재무·영업이 넣는 값이라, 동기화 한 번에 날아가면
-     * 채권 화면이 통째로 비어 버린다. 학교 동기화와 같은 규칙이다.
-     *
-     * <p>‼️{@code null}이 오면 덮어쓰지 않는다. 원본에 값이 없는 것과
-     * "이번 조회에 안 실린 것"을 구분할 수 없어서다 — 지우는 쪽이 더 위험하다.
-     */
-    public void applyDsreFields(String name, String name1, String cityName, String region,
-                                String bizNo, String bossName, String bizStatus, String bizItem,
-                                String tel1, String tel2, String cellPhone, String fax,
-                                String email1, String email2, String zip, String addr1,
-                                boolean expiredFlag) {
-        this.name = keepIfNull(name, this.name);
-        this.name1 = keepIfNull(name1, this.name1);
-        this.cityName = keepIfNull(cityName, this.cityName);
-        this.region = keepIfNull(region, this.region);
-        this.bizNo = keepIfNull(bizNo, this.bizNo);
-        this.bossName = keepIfNull(bossName, this.bossName);
-        this.bizStatus = keepIfNull(bizStatus, this.bizStatus);
-        this.bizItem = keepIfNull(bizItem, this.bizItem);
-        this.tel1 = keepIfNull(tel1, this.tel1);
-        this.tel2 = keepIfNull(tel2, this.tel2);
-        this.cellPhone = keepIfNull(cellPhone, this.cellPhone);
-        this.fax = keepIfNull(fax, this.fax);
-        this.email1 = keepIfNull(email1, this.email1);
-        this.email2 = keepIfNull(email2, this.email2);
-        this.zip = keepIfNull(zip, this.zip);
-        this.addr1 = keepIfNull(addr1, this.addr1);
-        // ★만료지사(END_GUBUN='Y')는 종료일로 표현한다 — 우리 만료 판정이 endDate 기준이다.
-        if (expiredFlag && this.endDate == null) {
-            this.endDate = LocalDate.now();
-        } else if (!expiredFlag) {
-            this.endDate = null;
-        }
-    }
-
-    private static String keepIfNull(String incoming, String current) {
-        return (incoming == null || incoming.isBlank()) ? current : incoming;
-    }
-
     /**
      * 거래처 사용 중지 — <b>행을 지우지 않고 만료 처리</b>한다.
      *

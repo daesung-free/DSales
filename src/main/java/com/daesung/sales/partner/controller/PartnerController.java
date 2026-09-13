@@ -13,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import com.daesung.sales.partner.dto.PartnerResponse;
 import com.daesung.sales.partner.dto.PartnerUpdateRequest;
 import com.daesung.sales.partner.service.PartnerService;
+import com.daesung.sales.partner.service.PartnerUploadService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
@@ -39,6 +40,7 @@ import org.springframework.web.bind.annotation.RestController;
 public class PartnerController {
 
     private final PartnerService partnerService;
+    private final PartnerUploadService partnerUploadService;
     private final ExcelExportUtil excel;
 
     @Operation(summary = "거래처 목록 조회",
@@ -129,6 +131,25 @@ public class PartnerController {
     @PostMapping
     public ApiResponse<PartnerResponse> create(@Valid @RequestBody PartnerCreateRequest req) {
         return ApiResponse.success(partnerService.create(req));
+    }
+
+    @Operation(summary = "거래처 엑셀 업로드",
+            description = """
+                    거래처를 **여러 건 한 번에** 등록·수정한다. 초기 적재용.
+
+                    - **양식 = 거래처 목록 다운로드 파일 그대로**(`GET /masters/clients/export`).
+                      헤더 **이름**으로 읽으므로 열 순서가 달라도, 메모 열이 붙어 있어도 된다.
+                    - **거래처코드가 키** — 있으면 고치고 없으면 만든다.
+                    - **빈 칸은 그대로**(기존 값 유지). 고칠 열만 채워 올리면 된다.
+                    - **한 행이 틀려도 나머지는 들어간다.** 행별 결과·사유를 돌려준다.
+                      단 거래처코드 열이 없는 파일은 양식이 틀린 것이라 파일 전체를 거부한다.
+                    - 등록 화면과 달리 **사업자번호 형식은 검증하지 않는다** — 초기 적재 원본에는
+                      빈 값·옛 표기가 섞여 있고, 그 행을 거부하면 한 건도 못 올린다.""")
+    @PostMapping(value = "/upload", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<com.daesung.sales.product.dto.MasterUploadResponse> upload(
+            @io.swagger.v3.oas.annotations.Parameter(description = "거래처 엑셀(.xlsx)")
+            @RequestParam("file") org.springframework.web.multipart.MultipartFile file) {
+        return ApiResponse.success(partnerUploadService.upload(file));
     }
 
     @Operation(summary = "거래처 수정", description = "코드는 불변. 없으면 404")

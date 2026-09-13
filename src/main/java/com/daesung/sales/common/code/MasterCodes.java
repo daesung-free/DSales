@@ -27,6 +27,10 @@ public final class MasterCodes {
 
     private static final String[][] CLIENT_CATEGORY_ALIAS = {
             {"B2B", "b2b"},
+            // ★레거시 custData의 '기타' 39건은 전부 학원·교육업체다(A30D 대역 — 학원운영·보습학원·
+            //   스터디카페…). 구분값이 정리되기 전의 옛 표기라, 초기 적재 때 그대로 받는다.
+            //   받지 않으면 39건이 거래처구분 없이 들어가고 아무도 다시 채워 넣지 않는다.
+            {"기타학원", "기타"},
     };
 
     public static String clientCategory(String raw) {

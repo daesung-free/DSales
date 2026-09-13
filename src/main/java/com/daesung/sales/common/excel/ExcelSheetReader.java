@@ -213,6 +213,23 @@ public final class ExcelSheetReader {
             }
         }
 
+        /**
+         * 정수(long). 담보금액처럼 <b>int 범위를 넘을 수 있는 금액</b>에 쓴다 —
+         * {@link #intOrNull}로 받으면 21억을 넘는 순간 조용히 다른 값이 된다.
+         */
+        public Long longOrNull(Header h) {
+            String v = str(h);
+            if (v == null) {
+                return null;
+            }
+            try {
+                return Math.round(Double.parseDouble(v.replace(",", "")));
+            } catch (NumberFormatException e) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT,
+                        h.name() + "이(가) 숫자가 아닙니다: " + v);
+            }
+        }
+
         public int intVal(Header h) {
             Integer v = intOrNull(h);
             if (v == null) {
