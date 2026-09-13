@@ -24,6 +24,7 @@ public class WarehouseService {
 
     private final WarehouseRepository warehouseRepository;
     private final PartnerRepository partnerRepository;
+    private final com.daesung.sales.inventory.repository.InventoryRepository inventoryRepository;
 
     public PageResponse<WarehouseResponse> findAll(String keyword, Pageable pageable) {
         Page<Warehouse> page = (keyword == null || keyword.isBlank())
@@ -75,6 +76,27 @@ public class WarehouseService {
      *
      * @param current 수정 전 소속(신규 등록이면 {@code null})
      */
+    /**
+     * 창고 사용 중지(논리삭제) — {@code useYn=false}.
+     *
+     * <p>★행을 지우지 않는다. 과거 재고 이벤트({@code inventory_txn})가 창고를 가리키고 있어
+     * 지우면 수불부가 "어느 창고였는지 모르는" 행을 갖게 된다.
+     * 미사용 창고는 목록·선택지에서 빠진다.
+     *
+     * <p>‼️재고가 남아 있으면 막는다 — 물건이 있는 창고를 목록에서 치우면
+     * 그 재고를 아무도 못 찾는다. 먼저 이고로 비워야 한다.
+     */
+    @Transactional
+    public void discontinue(Long id) {
+        Warehouse warehouse = getOrThrow(id);
+        int balance = inventoryRepository.totalQtyByWarehouse(id);
+        if (balance != 0) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "재고가 남아 있어 중지할 수 없습니다. 현재 " + balance + "부 — 먼저 다른 창고로 옮기세요.");
+        }
+        warehouse.applyExtra(false, null);
+    }
+
     private Partner ownerFor(WarehouseType type, Long ownerClientId, Partner current) {
         if (type != WarehouseType.CONSIGN) {
             return null;   // 물류창고는 소속 없음

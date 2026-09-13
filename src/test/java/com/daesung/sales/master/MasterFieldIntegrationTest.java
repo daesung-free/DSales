@@ -85,6 +85,46 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("★거래처·창고 사용 중지 — 지우지 않고 숨긴다. 재고 남은 창고는 거부")
+    void 사용중지() {
+        // ‼️컨테이너 DB가 실행 간 공유돼 고정 코드는 두 번째 실행에서 충돌한다.
+        String u = "-DC" + (System.nanoTime() % 1_000_000L);
+
+        // ── 거래처: 만료 처리되어 기본 조회에서 빠진다 ──
+        Long cid = createId("/masters/clients",
+                Map.of("code", "DCC" + u, "name", "중지거래처", "type", "NORMAL"));
+        assertThat(del("/masters/clients/" + cid).path("success").asBoolean()).isTrue();
+        assertThat(codesOf(data(get("/masters/clients?keyword=DCC" + u)).path("content")))
+                .as("기본 조회에서 빠져야").doesNotContain("DCC" + u);
+        assertThat(codesOf(data(get("/masters/clients?keyword=DCC" + u + "&includeExpired=true")).path("content")))
+                .as("‼️지운 게 아니라 숨긴 것이다 — 과거 매출이 partner_id 로 물려 있다")
+                .contains("DCC" + u);
+
+        // ── 창고: 재고가 있으면 막고, 비면 미사용 처리 ──
+        Long sup = createId("/masters/clients",
+                Map.of("code", "DCS" + u, "name", "인쇄소", "type", "NORMAL"));
+        Long wh = createId("/masters/warehouses",
+                Map.of("code", "DCW" + u, "name", "중지창고", "type", "MAIN"));
+        Long wh2 = createId("/masters/warehouses",
+                Map.of("code", "DCW2" + u, "name", "받는창고", "type", "MAIN"));
+        Long book = createId("/masters/products",
+                Map.of("code", "DCB" + u, "name", "중지도서", "contentType", "SELF"));
+        post("/stock/inbound", Map.of("processedDate", "2026-04-01", "supplierClientId", sup,
+                "destinationWarehouseId", wh,
+                "items", List.of(Map.of("productId", book, "unitCost", 1000, "qty", 10))));
+
+        JsonNode blocked = del("/masters/warehouses/" + wh);
+        assertThat(blocked.path("error").path("code").asText())
+                .as("재고 남은 창고는 막아야: %s", blocked).isEqualTo("INVALID_INPUT");
+
+        // 비우면 중지된다
+        post("/stock/transfer", Map.of("processedDate", "2026-04-02",
+                "fromWarehouseId", wh, "toWarehouseId", wh2,
+                "items", List.of(Map.of("productId", book, "qty", 10))));
+        assertThat(del("/masters/warehouses/" + wh).path("success").asBoolean()).isTrue();
+    }
+
+    @Test
     @DisplayName("★위탁창고는 소속 거래처 없이 만들 수 없다 — 화면이 아니라 서버가 막는다")
     void 위탁창고_소속거래처_필수() {
         // ‼️예전엔 이 검증이 화면에만 있어, API를 직접 부르면 소속 없는 위탁창고가

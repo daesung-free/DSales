@@ -13,6 +13,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springdoc.core.annotations.ParameterObject;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -71,5 +72,19 @@ public class WarehouseController {
     public ApiResponse<WarehouseResponse> update(@PathVariable Long id,
                                                  @Valid @RequestBody WarehouseUpdateRequest req) {
         return ApiResponse.success(warehouseService.update(id, req));
+    }
+
+    @Operation(summary = "창고 사용 중지", description = """
+            창고를 **지우지 않고 미사용 처리**한다(`useYn=false`). 목록과 선택지에서 빠진다.
+
+            ★물리삭제는 하지 않는다 — 과거 재고 이벤트(`inventory_txn`)가 창고를 가리키고 있어
+            지우면 제품수불부가 "어느 창고였는지 모르는" 행을 갖게 된다.
+            ‼️**재고가 남아 있으면 400**이다. 물건이 있는 창고를 목록에서 치우면 그 재고를
+            아무도 못 찾는다 — 먼저 이고로 비워야 한다.
+            되살리려면 수정(PUT)에서 사용여부를 켠다.""")
+    @DeleteMapping("/{id}")
+    public ApiResponse<Void> discontinue(@PathVariable Long id) {
+        warehouseService.discontinue(id);
+        return ApiResponse.success(null);
     }
 }

@@ -32,4 +32,9 @@ public interface InventoryRepository extends JpaRepository<Inventory, Long> {
     int addQtyIfEnough(@Param("productId") Long productId,
                        @Param("warehouseId") Long warehouseId,
                        @Param("delta") int delta);
+
+    /** 창고의 재고 총합. 창고를 중지해도 되는지 판단하는 데 쓴다(0이어야 안전). */
+    @org.springframework.data.jpa.repository.Query(
+            "select coalesce(sum(i.qty), 0) from Inventory i where i.warehouse.id = :warehouseId")
+    int totalQtyByWarehouse(@org.springframework.data.repository.query.Param("warehouseId") Long warehouseId);
 }

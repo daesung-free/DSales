@@ -21,6 +21,7 @@ import lombok.RequiredArgsConstructor;
 import org.springdoc.core.annotations.ParameterObject;
 import java.time.LocalDate;
 import org.springframework.format.annotation.DateTimeFormat;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -128,6 +129,20 @@ public class PartnerController {
     @PostMapping("/sync")
     public ApiResponse<com.daesung.sales.partner.dto.ClientSyncResult> sync() {
         return ApiResponse.success(partnerService.syncFromDsre());
+    }
+
+    @Operation(summary = "거래처 사용 중지", description = """
+            거래처를 **지우지 않고 만료 처리**한다(만료일=오늘). 기본 조회에서 빠지고
+            `includeExpired=true` 로만 보인다.
+
+            ★물리삭제는 하지 않는다 — 과거 매출·재고·채권이 전부 `partner_id` 로 물려 있어
+            (REFERENCES 9곳·컬럼 20곳) 지우면 그 장부가 끊긴다.
+            ‼️이미 만료된 거래처는 날짜를 덮어쓰지 않는다 — 언제부터 안 쓰게 됐는지가 기록이다.
+            되살리려면 수정(PUT)에서 만료일을 비운다.""")
+    @DeleteMapping("/{id}")
+    public ApiResponse<Void> discontinue(@PathVariable Long id) {
+        partnerService.discontinue(id);
+        return ApiResponse.success(null);
     }
 
     @Operation(summary = "거래처 등록", description = "거래처코드 중복 시 400 반환")

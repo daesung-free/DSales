@@ -201,6 +201,28 @@ public class Partner extends BaseEntity {
         return (incoming == null || incoming.isBlank()) ? current : incoming;
     }
 
+    /**
+     * 거래처 사용 중지 — <b>행을 지우지 않고 만료 처리</b>한다.
+     *
+     * <p>★거래처는 과거 매출·재고·채권이 전부 {@code partner_id}로 물려 있다
+     * (REFERENCES 9곳·컬럼 20곳). 물리삭제하면 그 장부가 통째로 끊긴다.
+     * 우리 만료 판정이 {@code endDate} 기준이라 여기에 날짜를 넣으면 기본 조회에서 빠진다
+     * ({@code includeExpired=true}로만 보인다).
+     *
+     * <p>‼️이미 만료된 거래처를 다시 중지해도 <b>날짜를 덮어쓰지 않는다</b> —
+     * 언제부터 안 쓰게 됐는지가 기록이라 뒤로 밀리면 안 된다.
+     */
+    public void discontinue(LocalDate on) {
+        if (this.endDate == null) {
+            this.endDate = on;
+        }
+    }
+
+    /** 사용 재개 — 만료일을 지운다. */
+    public void restore() {
+        this.endDate = null;
+    }
+
     public void updateCredit(Long assureAmount, LocalDate assureExpiry, String assureNote) {
         this.assureAmount = assureAmount;
         this.assureExpiry = assureExpiry;

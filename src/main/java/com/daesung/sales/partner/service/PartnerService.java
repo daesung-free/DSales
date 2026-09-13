@@ -179,6 +179,20 @@ public class PartnerService {
         return new ClientSyncResult(rows.size(), added, updated, keptLocal, expired);
     }
 
+    /**
+     * 거래처 사용 중지(논리삭제). 물리삭제는 하지 않는다 — 사유는 {@link Partner#discontinue}.
+     *
+     * <p>★삭제 경로가 아예 없어서 잘못 만든 거래처를 목록에서 치울 방법이 없었다
+     * (2026-09-13 점검). 화면에 [삭제] 버튼은 있는데 부를 API가 없었다.
+     */
+    @Transactional
+    public void discontinue(Long id) {
+        Partner partner = getOrThrow(id);
+        partner.discontinue(LocalDate.now());
+        masterChangeLogService.recordDiff(MasterEntityType.PARTNER, partner.getId(), partner.getCode(),
+                java.util.Map.of("endDate", ""), partner.auditSnapshot());
+    }
+
     @Transactional
     public PartnerResponse create(PartnerCreateRequest req) {
         partnerRepository.findByCode(req.code()).ifPresent(p -> {
