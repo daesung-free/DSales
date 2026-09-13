@@ -6,9 +6,6 @@ import com.daesung.sales.common.code.MasterCodes;
 import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.common.response.PageResponse;
-import com.daesung.sales.dsre.gateway.ClientRefRow;
-import com.daesung.sales.dsre.gateway.DsreGateway;
-import com.daesung.sales.partner.dto.ClientSyncResult;
 import com.daesung.sales.partner.dto.CollateralExpiryResponse;
 import com.daesung.sales.partner.dto.PartnerCreateRequest;
 import com.daesung.sales.partner.dto.PartnerResponse;
@@ -18,13 +15,10 @@ import com.daesung.sales.partner.repository.PartnerRepository;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.Comparator;
-import java.util.HashSet;
 import java.util.Map;
-import java.util.Set;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -37,9 +31,6 @@ import org.springframework.transaction.annotation.Transactional;
 public class PartnerService {
 
     private final PartnerRepository partnerRepository;
-    private final ObjectProvider<DsreGateway> dsreGateway;
-    /** ‼️조회(readOnly) 안에서 쓰기를 하려면 프록시를 타야 한다 — 자기호출은 트랜잭션이 안 걸린다. */
-    private final ObjectProvider<PartnerService> self;
     private final MasterChangeLogService masterChangeLogService;
 
     /**
@@ -74,109 +65,13 @@ public class PartnerService {
      * 근거: 거래처관리.vb — {@code where len(endDate) = 0} / {@code >= 0} 분기.
      */
     public PageResponse<PartnerResponse> findAll(String keyword, boolean includeExpired, Pageable pageable) {
-        refreshFromDsreQuietly();
         String kw = (keyword == null || keyword.isBlank()) ? null : keyword.trim();
         return PageResponse.of(partnerRepository.search(kw, includeExpired, pageable)
                 .map(PartnerResponse::from));
     }
 
-    /**
-     * 조회할 때마다 DSRE2 원본을 읽어 반영한다.
-     *
-     * <p>★<b>사람이 버튼을 눌러 맞추게 하면 결국 안 누른다.</b> 거래처 원본은 DSRE2고
-     * 우리는 받아 쓰는 쪽이니, 화면을 열 때 최신으로 맞추는 것이 맞다.
-     * {@code tbl_cust_info}는 74건 규모라 매 조회에 읽어도 부담이 없다.
-     *
-     * <p>‼️<b>여기서 나는 오류는 삼킨다.</b> DSRE2가 잠깐 끊겼다고 우리 거래처 목록이
-     * 통째로 안 열리면 안 된다 — 그때는 갖고 있던 값으로 보여주고 서버 로그로만 알린다.
-     * 동기화가 목적이 아니라 조회가 목적이다.
-     *
-     * <p>수동 {@code POST /masters/clients/sync}는 그대로 둔다 — 결과 건수를 보고 싶을 때 쓴다.
-     */
-    private void refreshFromDsreQuietly() {
-        DsreGateway gateway = dsreGateway.getIfAvailable();
-        if (gateway == null) {
-            return;   // DSRE 연동 off — 우리 값으로만 조회한다
-        }
-        try {
-            self.getObject().merge(gateway.readClientRefs());
-        } catch (RuntimeException e) {
-            log.warn("거래처 DSRE2 갱신 실패 — 기존 값으로 조회합니다", e);
-        }
-    }
-
     public PartnerResponse findById(Long id) {
         return PartnerResponse.from(getOrThrow(id));
-    }
-
-    /**
-     * DSRE2 거래처 원본을 읽어 병합. DSRE 연동이 꺼져 있으면 오류.
-     *
-     * <p>★<b>거래처 실데이터는 DSRE2가 원본이다.</b> 우리 마스터의 {@code P-SEOUL} 같은 행은
-     * 사업자번호가 {@code 000-01-0000n} 연번인 테스트 시드다 — 손으로 채워 봐야 가짜를 채우는 것이다.
-     * ‼️학교 동기화가 {@code tbl_cust_info}를 조인하므로 <b>거래처를 먼저</b> 맞춰야
-     * 학교에 거래처명·도시가 붙는다(순서가 거꾸로면 학교가 빈 이름으로 들어온다).
-     */
-    @Transactional
-    public ClientSyncResult syncFromDsre() {
-        DsreGateway gateway = dsreGateway.getIfAvailable();
-        if (gateway == null) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT,
-                    "DSRE 연동이 비활성 상태입니다(daesung.dsre.enabled=false).");
-        }
-        return merge(gateway.readClientRefs());
-    }
-
-    /**
-     * 보존형 병합 — 학교 동기화와 같은 규칙이다.
-     *
-     * <ol>
-     *   <li>거래처코드가 있으면 → <b>DSRE 관리 항목만</b> 덮어쓰고 담보·거래처구분은 유지
-     *   <li>없으면 → 신규 추가
-     *   <li>DSRE2에 없는 우리 쪽 거래처 → <b>손대지 않는다</b>. 수기로 만든 것일 수 있고,
-     *       거래처는 과거 매출이 전부 FK로 물려 있어 잘못 건드리면 장부가 끊긴다
-     * </ol>
-     *
-     * <p>{@code merge}를 따로 열어 둔 이유: DSRE 연결 없이 이 규칙을 테스트로 고정하기 위함
-     * (학교 쪽과 같은 이유다).
-     */
-    @Transactional(propagation = org.springframework.transaction.annotation.Propagation.REQUIRES_NEW)
-    public ClientSyncResult merge(List<ClientRefRow> rows) {
-        int added = 0;
-        int updated = 0;
-        int expired = 0;
-        Set<String> incoming = new HashSet<>();
-
-        for (ClientRefRow row : rows) {
-            if (row.code() == null || row.code().isBlank()) {
-                continue;   // 코드 없는 행은 매칭할 길이 없다
-            }
-            incoming.add(row.code());
-            if (row.expired()) {
-                expired++;
-            }
-            Partner partner = partnerRepository.findByCode(row.code()).orElse(null);
-            if (partner == null) {
-                partner = partnerRepository.save(
-                        Partner.create(row.code(), row.name(), com.daesung.sales.partner.entity.PartnerType.NORMAL));
-                added++;
-            } else {
-                updated++;
-            }
-            partner.applyDsreFields(row.name(), row.name1(), row.cityName(), row.region(),
-                    row.bizNo(), row.bossName(), row.bizStatus(), row.bizItem(),
-                    row.tel1(), row.tel2(), row.cellPhone(), row.fax(),
-                    row.email1(), row.email2(), row.zip(), row.addr(),
-                    row.expired());
-        }
-
-        int keptLocal = 0;
-        for (Partner p : partnerRepository.findAll()) {
-            if (!incoming.contains(p.getCode())) {
-                keptLocal++;
-            }
-        }
-        return new ClientSyncResult(rows.size(), added, updated, keptLocal, expired);
     }
 
     /**

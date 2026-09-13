@@ -111,26 +111,6 @@ public class PartnerController {
         return ApiResponse.success(partnerService.findById(id));
     }
 
-    @Operation(summary = "거래처 가져오기(DSRE2 동기화)",
-            description = """
-                    DSRE2 거래처 원본(`tbl_cust_info`)을 읽어 병합한다. **보존형**이다.
-
-                    · 거래처코드가 있으면 → DSRE2가 관리하는 항목만 덮어쓴다
-                      (상호·풀네임·도시·관할·사업자번호·대표자·업태/종목·연락처·이메일·주소)
-                    · 없으면 → 신규 추가
-                    · **담보(금액·만기·내용)·거래처구분·주민번호는 건드리지 않는다** —
-                      우리 재무·영업이 넣는 값이라 날아가면 채권 화면이 비어 버린다
-                    · DSRE2에 없는 우리 쪽 거래처는 **손대지 않는다**(수기 등록분일 수 있고,
-                      거래처는 과거 매출이 전부 FK로 물려 있다)
-
-                    ‼️학교 동기화가 `tbl_cust_info`를 조인하므로 **거래처를 먼저** 맞춰야
-                    학교에 거래처명·도시가 붙는다. 순서는 거래처 → 학교다.
-                    DSRE 연동(`daesung.dsre.enabled=true`) 필요.""")
-    @PostMapping("/sync")
-    public ApiResponse<com.daesung.sales.partner.dto.ClientSyncResult> sync() {
-        return ApiResponse.success(partnerService.syncFromDsre());
-    }
-
     @Operation(summary = "거래처 사용 중지", description = """
             거래처를 **지우지 않고 만료 처리**한다(만료일=오늘). 기본 조회에서 빠지고
             `includeExpired=true` 로만 보인다.

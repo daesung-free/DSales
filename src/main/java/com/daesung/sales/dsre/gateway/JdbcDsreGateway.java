@@ -486,61 +486,6 @@ public class JdbcDsreGateway implements DsreGateway {
      * 32건이 tbl_cust_info에 없는 고아 매핑이었다. INNER로 조이면 매핑의 42%가 소리 없이 사라진다
      * → 매핑은 살리고 이름만 비운 뒤, 불완전 건수를 동기화 결과에 노출한다.
      */
-    /**
-     * 거래처 원본 전량. {@code tbl_cust_info} 74건 규모라 페이징 없이 한 번에 읽는다.
-     *
-     * <p>‼️{@code CITY_NM} 은 컬럼명과 달리 <b>관할명</b>이다. 진짜 도시명은
-     * {@code CITY_CD} 로 {@code tbl_city_info} 를 찾아야 한다 — 학교 동기화와 같은 규칙이다.
-     * ★{@code SUSU}(지사 기본 공급률)는 소수(65.00)로 들어 있어 정수 퍼센트로 올린다.
-     */
-    @Override
-    public List<ClientRefRow> readClientRefs() {
-        return dsreJdbcTemplate.query("""
-                SELECT c.CUST_CD   code,
-                       c.CUST_NM   name1,
-                       c.CUST_FNM  name,
-                       (SELECT ci.CITY_NM FROM tbl_city_info ci
-                         WHERE ci.CITY_CD = c.CITY_CD LIMIT 1) city_name,
-                       c.CITY_NM   region,
-                       c.REG_NO    biz_no,
-                       c.OWNER_NM  boss_name,
-                       c.UPJONG    biz_status,
-                       c.UPTAE     biz_item,
-                       c.TEL_NO1   tel1,
-                       c.TEL_NO2   tel2,
-                       c.HP_NO     cell_phone,
-                       c.FAX_NO    fax,
-                       c.EMAIL1    email1,
-                       c.EMAIL2    email2,
-                       c.ZIP_CD    zip,
-                       c.ADDR      addr,
-                       c.SUSU      susu,
-                       c.END_GUBUN end_gubun
-                  FROM tbl_cust_info c
-                 ORDER BY c.CUST_CD
-                """,
-                (rs, i) -> new ClientRefRow(
-                        trim(rs.getString("code")),
-                        trim(rs.getString("name1")),
-                        trim(rs.getString("name")),
-                        trim(rs.getString("city_name")),
-                        trim(rs.getString("region")),
-                        trim(rs.getString("biz_no")),
-                        trim(rs.getString("boss_name")),
-                        trim(rs.getString("biz_status")),
-                        trim(rs.getString("biz_item")),
-                        trim(rs.getString("tel1")),
-                        trim(rs.getString("tel2")),
-                        trim(rs.getString("cell_phone")),
-                        trim(rs.getString("fax")),
-                        trim(rs.getString("email1")),
-                        trim(rs.getString("email2")),
-                        trim(rs.getString("zip")),
-                        trim(rs.getString("addr")),
-                        (rs.getBigDecimal("susu") == null) ? null : rs.getBigDecimal("susu").intValue(),
-                        "Y".equalsIgnoreCase(trim(rs.getString("end_gubun")))));
-    }
-
     @Override
     public List<SchoolRefRow> readSchoolRefs() {
         return dsreJdbcTemplate.query("""
