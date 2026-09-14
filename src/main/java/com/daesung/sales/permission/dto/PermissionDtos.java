@@ -42,6 +42,32 @@ public final class PermissionDtos {
     ) {
     }
 
+    /**
+     * 로그인한 본인의 권한 전체. 프론트가 <b>메뉴를 그리는 근거</b>다.
+     *
+     * <p>★화면명·메뉴그룹까지 함께 준다. 코드만 주면 프론트가 화면 이름표를 따로 들고 있어야 하고,
+     * 관리자가 화면을 추가하면 그 표를 또 고쳐야 한다 — 관리자 설정이 바로 반영되게 하려는
+     * 목적과 어긋난다.
+     */
+    @Schema(name = "MyPermissions", description = "본인 권한(메뉴 렌더링용)")
+    public record MyPermissions(
+            @Schema(description = "역할") Role role,
+            @Schema(description = "화면별 권한") List<MyScreen> screens,
+            @Schema(description = "마감확정 권한") boolean periodLock,
+            @Schema(description = "마감해제 권한") boolean periodUnlock
+    ) {
+    }
+
+    @Schema(name = "MyScreenPermission")
+    public record MyScreen(
+            @Schema(description = "화면 코드") String code,
+            @Schema(description = "권한 NONE(–)/READ(◐)/WRITE(○)") ScreenPermission permission,
+            @Schema(description = "표기(–/◐/○)") String mark,
+            @Schema(description = "화면명") String name,
+            @Schema(description = "메뉴그룹") String menuGroup
+    ) {
+    }
+
     @Schema(name = "UserFlagRow", description = "사용자 개별 권한(3단계)")
     public record UserFlagRow(
             @Schema(description = "사용자 id") Long userId,

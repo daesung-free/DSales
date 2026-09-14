@@ -1,6 +1,7 @@
 package com.daesung.sales.permission.controller;
 
 import com.daesung.sales.common.response.ApiResponse;
+import com.daesung.sales.permission.dto.PermissionDtos.MyPermissions;
 import com.daesung.sales.permission.dto.PermissionDtos.ScreenRow;
 import com.daesung.sales.permission.dto.PermissionDtos.UpdateRequest;
 import com.daesung.sales.permission.dto.PermissionDtos.UserFlagRequest;
@@ -33,6 +34,23 @@ import org.springframework.web.bind.annotation.RestController;
 public class PermissionController {
 
     private final PermissionService permissionService;
+
+    @Operation(summary = "본인 권한 조회",
+            description = """
+                    로그인한 **본인**의 역할·화면별 권한·마감 개별권한을 한 번에 준다.
+                    **역할과 무관하게 인증만 되면 호출할 수 있다** — 프론트가 메뉴를 그리는 근거다.
+
+                    · `screens[].permission` 은 `NONE`(–) / `READ`(◐) / `WRITE`(○)
+                    · **권한이 NONE인 화면도 목록에 담긴다.** 빼 버리면 "화면이 없는 것"과
+                      "권한이 없는 것"을 프론트가 구분하지 못한다.
+                    · 관리자가 권한을 바꾸면 **다음 호출부터 바로** 반영된다(배포 불필요).
+
+                    남의 권한이나 역할별 매트릭스 전체는 여기 실리지 않는다 —
+                    그건 `GET /permissions/screens`(관리자 전용)이다.""")
+    @GetMapping("/me")
+    public ApiResponse<MyPermissions> mine(java.security.Principal principal) {
+        return ApiResponse.success(permissionService.mine(principal.getName()));
+    }
 
     @Operation(summary = "권한 매트릭스 조회",
             description = """

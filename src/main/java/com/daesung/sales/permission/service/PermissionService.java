@@ -6,6 +6,8 @@ import com.daesung.sales.auth.repository.AppUserRepository;
 import com.daesung.sales.common.audit.CurrentAuditor;
 import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
+import com.daesung.sales.permission.dto.PermissionDtos.MyPermissions;
+import com.daesung.sales.permission.dto.PermissionDtos.MyScreen;
 import com.daesung.sales.permission.dto.PermissionDtos.RolePermission;
 import com.daesung.sales.permission.dto.PermissionDtos.ScreenRow;
 import com.daesung.sales.permission.dto.PermissionDtos.UpdateRequest;
@@ -79,6 +81,35 @@ public class PermissionService {
     }
 
 
+
+    /**
+     * 로그인한 <b>본인</b>의 권한 전체(역할 + 화면별 권한 + 마감 개별권한).
+     *
+     * <p>★<b>왜 필요한가.</b> 권한 매트릭스는 관리자 전용이라 역할 계정은 403이고,
+     * {@code /auth/me}에는 역할만 있다. 그래서 프론트가 화면별 권한을 스스로 들고 있을 수밖에
+     * 없었고, 관리자가 설정을 바꿔도 역할 계정 메뉴는 그대로였다.
+     *
+     * <p>★<b>자기 것만 나간다.</b> 남의 권한이나 역할별 매트릭스 전체는 여기 실리지 않는다 —
+     * 그건 여전히 {@code GET /permissions/screens}(관리자)의 몫이다.
+     *
+     * <p>‼️NONE 화면도 <b>빼지 않고</b> 담는다. 목록에 없는 것과 권한이 없는 것을
+     * 프론트가 구분하지 못하면, 화면이 추가됐는데 아직 권한이 안 붙은 경우를
+     * "숨김"으로 오해한다.
+     */
+    public MyPermissions mine(String username) {
+        AppUser me = userRepository.findByUsername(username)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                        "사용자가 없습니다: " + username));
+
+        List<MyScreen> screens = new ArrayList<>();
+        for (MenuScreen s : screenRepository.findAllByOrderBySortOrderAscIdAsc()) {
+            ScreenPermission p = resolver.permissionOf(me.getRole(), s.getId());
+            screens.add(new MyScreen(s.getCode(), p, p.mark(), s.getName(), s.getMenuGroup()));
+        }
+        return new MyPermissions(me.getRole(), screens,
+                hasFlag(username, UserPermissionFlag.PERIOD_LOCK),
+                hasFlag(username, UserPermissionFlag.PERIOD_UNLOCK));
+    }
 
     /** 사용자별 개별 권한(3단계) 목록. */
     public List<UserFlagRow> userFlags() {

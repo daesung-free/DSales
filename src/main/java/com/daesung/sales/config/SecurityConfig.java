@@ -53,6 +53,11 @@ public class SecurityConfig {
                         // 계정 생성·권한 관리는 관리자만(권한 표 자체를 바꾸는 경로라 표 밖에 둔다 —
                         // 표를 잘못 고쳐 스스로를 잠그면 되돌릴 길이 없어진다)
                         .requestMatchers("/api/v1/auth/users", "/api/v1/auth/users/**").hasRole("ADMIN")
+                        // ‼️본인 권한 조회만 예외다. 관리자가 정한 화면 권한을 역할 계정이
+                        //   읽지 못하면 프론트가 메뉴를 그 설정대로 그릴 수 없어,
+                        //   화면마다 권한표를 따로 들고 있다가 관리자 설정과 어긋난다.
+                        //   ★읽기 전용이고 자기 것만 나간다 — 남의 권한·매트릭스 전체는 여전히 관리자만.
+                        .requestMatchers("/api/v1/permissions/me").authenticated()
                         .requestMatchers("/api/v1/permissions/**").hasRole("ADMIN")
                         // 행위기록은 관리자만 — 남의 다운로드 기록이 아무나 보이면 그 자체가 감시로 읽힌다.
                         .requestMatchers("/api/v1/audit/access-log/**").hasRole("ADMIN")
