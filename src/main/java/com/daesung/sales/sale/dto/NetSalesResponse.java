@@ -35,8 +35,17 @@ public record NetSalesResponse(
             String contentTypeName,
             @Schema(description = "매출수량") long saleQty,
             @Schema(description = "매출액(공급가액)") long saleAmount,
-            @Schema(description = "교사용 수량(증정용 포함)") long freeQty,
-            @Schema(description = "교사용 공급가액(증정용 포함)") long freeAmount,
+            @Schema(description = "교사용 수량(증정용 포함). `teacherQty`와 같은 값") long freeQty,
+            @Schema(description = "교사용 공급가액(증정용 포함). `teacherAmount`와 같은 값") long freeAmount,
+            @Schema(description = """
+                    교사용 수량(증정용 포함) — `freeQty`와 **같은 값**이다.
+                    ★이름을 하나 더 두는 이유: 정본 16p 컬럼명이 "교사용(증정용포함)"인데
+                    서버 필드명이 `freeQty`라, 화면이 "무가 전체일 뿐 교사용은 따로 안 준다"고
+                    읽고 칸을 비워 뒀다(2026-09-16 번들 실측 `absentColumns.teacherCnt`).
+                    회계구분 FREE = 증정(GIFT) + 교사용(TEACHER_USE) 둘뿐이라 둘은 같은 집합이다.""")
+            long teacherQty,
+            @Schema(description = "교사용 공급가액(증정용 포함) — `freeAmount`와 같은 값")
+            long teacherAmount,
             @Schema(description = "반품수량") long returnQty,
             @Schema(description = "반품률 %(반품수량/매출수량). 매출수량 0이면 null", example = "3.5")
             Double returnRate,

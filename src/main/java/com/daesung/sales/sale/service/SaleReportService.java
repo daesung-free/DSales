@@ -139,7 +139,8 @@ public class SaleReportService {
             }
             rows.add(new NetSalesResponse.Row(pid, (String) r[4], (String) r[5], (String) r[1], (String) r[2],
                     ct, contentLabel(ct),
-                    saleQty, saleAmt, freeQty, freeAmt, retQty, returnRate(retQty, saleQty), retAmt,
+                    saleQty, saleAmt, freeQty, freeAmt, freeQty, freeAmt,
+                    retQty, returnRate(retQty, saleQty), retAmt,
                     netQty, netAmt, netTax, netAmt + netTax,
                     inQty, unitCost, purchase, profit, margin));
             tSaleQ += saleQty; tSaleA += saleAmt; tSaleTax += saleTax;
@@ -153,7 +154,8 @@ public class SaleReportService {
         Long totalProfit = anyExternal ? (tNetAmt - tPurch) : null;
         Double totalMargin = (anyExternal && tNetAmt != 0) ? Math.round((double) totalProfit / tNetAmt * 100 * 10) / 10.0 : null;
         NetSalesResponse.Row total = new NetSalesResponse.Row(null, null, null, "합계", null, null, null,
-                tSaleQ, tSaleA, tFreeQ, tFreeA, tRetQ, returnRate(tRetQ, tSaleQ), tRetA,
+                tSaleQ, tSaleA, tFreeQ, tFreeA, tFreeQ, tFreeA,
+                tRetQ, returnRate(tRetQ, tSaleQ), tRetA,
                 tSaleQ - tRetQ, tNetAmt, tNetTax, tNetAmt + tNetTax,
                 anyExternal ? tInQ : null, null, totalPurchase, totalProfit, totalMargin);
         return new NetSalesResponse(from, to, filter, rows, total);

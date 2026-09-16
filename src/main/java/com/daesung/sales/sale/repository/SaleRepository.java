@@ -319,14 +319,19 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     /**
      * 거래처별 채권 발생액(기간). 취소 제외. 반품은 채권 감소(−total).
      * receivableGen = Σ(RETURN이면 −total_amount, else +total_amount) = 매출+세액+유가교사용 − 반품.
-     * 반환 Object[]: [partnerId, receivableGen, saleAmt, returnAmt, tax].
+     * <p>★교사용(증정 포함) 공급가액도 함께 낸다 — 무가라 <b>채권에는 안 들어가지만</b>
+     * 24p 외상매출현황이 "이 거래처에 무가로 얼마가 나갔나"를 같이 보여 준다.
+     * 채권 계산(receivableGen·balance)에는 절대 더하지 말 것.
+     *
+     * 반환 Object[]: [partnerId, receivableGen, saleAmt, returnAmt, tax, teacherAmt].
      */
     @Query(value = """
             SELECT s.partner_id,
               COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN -s.total_amount ELSE s.total_amount END),0) AS receivable_gen,
               COALESCE(SUM(CASE WHEN s.sales_category='SALE' THEN s.supply_amount ELSE 0 END),0) AS sale_amt,
               COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN s.supply_amount ELSE 0 END),0) AS return_amt,
-              COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN -s.tax ELSE s.tax END),0) AS tax_net
+              COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN -s.tax ELSE s.tax END),0) AS tax_net,
+              COALESCE(SUM(CASE WHEN s.sales_category='FREE' THEN s.supply_amount ELSE 0 END),0) AS teacher_amt
             FROM sales s
             WHERE s.canceled = false
               AND s.sales_date BETWEEN :fromDate AND :toDate
