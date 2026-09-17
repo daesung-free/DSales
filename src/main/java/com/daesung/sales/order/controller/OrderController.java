@@ -158,6 +158,7 @@ public class OrderController {
                 new Col("상품명", "productName"), new Col("시행명", "detailName"),
                 new Col("학년", "grade"), new Col("인원", "inwon"), new Col("반수", "classCount"),
                 new Col("총수량", "totalQty"), new Col("품목건수", "itemCount"),
+                new Col("예상금액", "estimatedAmount"),
                 new Col("성적처리", "procYn"), new Col("담당선생님", "teacher"),
                 new Col("연락처", "tel"), new Col("주소", "address"), new Col("비고", "memo"));
         byte[] xlsx = excel.toXlsx("주문진행상태", cols,

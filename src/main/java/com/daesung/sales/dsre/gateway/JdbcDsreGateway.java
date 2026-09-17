@@ -557,7 +557,18 @@ public class JdbcDsreGateway implements DsreGateway {
                    req.ADDRESS                                  address,
                    req.BIGO                                     bigo,
                    COALESCE(cnt.TOTAL_QTY, 0)                   total_qty,
-                   COALESCE(cnt.ITEM_CNT, 0)                    item_cnt
+                   COALESCE(cnt.ITEM_CNT, 0)                    item_cnt,
+                   -- ★예상금액 = 단가 × 인원. 단가는 (시행 × 과목수 구간 × 처리여부)로 정해진다.
+                   --   더프가 인원 종량제라 과목을 몇 개 신청했느냐로 단가가 달라진다
+                   --   (예: 시행19 → 1과목 7,000 / 2과목 12,000 / 3과목~ 15,000, 처리 Y 기준).
+                   --   ‼️실측 커버리지 61%(2019~2026 고르게). 단가가 없는 시행은 NULL로 둔다 —
+                   --     0으로 채우면 0원짜리 주문으로 읽힌다.
+                   (SELECT amt.AMT * FUNC_REQINWON_GET(req.REQ_CD)
+                      FROM tbl_product_amt amt
+                     WHERE amt.DTL_CD = req.DTL_CD
+                       AND amt.PROC_GN = req.PROC_YN
+                       AND COALESCE(cnt.ITEM_CNT, 0) BETWEEN amt.SUBSTCNT AND amt.SUBEDCNT
+                     LIMIT 1)                                   est_amt
               FROM tbl_request_info req
               LEFT JOIN tbl_product_dtl  dtl  ON dtl.DTL_CD  = req.DTL_CD
               LEFT JOIN tbl_product_info prod ON prod.PROD_CD = dtl.PROD_CD
@@ -610,7 +621,7 @@ public class JdbcDsreGateway implements DsreGateway {
                 rs.getString("bigo"),
                 rs.getLong("total_qty"),
                 rs.getInt("item_cnt"),
-                null);   // 총금액 — DSRE2에 없다(DsreOrderRow.totalAmount 주석 참고)
+                (Long) rs.getObject("est_amt"));   // 단가 없는 시행은 null 그대로
     };
 
     @Override
