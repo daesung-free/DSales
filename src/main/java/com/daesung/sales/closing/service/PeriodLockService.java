@@ -78,7 +78,7 @@ public class PeriodLockService {
         logisCostDetailService.ifAvailable(s -> s.unfreeze(year, month));
         PeriodLock pl = getOrCreate(year, month);
         boolean before = pl.isLocked();
-        pl.unlock();
+        pl.unlock(currentAuditor.username(), reason);
         periodLockCache.evict(year, month);
         statusHistoryService.record(StatusEntityType.PERIOD_LOCK, pl.getId(), "locked",
                 before, false, reason);

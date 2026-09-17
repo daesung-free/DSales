@@ -81,9 +81,15 @@ public class ReceivableController {
             @RequestParam(required = false) CollectionType collType,
             @Parameter(description = "키워드 — 거래처명·수금번호·어음번호·은행명을 함께 훑는다(부분일치)")
             @RequestParam(required = false) String keyword,
+            @Parameter(description = """
+                    조회기준 — `COLL`(수금일자, 기본) / `WRITE`(기장일자).
+                    돈이 들어온 날과 장부에 올린 날이 달라 재무팀이 둘을 나눠 본다(정본 23p).
+                    ‼️모르는 값은 400 — 조용히 기본값으로 넘기면 다른 기준으로 자른 목록을 보게 된다.""")
+            @RequestParam(required = false) String dateBasis,
             @ParameterObject PageRequestDto pageReq) {
         return ApiResponse.success(receivableService.searchCollections(
-                fromDate, toDate, partnerId, collKind, collType, keyword, pageReq.toPageable()));
+                fromDate, toDate, partnerId, collKind, collType, keyword, dateBasis,
+                pageReq.toPageable()));
     }
 
     @Operation(summary = "수금 수정",

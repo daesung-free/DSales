@@ -283,6 +283,33 @@ public class SaleController {
         return ApiResponse.success(saleService.cancel(id));
     }
 
+    @Operation(summary = "매출액정리 엑셀 다운로드",
+            description = "분류·도서별 매출/반품/교사용/순매출 수량·금액. 조회와 같은 필터를 받는다.")
+    @GetMapping("/summary/export")
+    public ResponseEntity<byte[]> summaryExport(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @RequestParam(required = false) Long partnerId,
+            @RequestParam(required = false) String summaryKind,
+            @RequestParam(required = false) String salesType,
+            @RequestParam(required = false) String keyword) {
+        List<Col> cols = List.of(
+                new Col("상품코드", "productCode"), new Col("상품명", "productName"),
+                new Col("매출수량", "saleQty"), new Col("매출액", "saleAmount"),
+                new Col("증정수량", "freeQty"), new Col("증정액", "freeAmount"),
+                new Col("교사용수량", "teacherQty"), new Col("교사용액", "teacherAmount"),
+                new Col("반품수량", "returnQty"), new Col("반품액", "returnAmount"),
+                new Col("순매출수량", "netQty"), new Col("순매출액", "netAmount"),
+                new Col("세액", "tax"), new Col("합계", "total"));
+        SalesSummaryResponse r = saleReportService.summary(fromDate, toDate, partnerId,
+                summaryKind, salesType);
+        byte[] xlsx = excel.toXlsx("매출액정리", cols,
+                Keywords.filter(r.rows(), keyword,
+                        x -> new Object[]{x.productCode(), x.productName()}),
+                Heading.period("매출액정리", r.fromDate(), r.toDate()));
+        return excel.asDownload(xlsx, "매출액정리.xlsx");
+    }
+
     @Operation(summary = "순매출 집계 조회",
             description = "기간·거래처로 상품별 매출/증정/교사용/반품 버킷 + 순매출(매출−반품) 집계 + 합계행. "
                     + "취소건 제외. 기간 미지정 시 올해 1/1~오늘.")
@@ -640,6 +667,27 @@ public class SaleController {
         cols.add(new com.daesung.sales.common.excel.ExcelExportUtil.Col("합계[매출]", "totalAmount"));
         byte[] xlsx = excel.toXlsx("응시현황", cols, attendanceService.yearly(year, grade, productType).rows());
         return excel.asDownload(xlsx, "응시현황_연도별.xlsx");
+    }
+
+    @Operation(summary = "회차별작업현황 엑셀 다운로드",
+            description = "분류·도서·회차별 포장유형(개별1/개별2/반별) 물량.")
+    @GetMapping("/round-work-status/export")
+    public ResponseEntity<byte[]> roundWorkStatusExport(
+            @RequestParam(name = "fromDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam(name = "toDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @RequestParam(required = false) String catCode,
+            @RequestParam(required = false) String keyword) {
+        List<Col> cols = List.of(
+                new Col("분류코드", "catCode"), new Col("분류명", "catName"),
+                new Col("도서코드", "productCode"), new Col("도서명", "productName"),
+                new Col("회차", "bookRound"),
+                new Col("개별1", "individual1"), new Col("개별2", "individual2"),
+                new Col("반별", "classBundle"));
+        byte[] xlsx = excel.toXlsx("회차별작업현황", cols,
+                Keywords.filter(saleReportService.roundWorkStatus(fromDate, toDate, catCode), keyword,
+                        x -> new Object[]{x.catCode(), x.catName(), x.productCode(), x.productName()}),
+                Heading.period("회차별작업현황", fromDate, toDate));
+        return excel.asDownload(xlsx, "회차별작업현황.xlsx");
     }
 
     @Operation(summary = "응시현황(기간별) 18p",

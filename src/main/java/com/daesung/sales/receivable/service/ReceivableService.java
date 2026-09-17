@@ -71,16 +71,40 @@ public class ReceivableService {
         return CollectionResponse.from(c);
     }
 
+    /**
+     * 조회기준 정규화. 미지정이면 수금일자(COLL).
+     *
+     * <p>‼️모르는 값은 거부한다. 조용히 기본값으로 넘기면 담당자는 기장일자로 본다고 믿는데
+     * 실제로는 수금일자로 잘린 목록을 보게 된다 — 숫자가 달라지는데 오류가 안 난다.
+     */
+    private static String normalizeBasis(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "COLL";
+        }
+        // ‼️대소문자 변환으로 맞추지 않는다 — 조회 범위를 가르는 값이라
+        //   로케일에 따라 다른 문자열이 같아지면 안 된다(정적분석 IMPROPER_UNICODE).
+        String v = raw.trim();
+        if ("COLL".equals(v) || "coll".equals(v)) {
+            return "COLL";
+        }
+        if ("WRITE".equals(v) || "write".equals(v)) {
+            return "WRITE";
+        }
+        throw new BusinessException(ErrorCode.INVALID_INPUT,
+                "알 수 없는 조회기준입니다: " + raw + " (COLL=수금일자 / WRITE=기장일자)");
+    }
+
     /** 수금 목록 조회. */
     @Transactional(readOnly = true)
     public PageResponse<CollectionResponse> searchCollections(LocalDate from, LocalDate to,
                                                               Long partnerId, String collKind,
                                                               CollectionType collType, String keyword,
-                                                              Pageable pageable) {
+                                                              String dateBasis, Pageable pageable) {
         String kind = (collKind == null || collKind.isBlank()) ? null : collKind.trim();
         String kw = com.daesung.sales.common.query.Keywords.norm(keyword);
         return PageResponse.of(collectionRepository
-                .search(from, to, partnerId, kind, collType, (kw == null) ? null : "%" + kw + "%", pageable)
+                .search(from, to, partnerId, kind, collType, normalizeBasis(dateBasis),
+                        (kw == null) ? null : "%" + kw + "%", pageable)
                 .map(CollectionResponse::from));
     }
 

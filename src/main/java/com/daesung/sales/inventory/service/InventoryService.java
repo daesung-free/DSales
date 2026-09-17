@@ -276,6 +276,15 @@ public class InventoryService {
     public List<StockLedgerRow> stockLedger(LocalDate fromDate, LocalDate toDate,
                                             Long productId, Long warehouseId,
                                             WarehouseType warehouseType, String keyword) {
+        return stockLedger(fromDate, toDate, productId, warehouseId, warehouseType, keyword, null);
+    }
+
+    /** 정렬까지 받는 수불부. {@code sort}는 `필드,방향`(예: `closing,desc`). */
+    @Transactional(readOnly = true)
+    public List<StockLedgerRow> stockLedger(LocalDate fromDate, LocalDate toDate,
+                                            Long productId, Long warehouseId,
+                                            WarehouseType warehouseType, String keyword,
+                                            String sort) {
         LocalDate from = (fromDate != null) ? fromDate : LocalDate.now().withDayOfYear(1);
         LocalDate to = (toDate != null) ? toDate : LocalDate.now();
 
@@ -299,13 +308,57 @@ public class InventoryService {
 
         String kw = (keyword == null || keyword.isBlank())
                 ? null : keyword.trim().toLowerCase(java.util.Locale.ROOT);
-        if (kw == null) {
-            return result;
+        if (kw != null) {
+            result = result.stream()
+                    .filter(r -> contains(r.productCode(), kw) || contains(r.productName(), kw)
+                            || contains(r.warehouseName(), kw))
+                    .toList();
         }
-        return result.stream()
-                .filter(r -> contains(r.productCode(), kw) || contains(r.productName(), kw)
-                        || contains(r.warehouseName(), kw))
-                .toList();
+        return sorted(result, sort);
+    }
+
+    /**
+     * 수불부 정렬. 기본은 도서코드·창고명 순(쿼리 ORDER BY).
+     *
+     * <p>★<b>메모리에서 정렬한다.</b> 집계가 끝난 행을 다시 세우는 것이라 SQL로 내릴 이유가 없고,
+     * 이월·마감이 걸러진 행 기준으로 다시 계산되는 일도 없다(키워드 필터와 같은 이유).
+     *
+     * <p>‼️모르는 필드는 거부한다. 조용히 기본 순서로 돌려주면 담당자는 정렬이 먹은 줄 알고
+     * 위에서부터 몇 개만 보고 판단한다 — 화면엔 오류도 안 뜬다.
+     *
+     * @param sort {@code 필드,방향} 예: {@code closing,desc}. 방향 생략 시 asc.
+     */
+    private static List<StockLedgerRow> sorted(List<StockLedgerRow> rows, String sort) {
+        if (sort == null || sort.isBlank()) {
+            return rows;
+        }
+        String[] parts = sort.split(",");
+        String field = parts[0].trim();
+        // ‼️equalsIgnoreCase 를 쓰지 않는다 — 로케일·유니코드 확장에 따라 다른 문자열이
+        //   같아질 수 있다(정적분석 IMPROPER_UNICODE). 받아들일 표기를 그대로 나열한다.
+        String dir = (parts.length > 1) ? parts[1].trim() : "";
+        boolean desc = "desc".equals(dir) || "DESC".equals(dir) || "Desc".equals(dir);
+
+        java.util.Comparator<StockLedgerRow> cmp = switch (field) {
+            case "productCode" -> java.util.Comparator.comparing(StockLedgerRow::productCode,
+                    java.util.Comparator.nullsLast(String::compareTo));
+            case "productName" -> java.util.Comparator.comparing(StockLedgerRow::productName,
+                    java.util.Comparator.nullsLast(String::compareTo));
+            case "warehouseName" -> java.util.Comparator.comparing(StockLedgerRow::warehouseName,
+                    java.util.Comparator.nullsLast(String::compareTo));
+            case "opening" -> java.util.Comparator.comparingLong(StockLedgerRow::opening);
+            case "inbound" -> java.util.Comparator.comparingLong(StockLedgerRow::inbound);
+            case "sale" -> java.util.Comparator.comparingLong(StockLedgerRow::sale);
+            case "netSaleQty" -> java.util.Comparator.comparingLong(StockLedgerRow::netSaleQty);
+            case "salesReturn" -> java.util.Comparator.comparingLong(StockLedgerRow::salesReturn);
+            case "dispose" -> java.util.Comparator.comparingLong(StockLedgerRow::dispose);
+            case "closing" -> java.util.Comparator.comparingLong(StockLedgerRow::closing);
+            default -> throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "정렬할 수 없는 필드입니다: " + field
+                    + " (productCode/productName/warehouseName/opening/inbound/sale/"
+                    + "netSaleQty/salesReturn/dispose/closing)");
+        };
+        return rows.stream().sorted(desc ? cmp.reversed() : cmp).toList();
     }
 
     /** 키워드 부분일치(대소문자 무시). null 필드는 안 맞는 것으로 본다. */

@@ -116,4 +116,25 @@ public class SchoolController {
             @RequestParam(required = false) String partnerName) {
         return ApiResponse.success(schoolService.search(schoolCode, schoolName, region, partnerName));
     }
+
+    @Operation(summary = "학교/학원검색 엑셀 다운로드",
+            description = "조회와 같은 조건. 특약점 3축(대표·모의고사·IC)까지 담는다.")
+    @GetMapping("/search/export")
+    public org.springframework.http.ResponseEntity<byte[]> searchExport(
+            @RequestParam(required = false) String schoolCode,
+            @RequestParam(required = false) String schoolName,
+            @RequestParam(required = false) String region,
+            @RequestParam(required = false) String partnerName) {
+        java.util.List<Col> cols = java.util.List.of(
+                new Col("학교코드", "schoolCode"), new Col("학교/학원명", "schoolName"),
+                new Col("지역코드", "cityCode"), new Col("지역명", "cityName"),
+                new Col("관할", "partnerLoc"), new Col("특약점", "partnerName"),
+                new Col("관할명", "partnerLocName"),
+                new Col("특약점(모의고사)", "mockPartnerName"),
+                new Col("특약점(IC)", "icPartnerName"),
+                new Col("거래처구분", "clientCategory"));
+        byte[] xlsx = excel.toXlsx("학교학원검색", cols,
+                schoolService.search(schoolCode, schoolName, region, partnerName));
+        return excel.asDownload(xlsx, "학교학원검색.xlsx");
+    }
 }

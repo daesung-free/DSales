@@ -44,6 +44,22 @@ public class PeriodLock extends BaseEntity {
     @Column(length = 500)
     private String memo;
 
+    /**
+     * 마감 해제 사유. ★확정 사유(memo)와 <b>따로</b> 둔다.
+     *
+     * <p>한 칸을 확정·해제가 번갈아 쓰면 마지막에 쓴 쪽만 남는다 —
+     * 해제했다가 다시 마감하면 "왜 열었는지"가 사라진다.
+     * 감사에서 더 중요한 건 확정이 아니라 <b>해제</b> 쪽이다.
+     */
+    @Column(name = "unlock_memo", length = 500)
+    private String unlockMemo;
+
+    @Column(name = "unlocked_by", length = 50)
+    private String unlockedBy;
+
+    @Column(name = "unlocked_at")
+    private LocalDateTime unlockedAt;
+
     public static PeriodLock create(int periodYear, int periodMonth) {
         PeriodLock p = new PeriodLock();
         p.periodYear = periodYear;
@@ -60,10 +76,18 @@ public class PeriodLock extends BaseEntity {
         this.memo = memo;
     }
 
-    /** 마감 해제(재오픈). */
-    public void unlock() {
+    /**
+     * 마감 해제(재오픈).
+     *
+     * <p>‼️다시 마감해도 해제 기록은 지우지 않는다 — "이 달은 한 번 열렸었다"는 사실 자체가
+     * 감사 대상이다. 덮으면 그게 사라진다.
+     */
+    public void unlock(String unlockedBy, String unlockMemo) {
         this.locked = false;
         this.lockedAt = null;
         this.lockedBy = null;
+        this.unlockedBy = unlockedBy;
+        this.unlockedAt = LocalDateTime.now();
+        this.unlockMemo = unlockMemo;
     }
 }

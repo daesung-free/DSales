@@ -127,12 +127,19 @@ public class InventoryController {
             @RequestParam(required = false) com.daesung.sales.warehouse.entity.WarehouseType warehouseType,
             @Parameter(description = "키워드 — 도서코드·도서명·창고명을 한 번에 훑는다(부분일치)")
             @RequestParam(required = false) String keyword,
+            @Parameter(description = """
+                    정렬 — `필드,방향` (예: `closing,desc`). 방향 생략 시 오름차순.
+                    필드: productCode · productName · warehouseName · opening · inbound ·
+                    sale · netSaleQty · salesReturn · dispose · closing.
+                    ‼️모르는 필드는 400 — 조용히 기본 순서로 주면 정렬이 먹은 줄 알고 위에서부터 판단한다.""")
+            @RequestParam(required = false) String sort,
             @Parameter(description = "페이지(0부터)") @RequestParam(defaultValue = "0") int page,
             @Parameter(description = "페이지 크기") @RequestParam(defaultValue = "100") int size) {
         // ★집계 후 자른다. SQL에 LIMIT을 걸면 페이지마다 이월·마감이 달라진다
         //   (수불부는 상품×창고로 묶은 뒤라야 이월이 정확하다). 총건수는 전체를 준다.
         return ApiResponse.success(com.daesung.sales.common.response.PageResponse.ofList(
-                inventoryService.stockLedger(fromDate, toDate, productId, warehouseId, warehouseType, keyword),
+                inventoryService.stockLedger(fromDate, toDate, productId, warehouseId,
+                        warehouseType, keyword, sort),
                 page, size));
     }
 

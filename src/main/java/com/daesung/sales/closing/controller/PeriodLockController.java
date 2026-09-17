@@ -34,7 +34,12 @@ public class PeriodLockController {
     }
 
     @Operation(summary = "월마감 해제(재오픈)",
-            description = "마감된 월을 다시 열어 재무 쓰기를 허용. (해제 권한 정책은 발주처 확인 대상)")
+            description = """
+                    마감된 월을 다시 열어 재무 쓰기를 허용.
+
+                    ★`memo`는 여기서 **해제 사유**로 저장된다(응답 `unlockMemo`).
+                    마감 사유(`memo`)를 덮지 않는다 — 한 칸을 돌려쓰면 다시 마감했을 때
+                    "왜 열었는지"가 사라진다. 재마감해도 해제 기록은 지워지지 않는다.""")
     @PostMapping("/unlock")
     public ApiResponse<PeriodLockResponse> unlock(@Valid @RequestBody PeriodLockRequest req) {
         return ApiResponse.success(periodLockService.unlock(req.year(), req.month(), req.memo()));

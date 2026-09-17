@@ -14,8 +14,12 @@ public interface CollectionRepository extends JpaRepository<Collection, Long> {
 
     /** 수금 목록(기간·거래처 + 수금구분·입금구분 두 축 필터). 근거: 정본 23p 데이터 항목. */
     @Query("select c from Collection c "
-            + "where (:from is null or c.collDate >= :from) "
-            + "and (:to is null or c.collDate <= :to) "
+            // ★조회기준 3종(정본 23p) — 기간을 어느 날짜로 자를지 담당자가 고른다.
+            //   COLL=수금일자 / WRITE=기장일자(회계 기표일). 돈이 들어온 날과 장부에 올린 날이
+            //   다를 수 있어 재무팀이 둘을 나눠 본다. 기본은 수금일자.
+            //   ‼️기장일자는 null일 수 있다 — 그 기준으로 조회하면 미기표 건은 빠지는 게 맞다.
+            + "where (:from is null or (case when :basis = 'WRITE' then c.writeDate else c.collDate end) >= :from) "
+            + "and (:to is null or (case when :basis = 'WRITE' then c.writeDate else c.collDate end) <= :to) "
             + "and (:partnerId is null or c.partner.id = :partnerId) "
             + "and (:collKind is null or c.collKind = :collKind) "
             + "and (:collType is null or c.collType = :collType) "
@@ -30,6 +34,7 @@ public interface CollectionRepository extends JpaRepository<Collection, Long> {
                             @Param("partnerId") Long partnerId,
                             @Param("collKind") String collKind,
                             @Param("collType") CollectionType collType,
+                            @Param("basis") String basis,
                             @Param("keyword") String keyword,
                             Pageable pageable);
 
