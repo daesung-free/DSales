@@ -197,11 +197,14 @@ public class DashboardService {
                         x.key(), shipTypeLabel(x.key()), x.netSales(), x.sharePct()))
                 .toList();
         List<DashboardOverviewResponse.Share> regions = fold(breakdown, 8, 8);
+        // 세부구분(구 매출구분) 축 — 발주처 회신 2026-08-20 "집계는 대분류, 세부구분으로 드릴다운".
+        // 제품별 차트를 이 값으로 묶어 달라는 요청(2026-09-17 피드백 화면11-3).
+        List<DashboardOverviewResponse.Share> divisions = fold(breakdown, 9, 9);
 
         return new DashboardOverviewResponse(year, month, kpi,
                 productTargets(year, products), trend,
                 partners, products.stream().limit(5).toList(),
-                shipTypes, regions, warehouseStocks());
+                shipTypes, regions, warehouseStocks(), divisions);
     }
 
     /** 거래처구분 '특약점'. 정본 19p KPI "특약점 당월매출". */

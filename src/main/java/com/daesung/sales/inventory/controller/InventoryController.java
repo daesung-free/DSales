@@ -320,4 +320,29 @@ public class InventoryController {
         return ApiResponse.success(inventoryService.cancelVoucher(refNo, reason));
     }
 
+    @Operation(summary = "제품수불부 — 세트의 회차별 현황(요약 → 상세 2단계)",
+            description = """
+                    수불부 요약 행(세트)에서 **회차로 내려가는** 단계다.
+
+                    ```
+                    요약   세트          GET /stock/ledger
+                    중간   └ 회차        **이 API**
+                    상세     └ 자재      GET /stock/ledger/materials
+                    ```
+
+                    · 회차 행은 **수불부와 같은 집계**다 — 여기서 다시 계산하지 않는다.
+                    · **거래가 없는 회차도 0으로 담는다.** 빼면 "이 회차는 왜 없지"가 된다.""")
+    @GetMapping("/ledger/rounds")
+    public ApiResponse<com.daesung.sales.inventory.dto.SetRoundLedgerResponse> ledgerRounds(
+            @Parameter(description = "세트 상품 id", required = true) @RequestParam Long setProductId,
+            @Parameter(description = "시작일(yyyy-MM-dd)") @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @Parameter(description = "종료일(yyyy-MM-dd)") @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @Parameter(description = "창고구분 MAIN/CONSIGN. 미지정=전체")
+            @RequestParam(required = false) com.daesung.sales.warehouse.entity.WarehouseType warehouseType) {
+        return ApiResponse.success(
+                inventoryService.setRounds(setProductId, fromDate, toDate, warehouseType));
+    }
+
 }

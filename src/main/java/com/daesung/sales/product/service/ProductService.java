@@ -93,8 +93,14 @@ public class ProductService {
     public ProductResponse create(ProductCreateRequest req) {
         // ★값이 정해진 항목은 저장 직전에 좁힌다. 화면 셀렉트만 믿으면 API 직접 호출로 뚫린다.
         String grade = MasterCodes.grade(req.grade());
-        productRepository.findByCode(req.code()).ifPresent(p -> {
-            throw new BusinessException(ErrorCode.INVALID_INPUT, "이미 존재하는 상품코드: " + req.code());
+        // ★도서코드는 **분류 안에서만** 유일하다. 레거시 bookData 의 기본키가
+        //   (catCode, bookCode) 복합키였고, 01·02·03 같은 짧은 코드를 분류마다 다시 쓴다.
+        //   전역 유니크로 막고 있어 같은 코드를 다른 분류에 못 넣었다(2026-09-17 지적 B-11).
+        //   우리 매출 업로드도 이미 (분류+도서) 조합으로 상품을 찾고 있어 저장 쪽만 어긋나 있었다.
+        String catCode = (req.catCode() == null) ? "" : req.catCode();
+        productRepository.findByCatCodeAndCode(catCode, req.code()).ifPresent(p -> {
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "이미 존재하는 상품코드: " + req.code() + " (분류 " + catCode + ")");
         });
         // 세부구분은 이제 마스터 값이다. 예전처럼 자유 문자열로 두면 오타가 그대로 새 구분이 되어
         // 같은 뜻의 값이 여러 표기로 흩어지고, 대분류 매핑이 없어 집계에서 빠진다.

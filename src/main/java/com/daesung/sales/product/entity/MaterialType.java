@@ -29,6 +29,25 @@ public enum MaterialType {
 
     private final String label;
 
+    /**
+     * 코드명·한글 <b>둘 다</b> 받는다(프론트 회신 2026-09-17 B-9 — 자재 등록 400).
+     * 화면은 목록에서 고른 한글을 그대로 되보낸다. 모르는 값은 그대로 400이다.
+     */
+    @com.fasterxml.jackson.annotation.JsonCreator
+    public static MaterialType from(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String v = raw.trim();
+        for (MaterialType t : values()) {
+            if (t.name().equals(v) || t.label.equals(v)) {
+                return t;
+            }
+        }
+        throw new IllegalArgumentException("알 수 없는 자재구분입니다: " + raw
+                + " (시험지/해설지/OMR/라벨/단행본/기타)");
+    }
+
     MaterialType(String label) {
         this.label = label;
     }

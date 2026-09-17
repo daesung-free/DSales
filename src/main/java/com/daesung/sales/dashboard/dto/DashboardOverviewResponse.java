@@ -33,7 +33,14 @@ public record DashboardOverviewResponse(
         List<Share> regionShares,
 
         @Schema(description = "창고별 재고 수량(19p '창고별 재고 수량 · 물류/위탁'). 사용 중인 창고만.")
-        List<WarehouseStock> warehouseStocks
+        List<WarehouseStock> warehouseStocks,
+
+        @Schema(description = """
+                **세부구분별** 순매출(구 매출구분). 제품별 차트를 이 축으로 묶는다
+                (2026-09-17 피드백 화면11-3 — "제품별 목표달성 차트를 세부구분 필드 값 기준 그룹화").
+                ★대분류(5종 고정)와 다른 축이다 — 대분류로 합산하고 세부구분으로 드릴다운한다
+                (발주처 회신 2026-08-20).""")
+        List<Share> divisionShares
 ) {
     @Schema(name = "DashboardKpi")
     public record Kpi(

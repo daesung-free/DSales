@@ -625,6 +625,37 @@ public class InventoryService {
         return rows;
     }
 
+    /**
+     * 세트의 <b>회차별</b> 수불 현황(요약 → 회차 → 자재 중 가운데 단계).
+     *
+     * <p>★<b>여기서 다시 계산하지 않는다.</b> 회차 상품으로 좁혀 {@link #stockLedger}를 부른다 —
+     * 화면마다 계산식이 갈리면 세트 합과 회차 합이 어긋난다(3,029/3,006 사고와 같은 이유).
+     *
+     * <p>‼️<b>거래가 없는 회차도 0으로 담는다.</b> 빼 버리면 담당자는 "이 회차는 왜 없지"를
+     * 확인하러 다른 화면을 열어야 한다. BOM에 있으면 구성 회차다.
+     */
+    @Transactional(readOnly = true)
+    public com.daesung.sales.inventory.dto.SetRoundLedgerResponse setRounds(
+            Long setProductId, LocalDate fromDate, LocalDate toDate,
+            WarehouseType warehouseType) {
+        Product set = productRepository.findById(setProductId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                        "상품이 없습니다. id=" + setProductId));
+
+        List<com.daesung.sales.inventory.dto.SetRoundLedgerResponse.Round> rounds = new ArrayList<>();
+        for (BomItem item : bomItemRepository.findByParentId(setProductId)) {
+            List<StockLedgerRow> ledger = stockLedger(fromDate, toDate,
+                    item.getChild().getId(), null, warehouseType, null);
+            rounds.add(new com.daesung.sales.inventory.dto.SetRoundLedgerResponse.Round(
+                    item.getRound(), item.getRatio(), ledger));
+        }
+        rounds.sort(java.util.Comparator.comparingInt(
+                com.daesung.sales.inventory.dto.SetRoundLedgerResponse.Round::round));
+
+        return new com.daesung.sales.inventory.dto.SetRoundLedgerResponse(
+                set.getId(), set.getCode(), set.getName(), rounds);
+    }
+
     /** 결산 버킷 수(이월·입고·이고·조립해체·폐기·매출·무상·교사용·반품·조정·재고). */
     private static final int BUCKETS = 11;
 

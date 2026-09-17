@@ -161,7 +161,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
      * 접는 일은 Java가 한다(행 수는 매출 조합 수라 대시보드에 충분히 작다).
      *
      * <p>반환 Object[]: [productId, productName, partnerId, partnerName, majorCategory, clientCategory,
-     * netAmount, <b>shipmentType</b>, <b>region</b>].
+     * netAmount, <b>shipmentType</b>, <b>region</b>, <b>salesDivision</b>].
      *
      * <p>★출고유형·지역 축은 2026-09-16에 <b>이 쿼리에 붙였다</b> — 상세 대시보드의
      * '출고유형별/지역별 매출' 카드가 쓴다. 축마다 쿼리를 새로 파지 않는 이 파일의 원칙 그대로다.
@@ -173,14 +173,16 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
                    COALESCE(SUM(CASE WHEN s.sales_category='SALE'   THEN s.supply_amount
                                      WHEN s.sales_category='RETURN' THEN -s.supply_amount
                                      ELSE 0 END),0) AS net_amt,
-                   COALESCE(s.shipment_type, ''), COALESCE(pt.region, '')
+                   COALESCE(s.shipment_type, ''), COALESCE(pt.region, ''),
+                   COALESCE(p.sales_division, '')
             FROM sales s
               JOIN products p  ON p.id = s.product_id
               JOIN partners pt ON pt.id = s.partner_id
               LEFT JOIN sales_divisions d ON d.code = p.sales_division
             WHERE s.canceled = false
               AND s.sales_date BETWEEN :fromDate AND :toDate
-            GROUP BY p.id, pt.id, d.major_category, pt.client_category, s.shipment_type, pt.region
+            GROUP BY p.id, pt.id, d.major_category, pt.client_category, s.shipment_type, pt.region,
+                     p.sales_division
             """, nativeQuery = true)
     List<Object[]> netSalesBreakdown(@Param("fromDate") LocalDate fromDate,
                                      @Param("toDate") LocalDate toDate);

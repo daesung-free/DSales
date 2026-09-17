@@ -32,6 +32,31 @@ public enum MajorCategory {
     private final String label;
     private final boolean visible;
 
+    /**
+     * 코드명·한글 <b>둘 다</b> 받는다. 근거: 프론트 회신(2026-09-17) B-12 —
+     * 세부구분 등록이 "요청 본문을 해석할 수 없습니다"(400)로 막혔다.
+     *
+     * <p>★화면은 목록에서 고른 <b>한글</b>을 그대로 되보낸다. 응답이 한글을 주는데
+     * 요청만 enum 이름을 요구하면 화면이 변환표를 따로 들어야 하고, 그 표가 언젠가 갈린다.
+     * 거래분류(`SALES` vs `매출`)·권한키(`PERIOD_LOCK` vs `periodLock`)에서 같은 일을 겪었다.
+     *
+     * <p>‼️모르는 값은 그대로 400이다 — 아무 문자열이나 받으면 오타가 조용히 통과한다.
+     */
+    @com.fasterxml.jackson.annotation.JsonCreator
+    public static MajorCategory from(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String v = raw.trim();
+        for (MajorCategory c : values()) {
+            if (c.name().equals(v) || c.label.equals(v)) {
+                return c;
+            }
+        }
+        throw new IllegalArgumentException("알 수 없는 대분류입니다: " + raw
+                + " (모의고사/교재/기타고사/특강/기타)");
+    }
+
     MajorCategory(String label) {
         this(label, true);
     }
