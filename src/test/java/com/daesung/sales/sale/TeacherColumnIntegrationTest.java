@@ -125,6 +125,8 @@ class TeacherColumnIntegrationTest extends IntegrationTestSupport {
         JsonNode r = arRow();
 
         assertThat(r.path("teacherAmount").asLong()).as("교사용 공급가액(유가분)").isEqualTo(20 * 7000);
+        // 수량은 유가·무가를 합친다(교사용 20 + 증정 5) — 금액과 기준이 다르다.
+        assertThat(r.path("teacherQty").asLong()).as("교사용 수량(증정 포함)").isEqualTo(25);
 
         // ‼️교사용이 '매출액'에 섞이면 매출 통계가 통째로 부푼다. 별도 칸이어야 한다.
         assertThat(r.path("saleAmount").asLong()).as("매출액은 정상출고만").isEqualTo(100 * 7000);

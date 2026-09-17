@@ -392,14 +392,14 @@ public class ReceivableService {
         partnerRepository.findAllById(ids).forEach(p -> partners.put(p.getId(), p));
 
         List<ArStatusResponse.Row> rows = new ArrayList<>();
-        long tOpen = 0, tSale = 0, tRet = 0, tTax = 0, tGen = 0, tColl = 0, tBal = 0, tTeacher = 0;
+        long tOpen = 0, tSale = 0, tRet = 0, tTax = 0, tGen = 0, tColl = 0, tBal = 0, tTeacher = 0, tTeacherQty = 0;
         for (Long pid : ids) {
             Partner p = partners.get(pid);
             if (p == null) {
                 continue;
             }
             long opening = carry.getOrDefault(pid, 0L);
-            long[] s = sales.getOrDefault(pid, new long[5]); // [gen, saleAmt, returnAmt, tax, teacherAmt]
+            long[] s = sales.getOrDefault(pid, new long[6]); // [gen, saleAmt, returnAmt, tax, teacherAmt, teacherQty]
             long collected = coll.getOrDefault(pid, 0L);
             long balance = opening + s[0] - collected;
 
@@ -411,15 +411,16 @@ public class ReceivableService {
                 level = ratio >= 100 ? "OVER" : ratio >= 70 ? "WARN" : ratio > 50 ? "WATCH" : "NORMAL";
             }
             rows.add(new ArStatusResponse.Row(pid, p.getCode(), p.getName(),
-                    opening, s[1], s[2], s[3], s[0], collected, balance, s[4],
+                    opening, s[1], s[2], s[3], s[0], collected, balance, s[4], s[5],
                     assureAmount, ratio, p.getAssureExpiry(), p.getAssureNote(), level));
 
             tOpen += opening; tSale += s[1]; tRet += s[2]; tTax += s[3]; tGen += s[0];
-            tColl += collected; tBal += balance; tTeacher += s[4];
+            tColl += collected; tBal += balance; tTeacher += s[4]; tTeacherQty += s[5];
         }
         rows.sort((a, b) -> a.partnerCode().compareTo(b.partnerCode()));
         ArStatusResponse.Row total = new ArStatusResponse.Row(null, "합계", null,
-                tOpen, tSale, tRet, tTax, tGen, tColl, tBal, tTeacher, null, null, null, null, null);
+                tOpen, tSale, tRet, tTax, tGen, tColl, tBal, tTeacher, tTeacherQty,
+                null, null, null, null, null);
         return new ArStatusResponse(from, to, rows, total);
     }
 
@@ -593,11 +594,11 @@ public class ReceivableService {
         return m;
     }
 
-    /** receivableByPartner: [partnerId, gen, saleAmt, returnAmt, tax, teacherAmt] → Map<partnerId, long[..]>. */
+    /** receivableByPartner: [partnerId, gen, saleAmt, returnAmt, tax, teacherAmt, teacherQty] → Map<partnerId, long[..]>. */
     private static Map<Long, long[]> toSalesMap(List<Object[]> rows) {
         Map<Long, long[]> m = new HashMap<>();
         for (Object[] r : rows) {
-            m.put(num(r[0]), new long[]{num(r[1]), num(r[2]), num(r[3]), num(r[4]), num(r[5])});
+            m.put(num(r[0]), new long[]{num(r[1]), num(r[2]), num(r[3]), num(r[4]), num(r[5]), num(r[6])});
         }
         return m;
     }

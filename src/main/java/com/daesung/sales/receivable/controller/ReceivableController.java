@@ -217,7 +217,7 @@ public class ReceivableController {
                 new Col("거래처코드", "partnerCode"), new Col("거래처명", "partnerName"), new Col("이월", "opening"),
                 new Col("매출액", "saleAmount"), new Col("반품액", "returnAmount"), new Col("세액", "tax"),
                 new Col("채권발생", "receivableGen"), new Col("수금", "collected"), new Col("잔액", "balance"),
-                new Col("교사용(증정포함)", "teacherAmount"),
+                new Col("교사용수량", "teacherQty"), new Col("교사용(증정포함)", "teacherAmount"),
                 new Col("담보금액", "assureAmount"), new Col("담보비율", "assureRatio"), new Col("담보등급", "assureLevel"));
         byte[] xlsx = excel.toXlsx("미수금현황", cols, receivableService.arStatus(fromDate, toDate, partnerId).rows(),
                 Heading.period("외상매출현황조회", fromDate, toDate));

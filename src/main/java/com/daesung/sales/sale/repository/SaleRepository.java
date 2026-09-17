@@ -339,7 +339,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
      * 24p 외상매출현황이 "이 거래처에 무가로 얼마가 나갔나"를 같이 보여 준다.
      * 채권 계산(receivableGen·balance)에는 절대 더하지 말 것.
      *
-     * 반환 Object[]: [partnerId, receivableGen, saleAmt, returnAmt, tax, teacherAmt].
+     * 반환 Object[]: [partnerId, receivableGen, saleAmt, returnAmt, tax, teacherAmt, teacherQty].
      */
     @Query(value = """
             SELECT s.partner_id,
@@ -347,7 +347,8 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
               COALESCE(SUM(CASE WHEN s.sales_category='SALE' THEN s.supply_amount ELSE 0 END),0) AS sale_amt,
               COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN s.supply_amount ELSE 0 END),0) AS return_amt,
               COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN -s.tax ELSE s.tax END),0) AS tax_net,
-              COALESCE(SUM(CASE WHEN s.sales_category='FREE' THEN s.supply_amount ELSE 0 END),0) AS teacher_amt
+              COALESCE(SUM(CASE WHEN s.sales_category='FREE' THEN s.supply_amount ELSE 0 END),0) AS teacher_amt,
+              COALESCE(SUM(CASE WHEN s.sales_category='FREE' THEN s.qty ELSE 0 END),0) AS teacher_qty
             FROM sales s
             WHERE s.canceled = false
               AND s.sales_date BETWEEN :fromDate AND :toDate

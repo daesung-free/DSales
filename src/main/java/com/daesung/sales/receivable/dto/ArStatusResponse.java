@@ -27,6 +27,11 @@ public record ArStatusResponse(
                     교사용(증정 포함) 공급가액. ‼️무가라 **채권에는 들어가지 않는다** —
                     잔액·채권발생과 더하지 말 것. "이 거래처에 무가로 얼마가 나갔나"를 보는 칸이다.""")
             long teacherAmount,
+
+            @Schema(description = """
+                    교사용(증정 포함) 수량. ‼️금액과 마찬가지로 **채권에는 들어가지 않는다** —
+                    잔액·채권발생과 더하지 말 것.""")
+            long teacherQty,
             @Schema(description = "담보금액(여신한도)") Long assureAmount,
             @Schema(description = "담보비율(%)=잔액/담보×100, 담보 없으면 null") Double assureRatio,
             @Schema(description = "담보 만기") LocalDate assureExpiry,
