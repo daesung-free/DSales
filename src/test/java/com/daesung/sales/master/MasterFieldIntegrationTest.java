@@ -125,16 +125,17 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("★위탁창고는 소속 거래처 없이 만들 수 없다 — 화면이 아니라 서버가 막는다")
-    void 위탁창고_소속거래처_필수() {
-        // ‼️예전엔 이 검증이 화면에만 있어, API를 직접 부르면 소속 없는 위탁창고가
-        //   그대로 만들어졌다(2026-09-11 점검 D-12). 위탁 미결정산이 창고↔거래처 매핑으로
-        //   도는 구조라, 소속이 없으면 그 미결을 누구 것으로 정산할지 특정할 수 없다.
-        JsonNode denied = post("/masters/warehouses",
+    @DisplayName("★위탁창고는 소속 거래처 없이도 만들 수 있다 — 고정 매핑이 아니다")
+    void 위탁창고_소속거래처_선택() {
+        // ‼️2026-09-11 점검에서 "소속 없는 위탁창고가 만들어진다"를 결함으로 보고 막았다가
+        //   발주처 회신으로 되돌렸다 — "같은 거래처라도 건별로 본사물류창고와 위탁창고 중
+        //   선택해서 쓰며, 특정 거래처는 무조건 위탁창고 식의 고정 매핑이 아니다".
+        //   운영 DSRE2도 같다(거래처 212곳 중 도서재고 보유 42곳).
+        //   정산은 이 매핑이 아니라 실제 자동이고 기록에서 창고를 찾으므로 비어 있어도 안전하다.
+        JsonNode ok = post("/masters/warehouses",
                 Map.of("code", "MF-WH-NOOWN", "name", "소속없는위탁", "type", "CONSIGN"));
-        assertThat(denied.path("error").path("code").asText())
-                .as("소속 없는 위탁창고는 거부되어야: %s", denied)
-                .isEqualTo("INVALID_INPUT");
+        assertThat(ok.path("success").asBoolean())
+                .as("소속 없는 위탁창고도 만들 수 있어야: %s", ok).isTrue();
 
         // 물류창고는 소속이 없는 것이 정상이다
         Long mainId = createId("/masters/warehouses",

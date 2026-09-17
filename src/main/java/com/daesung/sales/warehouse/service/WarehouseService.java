@@ -62,11 +62,13 @@ public class WarehouseService {
     /**
      * 창고유형에 맞는 소속거래처를 정한다.
      *
-     * <p>★<b>위탁창고는 소속 거래처가 반드시 있어야 한다.</b> 위탁 미결정산이
-     * {@code 창고 ↔ 거래처} 매핑으로 도는 구조라, 소속이 없는 위탁창고에 재고가 들어가면
-     * <b>그 미결을 누구 것으로 정산할지 특정할 수 없다.</b>
-     * ‼️예전엔 이 검증이 화면에만 있었다 — API를 직접 부르면 소속 없는 위탁창고가
-     * 그대로 만들어졌다(2026-09-11 점검에서 발견, D-12).
+     * <p>★<b>위탁창고의 소속 거래처는 선택이다</b>(2026-09-17 정정).
+     * 2026-09-11 점검에서 "소속 없는 위탁창고가 만들어진다"를 결함으로 보고 필수로 막았는데,
+     * 발주처 회신이 그 전제를 뒤집었다 — "같은 거래처라도 건별로 본사물류창고와 위탁창고 중
+     * 선택해서 쓰며, 특정 거래처는 무조건 위탁창고 식의 <b>고정 매핑이 아니다</b>".
+     * 운영 DSRE2도 같다(거래처 212곳 중 도서재고 보유 42곳).
+     * ‼️"미결을 누구 것으로 정산할지 모른다"는 걱정도 틀렸다 — 정산은 이 매핑이 아니라
+     * <b>실제 자동이고 기록</b>에서 창고를 찾는다.
      *
      * <p>★<b>수정 때 안 보낸 소속은 지우지 않는다.</b> {@code Warehouse.update}는 받은 값을
      * 그대로 덮어쓰므로, 이름만 고치려고 {@code ownerClientId}를 빼면 소속이 조용히 날아갔다.
@@ -97,16 +99,30 @@ public class WarehouseService {
         warehouse.applyExtra(false, null);
     }
 
+    /**
+     * 소속거래처 결정. 물류창고는 없고, <b>위탁창고도 선택</b>이다.
+     *
+     * <p>‼️예전에는 위탁창고에 소속거래처를 <b>필수</b>로 걸고 없으면 400을 냈다.
+     * 발주처 회신(자료요청서 1-1 창고목록)이 그 전제를 뒤집었다 —
+     * <blockquote>
+     * "위탁창고 사용 여부는 거래처별로 고정된 것이 아니라, 같은 거래처라도 건별 상황에 따라
+     *  본사물류창고와 위탁창고 중 선택해서 사용합니다.
+     *  <b>특정 거래처는 무조건 위탁창고, 이런 식의 고정 매핑이 아니라는 점</b> 설계에 반영 부탁드립니다."
+     * </blockquote>
+     * 운영 DSRE2 실측도 같다 — 거래처 212곳 중 도서재고를 들고 있는 곳은 42곳뿐이다
+     * ({@code tbl_booklist_cnt} 90행/42거래처).
+     *
+     * <p>★소속을 <b>지우지는 않았다.</b> 한 거래처 전용으로 만든 위탁창고도 실재하고,
+     * 그 경우 누구 창고인지 적어 두는 편이 낫다. 다만 <b>없어도 만들 수 있다.</b>
+     *
+     * <p>‼️위탁정산은 이 매핑을 쓰지 않는다 — 정산·반품은 <b>실제 자동이고 기록</b>에서
+     * 창고를 찾는다({@code ConsignmentService.consignWarehouseOf}). 그래서 비어 있어도 안전하다.
+     */
     private Partner ownerFor(WarehouseType type, Long ownerClientId, Partner current) {
         if (type != WarehouseType.CONSIGN) {
             return null;   // 물류창고는 소속 없음
         }
-        Partner owner = (ownerClientId != null) ? resolveOwner(ownerClientId) : current;
-        if (owner == null) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT,
-                    "위탁창고는 소속 거래처를 지정해야 합니다.");
-        }
-        return owner;
+        return (ownerClientId != null) ? resolveOwner(ownerClientId) : current;
     }
 
     /** 소속거래처 id → Partner(없으면 예외). null이면 소속 없음. */
