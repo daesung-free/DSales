@@ -1,5 +1,6 @@
 package com.daesung.sales.closing.controller;
 
+import com.daesung.sales.common.query.Keywords;
 import com.daesung.sales.closing.dto.InvoiceAdjustmentResponse;
 import com.daesung.sales.closing.dto.RevenueReportResponse;
 import com.daesung.sales.closing.dto.TaxFilingResponse;
@@ -43,8 +44,13 @@ public class TaxController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
             @Parameter(description = "종료일(yyyy-MM-dd, 미지정 시 오늘)") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
-            @Parameter(description = "과세구분(FREE=면세/TAXABLE=과세/미지정=전체)") @RequestParam(required = false) String taxType) {
-        return ApiResponse.success(taxService.revenueReport(fromDate, toDate, taxType));
+            @Parameter(description = "과세구분(FREE=면세/TAXABLE=과세/미지정=전체)") @RequestParam(required = false) String taxType,
+            @Parameter(description = "키워드 — 코드·명칭을 함께 훑는다(부분일치)")
+            @RequestParam(required = false) String keyword) {
+        RevenueReportResponse r = taxService.revenueReport(fromDate, toDate, taxType);
+        return ApiResponse.success(new RevenueReportResponse(r.fromDate(), r.toDate(), r.taxType(),
+                Keywords.filter(r.rows(), keyword, x -> new Object[]{x.partnerName()}),
+                r.total()));
     }
 
     @Operation(summary = "수익신고 엑셀 다운로드", description = "드라이브 '수익신고' 형식(거래처별 총건수·순매출·세액).")
@@ -143,8 +149,14 @@ public class TaxController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @Parameter(description = "거래처 id 필터") @RequestParam(required = false) Long partnerId,
             @Parameter(description = "과세구분 필터 — FREE(면세, 계산서 05) / TAXABLE(과세, 세금계산서 01). 미지정=전체. ‼️알 수 없는 값은 400으로 거부한다(조용히 전체로 넘기면 뒤섞인 목록이 걸러진 척 나간다)")
-            @RequestParam(required = false) String taxType) {
-        return ApiResponse.success(taxService.taxInvoices(fromDate, toDate, partnerId, taxType));
+            @RequestParam(required = false) String taxType,
+            @Parameter(description = "키워드 — 코드·명칭을 함께 훑는다(부분일치)")
+            @RequestParam(required = false) String keyword) {
+        TaxInvoiceResponse r = taxService.taxInvoices(fromDate, toDate, partnerId, taxType);
+        var kept = Keywords.filter(r.invoices(), keyword,
+                x -> new Object[]{x.partnerName(), x.partnerBizNo(), x.partnerBossName()});
+        // ★count는 걸러진 개수로 다시 센다 — 목록 3건인데 "6건"이라 적히면 어느 쪽이 맞는지 모른다.
+        return ApiResponse.success(new TaxInvoiceResponse(r.issueDate(), kept, kept.size()));
     }
 
     @Operation(summary = "계산서신고 홈택스 파일(xlsx) 다운로드",

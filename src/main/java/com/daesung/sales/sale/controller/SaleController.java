@@ -1,6 +1,7 @@
 package com.daesung.sales.sale.controller;
 
 import com.daesung.sales.common.dto.PageRequestDto;
+import com.daesung.sales.common.query.Keywords;
 import com.daesung.sales.common.query.MultiSelect;
 import com.daesung.sales.common.response.ApiResponse;
 import com.daesung.sales.common.response.PageResponse;
@@ -291,8 +292,14 @@ public class SaleController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
             @Parameter(description = "종료일(yyyy-MM-dd, 미지정 시 오늘)") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
-            @Parameter(description = "거래처 id 필터") @RequestParam(required = false) Long partnerId) {
-        return ApiResponse.success(saleReportService.summary(fromDate, toDate, partnerId));
+            @Parameter(description = "거래처 id 필터") @RequestParam(required = false) Long partnerId,
+            @Parameter(description = "키워드 — 코드·명칭을 함께 훑는다(부분일치)")
+            @RequestParam(required = false) String keyword) {
+        SalesSummaryResponse r = saleReportService.summary(fromDate, toDate, partnerId);
+        return ApiResponse.success(new SalesSummaryResponse(r.fromDate(), r.toDate(),
+                Keywords.filter(r.rows(), keyword,
+                        x -> new Object[]{x.productCode(), x.productName()}),
+                r.total()));
     }
 
     @Operation(summary = "콘텐츠구분 순매출 조회",
@@ -304,8 +311,14 @@ public class SaleController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
             @Parameter(description = "종료일(yyyy-MM-dd)") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
-            @Parameter(description = "콘텐츠구분(SELF/EXTERNAL)") @RequestParam(required = false) String contentType) {
-        return ApiResponse.success(saleReportService.netSales(fromDate, toDate, contentType));
+            @Parameter(description = "콘텐츠구분(SELF/EXTERNAL)") @RequestParam(required = false) String contentType,
+            @Parameter(description = "키워드 — 코드·명칭을 함께 훑는다(부분일치)")
+            @RequestParam(required = false) String keyword) {
+        NetSalesResponse r = saleReportService.netSales(fromDate, toDate, contentType);
+        return ApiResponse.success(new NetSalesResponse(r.fromDate(), r.toDate(), r.contentType(),
+                Keywords.filter(r.rows(), keyword,
+                        x -> new Object[]{x.productCode(), x.productName(), x.catCode(), x.catName()}),
+                r.total()));
     }
 
     @Operation(summary = "콘텐츠구분 순매출 엑셀 다운로드",
@@ -481,8 +494,15 @@ public class SaleController {
             @Parameter(description = "집계 단위(PARTNER/CATEGORY/BOOK)") @RequestParam(defaultValue = "PARTNER")
             YoyComparisonResponse.GroupBy groupBy,
             @Parameter(description = "거래처 id 필터(미지정=전체)") @RequestParam(required = false) Long partnerId,
-            @Parameter(description = "분류코드 필터(미지정=전체)") @RequestParam(required = false) String catCode) {
-        return ApiResponse.success(saleReportService.yoyComparison(from, to, groupBy, partnerId, catCode));
+            @Parameter(description = "분류코드 필터(미지정=전체)") @RequestParam(required = false) String catCode,
+            @Parameter(description = "키워드 — 코드·명칭을 함께 훑는다(부분일치)")
+            @RequestParam(required = false) String keyword) {
+        YoyComparisonResponse r = saleReportService.yoyComparison(from, to, groupBy, partnerId, catCode);
+        return ApiResponse.success(new YoyComparisonResponse(r.from(), r.to(), r.prevFrom(), r.prevTo(),
+                r.groupBy(),
+                Keywords.filter(r.rows(), keyword,
+                        x -> new Object[]{x.partnerCode(), x.partnerName(), x.catCode(), x.catName(),
+                                x.bookCode(), x.bookName()})));
     }
 
     @Operation(summary = "과목별매출현황 엑셀 다운로드", description = "거래처×분류×도서 매출/반품/순매출/교사용 수량+반품률.")
@@ -561,8 +581,12 @@ public class SaleController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
             @Parameter(description = "종료일(yyyy-MM-dd)") @RequestParam
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
-            @Parameter(description = "분류코드(선택)") @RequestParam(required = false) String catCode) {
-        return ApiResponse.success(saleReportService.roundWorkStatus(fromDate, toDate, catCode));
+            @Parameter(description = "분류코드(선택)") @RequestParam(required = false) String catCode,
+            @Parameter(description = "키워드 — 코드·명칭을 함께 훑는다(부분일치)")
+            @RequestParam(required = false) String keyword) {
+        return ApiResponse.success(Keywords.filter(
+                saleReportService.roundWorkStatus(fromDate, toDate, catCode), keyword,
+                r -> new Object[]{r.catCode(), r.catName(), r.productCode(), r.productName()}));
     }
 
     @Operation(summary = "응시현황(연도별)",
@@ -639,8 +663,14 @@ public class SaleController {
             @Parameter(description = "학년 필터(도서 학년). 미지정=전체", example = "고3")
             @RequestParam(required = false) String grade,
             @Parameter(description = "거래처(특약점) 필터. 미지정=전체")
-            @RequestParam(required = false) Long partnerId) {
-        return ApiResponse.success(attendanceService.period(fromDate, toDate, grade, partnerId));
+            @RequestParam(required = false) Long partnerId,
+            @Parameter(description = "키워드 — 코드·명칭을 함께 훑는다(부분일치)")
+            @RequestParam(required = false) String keyword) {
+        AttendancePeriodResponse r = attendanceService.period(fromDate, toDate, grade, partnerId);
+        return ApiResponse.success(new AttendancePeriodResponse(r.fromDate(), r.toDate(), r.months(),
+                Keywords.filter(r.rows(), keyword,
+                        x -> new Object[]{x.region(), x.partnerCode(), x.partnerName(),
+                                x.schoolCode(), x.schoolName()})));
     }
 
     @Operation(summary = "응시현황(기간별) 엑셀 다운로드",

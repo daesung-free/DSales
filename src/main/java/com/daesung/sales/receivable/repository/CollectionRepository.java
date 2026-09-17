@@ -18,12 +18,19 @@ public interface CollectionRepository extends JpaRepository<Collection, Long> {
             + "and (:to is null or c.collDate <= :to) "
             + "and (:partnerId is null or c.partner.id = :partnerId) "
             + "and (:collKind is null or c.collKind = :collKind) "
-            + "and (:collType is null or c.collType = :collType)")
+            + "and (:collType is null or c.collType = :collType) "
+            // ★여긴 DB 페이징이라 키워드를 쿼리에 넣는다. 메모리에서 거르면 한 페이지(20건)만
+            //   걸러져 "2페이지엔 있는데 1페이지에선 안 보인다"가 된다.
+            + "and (:keyword is null or lower(c.partner.name) like :keyword "
+            + "     or lower(c.collectionNo) like :keyword "
+            + "     or lower(coalesce(c.promissoryNo,'')) like :keyword "
+            + "     or lower(coalesce(c.bankName,'')) like :keyword)")
     Page<Collection> search(@Param("from") LocalDate from,
                             @Param("to") LocalDate to,
                             @Param("partnerId") Long partnerId,
                             @Param("collKind") String collKind,
                             @Param("collType") CollectionType collType,
+                            @Param("keyword") String keyword,
                             Pageable pageable);
 
     /**

@@ -1,5 +1,6 @@
 package com.daesung.sales.receivable.controller;
 
+import com.daesung.sales.common.query.Keywords;
 import com.daesung.sales.common.dto.PageRequestDto;
 import com.daesung.sales.common.excel.ExcelExportUtil;
 import com.daesung.sales.common.excel.ExcelExportUtil.Col;
@@ -78,9 +79,11 @@ public class ReceivableController {
             @RequestParam(required = false) String collKind,
             @Parameter(description = "입금구분(형태) CASH/PROMISSORY/PREPAY/REPLACE. 미지정=전체")
             @RequestParam(required = false) CollectionType collType,
+            @Parameter(description = "키워드 — 거래처명·수금번호·어음번호·은행명을 함께 훑는다(부분일치)")
+            @RequestParam(required = false) String keyword,
             @ParameterObject PageRequestDto pageReq) {
         return ApiResponse.success(receivableService.searchCollections(
-                fromDate, toDate, partnerId, collKind, collType, pageReq.toPageable()));
+                fromDate, toDate, partnerId, collKind, collType, keyword, pageReq.toPageable()));
     }
 
     @Operation(summary = "수금 수정",
@@ -187,8 +190,15 @@ public class ReceivableController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
             @Parameter(description = "종료일(yyyy-MM-dd, 미지정 시 오늘)") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
-            @Parameter(description = "거래처 id 필터") @RequestParam(required = false) Long partnerId) {
-        return ApiResponse.success(receivableService.arStatus(fromDate, toDate, partnerId));
+            @Parameter(description = "거래처 id 필터") @RequestParam(required = false) Long partnerId,
+            @Parameter(description = "키워드 — 코드·명칭을 함께 훑는다(부분일치)")
+            @RequestParam(required = false) String keyword) {
+        ArStatusResponse r = receivableService.arStatus(fromDate, toDate, partnerId);
+        // ‼️합계는 그대로 둔다 — 걸러진 것만의 합으로 바꾸면 "전체 잔액"이 아니게 된다.
+        return ApiResponse.success(new ArStatusResponse(r.fromDate(), r.toDate(),
+                Keywords.filter(r.rows(), keyword,
+                        x -> new Object[]{x.partnerCode(), x.partnerName()}),
+                r.total()));
     }
 
     @Operation(summary = "미수금현황 엑셀 다운로드", description = "거래처별 이월·매출·반품·채권발생·수금·잔액·담보비율.")
@@ -217,8 +227,17 @@ public class ReceivableController {
             @Parameter(description = "시작일(yyyy-MM-dd, 미지정 시 올해 1/1)") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
             @Parameter(description = "종료일(yyyy-MM-dd, 미지정 시 오늘)") @RequestParam(required = false)
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate) {
-        return ApiResponse.success(receivableService.arLedger(partnerId, fromDate, toDate));
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @Parameter(description = "키워드 — 코드·명칭을 함께 훑는다(부분일치)")
+            @RequestParam(required = false) String keyword) {
+        ArLedgerResponse r = receivableService.arLedger(partnerId, fromDate, toDate);
+        // ‼️이월·마감(opening/closing)은 그대로 둔다. 걸러진 줄만으로 다시 계산하면
+        //   러닝밸런스가 원장과 어긋나 "검색했더니 잔액이 달라졌다"가 된다.
+        return ApiResponse.success(new ArLedgerResponse(r.partnerId(), r.partnerName(),
+                r.fromDate(), r.toDate(), r.opening(), r.closing(),
+                Keywords.filter(r.lines(), keyword,
+                        x -> new Object[]{x.refNo(), x.catCode(), x.catName(),
+                                x.productCode(), x.productName()})));
     }
 
     @Operation(summary = "외상매출장 '더프모만'(24p)",

@@ -1,5 +1,6 @@
 package com.daesung.sales.logistics.controller;
 
+import com.daesung.sales.common.query.Keywords;
 import com.daesung.sales.common.excel.ExcelExportUtil;
 import com.daesung.sales.common.excel.ExcelExportUtil.Col;
 import com.daesung.sales.common.response.ApiResponse;
@@ -183,9 +184,14 @@ public class WorkController {
             @RequestParam(required = false) Long partnerId,
             @RequestParam(required = false) Boolean printed,
             @Parameter(description = "출고창고 구분 MAIN(본사물류창고)/CONSIGN(위탁창고). 미지정=전체(관리자만)")
-            @RequestParam(required = false) WarehouseType warehouseType) {
-        return ApiResponse.success(
-                workService.workResults(fromDate, toDate, tradeClass, partnerId, printed, warehouseType));
+            @RequestParam(required = false) WarehouseType warehouseType,
+            @Parameter(description = "키워드 — 코드·명칭을 함께 훑는다(부분일치)")
+            @RequestParam(required = false) String keyword) {
+        return ApiResponse.success(Keywords.filter(
+                workService.workResults(fromDate, toDate, tradeClass, partnerId, printed, warehouseType),
+                keyword,
+                r -> new Object[]{r.partnerCode(), r.partnerName(), r.schoolCode(), r.schoolName(),
+                        r.warehouseName()}));
     }
 
     @Operation(summary = "작업결과 엑셀 다운로드")

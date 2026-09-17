@@ -75,9 +75,12 @@ public class ReceivableService {
     @Transactional(readOnly = true)
     public PageResponse<CollectionResponse> searchCollections(LocalDate from, LocalDate to,
                                                               Long partnerId, String collKind,
-                                                              CollectionType collType, Pageable pageable) {
+                                                              CollectionType collType, String keyword,
+                                                              Pageable pageable) {
         String kind = (collKind == null || collKind.isBlank()) ? null : collKind.trim();
-        return PageResponse.of(collectionRepository.search(from, to, partnerId, kind, collType, pageable)
+        String kw = com.daesung.sales.common.query.Keywords.norm(keyword);
+        return PageResponse.of(collectionRepository
+                .search(from, to, partnerId, kind, collType, (kw == null) ? null : "%" + kw + "%", pageable)
                 .map(CollectionResponse::from));
     }
 
