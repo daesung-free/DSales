@@ -293,9 +293,14 @@ public class SaleController {
             @Parameter(description = "종료일(yyyy-MM-dd, 미지정 시 오늘)") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @Parameter(description = "거래처 id 필터") @RequestParam(required = false) Long partnerId,
+            @Parameter(description = "구분 — 매출/반품/교사용/증정용. 미지정=전체. ‼️모르는 값은 400")
+            @RequestParam(required = false) String summaryKind,
+            @Parameter(description = "매출유형 — 일반매출/위탁매출. 미지정=전체. ‼️모르는 값은 400")
+            @RequestParam(required = false) String salesType,
             @Parameter(description = "키워드 — 코드·명칭을 함께 훑는다(부분일치)")
             @RequestParam(required = false) String keyword) {
-        SalesSummaryResponse r = saleReportService.summary(fromDate, toDate, partnerId);
+        SalesSummaryResponse r = saleReportService.summary(fromDate, toDate, partnerId,
+                summaryKind, salesType);
         return ApiResponse.success(new SalesSummaryResponse(r.fromDate(), r.toDate(),
                 Keywords.filter(r.rows(), keyword,
                         x -> new Object[]{x.productCode(), x.productName()}),

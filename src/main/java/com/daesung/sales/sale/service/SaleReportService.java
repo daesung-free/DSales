@@ -57,28 +57,97 @@ public class SaleReportService {
      * 기간 미지정 시 올해 1/1~오늘.
      */
     @Transactional(readOnly = true)
-    public SalesSummaryResponse summary(LocalDate fromDate, LocalDate toDate, Long partnerId) {
+    public SalesSummaryResponse summary(LocalDate fromDate, LocalDate toDate, Long partnerId,
+                                        String summaryKind, String salesType) {
         LocalDate from = (fromDate != null) ? fromDate : LocalDate.now().withDayOfYear(1);
         LocalDate to = (toDate != null) ? toDate : LocalDate.now();
+        String kind = normalizeKind(summaryKind);
+        String type = normalizeSalesType(salesType);
 
         List<SalesSummaryRow> rows = new ArrayList<>();
         long tSaleQ = 0, tSaleA = 0, tFreeQ = 0, tFreeA = 0, tTchQ = 0, tTchA = 0,
                 tRetQ = 0, tRetA = 0, tTax = 0, tTotal = 0;
-        for (Object[] r : saleRepository.salesSummary(from, to, partnerId)) {
+        for (Object[] r : saleRepository.salesSummary(from, to, partnerId, categoryOf(kind),
+                kindShipment(kind), typeShipment(type))) {
             long saleQty = num(r[3]), saleAmt = num(r[4]), freeQty = num(r[5]), freeAmt = num(r[6]),
                     tchQty = num(r[7]), tchAmt = num(r[8]), retQty = num(r[9]), retAmt = num(r[10]),
                     tax = num(r[11]), total = num(r[12]);
             rows.add(new SalesSummaryRow(
-                    num(r[0]), (String) r[1], (String) r[2],
+                    num(r[0]), (String) r[1], (String) r[2], kind, type,
                     saleQty, saleAmt, freeQty, freeAmt, tchQty, tchAmt, retQty, retAmt,
                     saleQty - retQty, saleAmt - retAmt, tax, total));
             tSaleQ += saleQty; tSaleA += saleAmt; tFreeQ += freeQty; tFreeA += freeAmt;
             tTchQ += tchQty; tTchA += tchAmt; tRetQ += retQty; tRetA += retAmt; tTax += tax; tTotal += total;
         }
-        SalesSummaryRow total = new SalesSummaryRow(null, "합계", null,
+        SalesSummaryRow total = new SalesSummaryRow(null, "합계", null, kind, type,
                 tSaleQ, tSaleA, tFreeQ, tFreeA, tTchQ, tTchA, tRetQ, tRetA,
                 tSaleQ - tRetQ, tSaleA - tRetA, tTax, tTotal);
         return new SalesSummaryResponse(from, to, rows, total);
+    }
+
+    /**
+     * 구분(매출/반품/교사용/증정용) 정규화.
+     *
+     * <p>‼️모르는 값은 <b>거부한다.</b> 조용히 전체로 넘기면 담당자는 걸러진 목록을 보고 있다고
+     * 믿는데 실제로는 전부가 나온다 — 화면에 오류도 안 뜬다.
+     */
+    private static String normalizeKind(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String v = raw.trim();
+        if (List.of("매출", "반품", "교사용", "증정용").contains(v)) {
+            return v;
+        }
+        throw new BusinessException(ErrorCode.INVALID_INPUT,
+                "알 수 없는 구분입니다: " + raw + " (매출/반품/교사용/증정용)");
+    }
+
+    /** 매출유형(일반매출/위탁매출) 정규화. 모르는 값은 거부. */
+    private static String normalizeSalesType(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String v = raw.trim();
+        if (List.of("일반매출", "위탁매출").contains(v)) {
+            return v;
+        }
+        throw new BusinessException(ErrorCode.INVALID_INPUT,
+                "알 수 없는 매출유형입니다: " + raw + " (일반매출/위탁매출)");
+    }
+
+    /** 구분 → 회계구분. 교사용·증정용은 둘 다 FREE라 출고유형으로 더 좁힌다. */
+    private static String categoryOf(String kind) {
+        if (kind == null) {
+            return null;
+        }
+        return switch (kind) {
+            case "매출" -> "SALE";
+            case "반품" -> "RETURN";
+            default -> "FREE";
+        };
+    }
+
+    /**
+     * 구분 → 출고유형. 교사용·증정용은 구분이 곧 출고유형이다(둘 다 회계구분은 FREE라 더 좁혀야 한다).
+     *
+     * <p>★{@link #typeShipment}와 <b>따로</b> 건다. 하나로 합치면 '교사용 + 위탁매출' 같은
+     * 모순 조합에서 한쪽이 조용히 무시돼, 담당자는 걸러진 줄 알고 교사용을 본다.
+     * 따로 걸면 서로 충돌해 빈 결과가 되고, 그게 사실에 맞다.
+     */
+    private static String kindShipment(String kind) {
+        if ("교사용".equals(kind)) {
+            return "TEACHER_USE";
+        }
+        return "증정용".equals(kind) ? "GIFT" : null;
+    }
+
+    /** 매출유형 → 출고유형. 일반/위탁은 매출 안에서의 갈래다. */
+    private static String typeShipment(String salesType) {
+        if (salesType == null) {
+            return null;
+        }
+        return "일반매출".equals(salesType) ? "NORMAL_SHIP" : "CONSIGN_SHIP";
     }
 
     /**

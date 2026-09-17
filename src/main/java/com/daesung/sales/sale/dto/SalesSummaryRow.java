@@ -10,6 +10,15 @@ public record SalesSummaryRow(
         @Schema(description = "상품 id(합계행은 null)") Long productId,
         @Schema(description = "상품코드(합계행은 '합계')") String productCode,
         @Schema(description = "상품명") String productName,
+
+        @Schema(description = """
+                구분 — 매출/반품/교사용/증정용. **조회 시 구분을 지정했을 때만** 값이 있다.
+                지정하지 않으면 한 행에 네 구분이 다 들어 있어(saleQty·returnQty·…) 한 값으로 못 적는다.""")
+        String summaryKind,
+
+        @Schema(description = """
+                매출유형 — 일반매출/위탁매출. **조회 시 매출유형을 지정했을 때만** 값이 있다.""")
+        String salesType,
         @Schema(description = "매출수량") long saleQty,
         @Schema(description = "매출액(공급가)") long saleAmount,
         @Schema(description = "증정수량") long freeQty,

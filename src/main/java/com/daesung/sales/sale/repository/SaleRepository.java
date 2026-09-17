@@ -315,12 +315,22 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
             WHERE s.canceled = false
               AND s.sales_date BETWEEN :fromDate AND :toDate
               AND (CAST(:partnerId AS SIGNED) IS NULL OR s.partner_id = :partnerId)
+              -- 구분(매출/반품/교사용/증정용) · 매출유형(일반/위탁) 필터. null이면 전체.
+              AND (CAST(:salesCategory AS CHAR) IS NULL OR s.sales_category = :salesCategory)
+              -- ★출고유형 조건을 둘로 나눠 **각각** 건다. 하나로 합치면 '교사용 + 위탁매출' 같은
+              --   모순 조합에서 한쪽이 조용히 무시돼, 담당자는 걸러진 줄 알고 교사용을 본다.
+              --   따로 걸면 서로 충돌해 빈 결과가 되고, 그게 사실에 맞다.
+              AND (CAST(:kindShipment AS CHAR) IS NULL OR s.shipment_type = :kindShipment)
+              AND (CAST(:typeShipment AS CHAR) IS NULL OR s.shipment_type = :typeShipment)
             GROUP BY s.product_id, p.code, p.name
             ORDER BY p.code
             """, nativeQuery = true)
     List<Object[]> salesSummary(@Param("fromDate") LocalDate fromDate,
                                 @Param("toDate") LocalDate toDate,
-                                @Param("partnerId") Long partnerId);
+                                @Param("partnerId") Long partnerId,
+                                @Param("salesCategory") String salesCategory,
+                                @Param("kindShipment") String kindShipment,
+                                @Param("typeShipment") String typeShipment);
 
     /**
      * 거래처별 채권 발생액(기간). 취소 제외. 반품은 채권 감소(−total).
