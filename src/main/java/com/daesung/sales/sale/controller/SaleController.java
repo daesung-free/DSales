@@ -421,8 +421,14 @@ public class SaleController {
                     ‼️표준 '구분(상세)'(3종)와 값이 다르다 — 무상을 교사용·증정용으로 쪼갠 축이다(정본 15p).""")
             @RequestParam(required = false) StatementKind kind,
             @Parameter(description = "매출유형 NORMAL_SALES(일반매출)/CONSIGN_SALES(위탁매출). 미지정=전체")
-            @RequestParam(required = false) SalesType salesType) {
-        return ApiResponse.success(saleReportService.statement(from, to, kind, salesType));
+            @RequestParam(required = false) SalesType salesType,
+            @Parameter(description = "거래처 id. 미지정=전체")
+            @RequestParam(required = false) Long partnerId,
+            @Parameter(description = "키워드 — 분류코드·분류명·도서코드·도서명을 함께 훑는다(부분일치). "
+                    + "‼️소계·분류계는 걸러진 결과로 다시 계산된다(상세만 걸러내면 합이 안 맞는다)")
+            @RequestParam(required = false) String keyword) {
+        return ApiResponse.success(
+                saleReportService.statement(from, to, partnerId, kind, salesType, keyword));
     }
 
     @Operation(summary = "매출액명세서 엑셀 다운로드", description = "드라이브 '매출액정리' 형식(분류/도서별 수량·금액·세액·합계).")
@@ -430,15 +436,17 @@ public class SaleController {
     public ResponseEntity<byte[]> statementExport(
             @RequestParam(name = "fromDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @RequestParam(name = "toDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(required = false) Long partnerId,
             @RequestParam(required = false) StatementKind kind,
-            @RequestParam(required = false) SalesType salesType) {
+            @RequestParam(required = false) SalesType salesType,
+            @RequestParam(required = false) String keyword) {
         List<Col> cols = List.of(
                 new Col("구분", "rowType"), new Col("대분류", "majorName"),
                 new Col("분류코드", "catCode"), new Col("분류명", "catName"),
                 new Col("도서코드", "bookCode"), new Col("도서명", "bookName"), new Col("수량", "qty"),
                 new Col("금액", "amount"), new Col("세액", "tax"), new Col("합계", "total"));
         byte[] xlsx = excel.toXlsx("매출액명세서", cols,
-                saleReportService.statement(from, to, kind, salesType).rows(),
+                saleReportService.statement(from, to, partnerId, kind, salesType, keyword).rows(),
                 Heading.period("매출액명세서", from, to));
         return excel.asDownload(xlsx, "매출액명세서_" + from + "_" + to + ".xlsx");
     }

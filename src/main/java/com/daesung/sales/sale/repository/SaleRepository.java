@@ -50,6 +50,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
               left join SalesDivision d on d.code = p.salesDivision
             where s.canceled = false
               and s.salesDate between :from and :to
+              and (:partnerId is null or s.partner.id = :partnerId)
               and (:category is null or s.salesCategory = :category)
               and (:shipmentType is null or s.shipmentType = :shipmentType)
               and (:salesType is null or s.salesType = :salesType)
@@ -58,6 +59,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
             """)
     List<SalesStatementAgg> statementAgg(@Param("from") LocalDate from,
                                          @Param("to") LocalDate to,
+                                         @Param("partnerId") Long partnerId,
                                          @Param("category") SalesCategory category,
                                          @Param("shipmentType") ShipmentType shipmentType,
                                          @Param("salesType") com.daesung.sales.sale.entity.SalesType salesType);

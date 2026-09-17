@@ -47,6 +47,21 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class SaleReportService {
 
+    /**
+     * 매출액명세서 행 순서. rollup은 같은 대분류가 <b>연속으로 붙어 있어야</b> 성립한다.
+     * 대분류는 분류코드가 아니라 세부구분에서 오므로, 서로 다른 분류코드가 같은 대분류에
+     * 속해 흩어져 있을 수 있다. 정렬하지 않으면 같은 대분류의 '분류 계' 행이 여러 번 찍힌다.
+     *
+     * <p>순서의 정본은 enum 선언 순서(모의고사·교재·기타고사·특강·기타)다 —
+     * SQL로 정렬하면 enum 이름 알파벳순이 되어 화면 순서와 어긋난다. 미분류는 맨 뒤.
+     */
+    private static final java.util.Comparator<SalesStatementAgg> STATEMENT_ORDER =
+            java.util.Comparator
+                    .comparingInt((SalesStatementAgg a) -> (a.getMajorCategory() == null)
+                            ? Integer.MAX_VALUE : a.getMajorCategory().ordinal())
+                    .thenComparing(a -> blank(a.getCatCode()))
+                    .thenComparing(a -> blank(a.getBookCode()));
+
     private final SaleRepository saleRepository;
     private final InventoryTxnRepository inventoryTxnRepository;
     private final PartnerRepository partnerRepository;
@@ -267,25 +282,26 @@ public class SaleReportService {
      * 화면에 'H'·'M' 같은 글자가 나왔고 분류코드 체계가 아직 없는 신규 데이터에서는 값 자체가 무의미했다.
      */
     @Transactional(readOnly = true)
-    public SalesStatementResponse statement(LocalDate from, LocalDate to,
-                                           StatementKind kind, SalesType salesType) {
+    public SalesStatementResponse statement(LocalDate from, LocalDate to, Long partnerId,
+                                           StatementKind kind, SalesType salesType, String keyword) {
         // 구분은 회계구분·출고유형이 섞인 축이다(정본 15p) — 교사용·증정용은 둘 다 무상이라
         // 회계구분만으로는 갈라지지 않는다. 어느 쪽으로 거를지는 enum이 안다.
         SalesCategory category = (kind == null) ? null : kind.category();
         ShipmentType shipmentType = (kind == null) ? null : kind.shipmentType();
         List<SalesStatementAgg> aggs = new ArrayList<>(
-                saleRepository.statementAgg(from, to, category, shipmentType, salesType));
+                saleRepository.statementAgg(from, to, partnerId, category, shipmentType, salesType));
+        // ‼️키워드는 **롤업을 만들기 전에** 건다. 만들고 나서 상세행만 걸러내면
+        //   소계·분류계·총계는 걸러지기 전 값으로 남아, 화면에서 상세를 다 더해도 소계와 안 맞는다.
+        //   ‼️Keywords.filter 는 불변 리스트를 돌려준다 — 바로 아래 sort 가 터지므로
+        //     정렬을 먼저 하고 그 결과를 걸러 새 리스트로 받는다.
+        aggs.sort(STATEMENT_ORDER);
+        aggs = com.daesung.sales.common.query.Keywords.filter(aggs, keyword,
+                a -> new Object[]{a.getCatCode(), a.getCatName(), a.getBookCode(), a.getBookName()});
         // ‼️rollup은 같은 대분류가 연속으로 붙어 있어야 성립한다. 대분류는 분류코드가 아니라
         //   세부구분에서 오므로, 서로 다른 분류코드가 같은 대분류에 속해 흩어져 있을 수 있다.
         //   정렬하지 않으면 같은 대분류의 '분류 계' 행이 여러 번 찍힌다.
         //   순서의 정본은 enum 선언 순서(모의고사·교재·기타고사·특강·기타) — SQL로 정렬하면
         //   enum 이름 알파벳순이 되어 화면 순서와 어긋난다. 미분류는 맨 뒤.
-        aggs.sort(java.util.Comparator
-                .comparingInt((SalesStatementAgg a) -> (a.getMajorCategory() == null)
-                        ? Integer.MAX_VALUE : a.getMajorCategory().ordinal())
-                .thenComparing(a -> blank(a.getCatCode()))
-                .thenComparing(a -> blank(a.getBookCode())));
-
         List<SalesStatementRow> rows = new ArrayList<>();
 
         long gQty = 0, gAmt = 0, gTax = 0;                 // 총계
