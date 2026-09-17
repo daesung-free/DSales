@@ -138,16 +138,9 @@ public class InventoryService {
      */
     public int applyShipment(Product product, Warehouse warehouse, int delta, TxnType txnType,
                              ShipmentType shipmentType, LocalDate tradeDate, String refNo, String memo) {
-        return applyShipment(product, warehouse, delta, txnType, shipmentType, tradeDate, refNo, memo, null);
-    }
-
-    /** 무상 세부구분(part)까지 실어 기록. 수불부 무상 4칸이 이 값으로 갈린다. */
-    public int applyShipment(Product product, Warehouse warehouse, int delta, TxnType txnType,
-                             ShipmentType shipmentType, LocalDate tradeDate, String refNo, String memo,
-                             String part) {
         int balance = applyDelta(product, warehouse, delta);
-        inventoryTxnRepository.save(InventoryTxn.shipment(
-                product, warehouse, delta, txnType, shipmentType, tradeDate, refNo, memo, part));
+        inventoryTxnRepository.save(
+                InventoryTxn.shipment(product, warehouse, delta, txnType, shipmentType, tradeDate, refNo, memo));
         return balance;
     }
 
@@ -290,8 +283,8 @@ public class InventoryService {
         // 창고구분은 enum 이름 그대로 저장돼 있다(MAIN/CONSIGN). null이면 전체.
         String whType = (warehouseType == null) ? null : warehouseType.name();
         for (Object[] r : inventoryTxnRepository.stockLedger(from, to, productId, warehouseId, whType)) {
-            long closing = num(r[19]);
-            long cached = num(r[20]);
+            long closing = num(r[15]);
+            long cached = num(r[16]);
             long sale = num(r[10]);          // 음수(재고를 깎는다)
             long salesReturn = num(r[13]);   // 양수(되돌아온다)
             // 순매출수량 = 매출 − 반품. 원장은 매출을 음수로 적으므로 부호를 뒤집어 뺀다.
@@ -300,9 +293,7 @@ public class InventoryService {
             result.add(new StockLedgerRow(
                     num(r[0]), (String) r[1], (String) r[2], num(r[3]), (String) r[4],
                     num(r[5]), num(r[6]), num(r[7]), num(r[8]), num(r[9]),
-                    sale, num(r[11]), num(r[12]), salesReturn,
-                    num(r[14]), num(r[15]), num(r[16]), num(r[17]),   // 무상 4칸
-                    num(r[18]),
+                    sale, num(r[11]), num(r[12]), salesReturn, num(r[14]),
                     netSaleQty, closing, cached, closing == cached));
         }
 

@@ -122,34 +122,11 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
               COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.shipment_type = 'GIFT' THEN t.qty ELSE 0 END), 0) AS free,
               COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.shipment_type = 'TEACHER_USE' THEN t.qty ELSE 0 END), 0) AS teacher,
               COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.shipment_type = 'RETURN' THEN t.qty ELSE 0 END), 0) AS sales_return,
-              -- ★무상 4칸(레거시 제품수불부.vb:118~121 재현). 기존 free/teacher 는 그대로 둔다 —
-              --   정의를 바꾸면 순매출조회·외상매출현황과 숫자가 갈린다(3,029/3,006 사고).
-              --   여기 넷은 무상·교사용을 **다시 쪼갠 보조 칸**이다.
-              COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate
-                            AND t.shipment_type IN ('GIFT','TEACHER_USE')
-                            AND t.part = '학생용' AND d.major_category = 'IC'
-                            THEN t.qty ELSE 0 END), 0) AS free_ic_student,
-              COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate
-                            AND t.shipment_type IN ('GIFT','TEACHER_USE')
-                            AND t.part = '교사용' AND d.major_category = 'IC'
-                            THEN t.qty ELSE 0 END), 0) AS free_ic,
-              COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate
-                            AND t.shipment_type IN ('GIFT','TEACHER_USE')
-                            AND t.part = 'M+'
-                            THEN t.qty ELSE 0 END), 0) AS free_mplus,
-              -- ‼️IC+ 는 자기 칸이 없어 여기로 떨어진다 — 레거시가 그렇다(M+만 떼어냄).
-              COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate
-                            AND t.shipment_type IN ('GIFT','TEACHER_USE')
-                            AND NOT (t.part = 'M+'
-                                  OR (t.part = '교사용' AND d.major_category = 'IC')
-                                  OR (t.part = '학생용' AND d.major_category = 'IC'))
-                            THEN t.qty ELSE 0 END), 0) AS free_etc,
               COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.txn_type = 'ADJUST' THEN t.qty ELSE 0 END), 0) AS adjust,
               COALESCE(SUM(CASE WHEN t.trade_date <= :toDate THEN t.qty ELSE 0 END), 0) AS closing,
               COALESCE(MAX(inv.qty), 0) AS cached
             FROM inventory_txn t
               JOIN products p ON p.id = t.product_id
-              LEFT JOIN sales_divisions d ON d.code = p.sales_division
               JOIN warehouses w ON w.id = t.warehouse_id
               LEFT JOIN inventory inv ON inv.product_id = t.product_id AND inv.warehouse_id = t.warehouse_id
             WHERE (CAST(:productId AS SIGNED) IS NULL OR t.product_id = :productId)

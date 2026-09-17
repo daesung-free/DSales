@@ -23,18 +23,6 @@ public record StockLedgerRow(
         @Schema(description = "무상/증정(음수)") long free,
         @Schema(description = "교사용(음수)") long teacher,
         @Schema(description = "반품(양수)") long salesReturn,
-
-        @Schema(description = """
-                무상 상세 — IC 학생용(무상 세부구분 `학생용` × 대분류 IC).
-                ★`free`/`teacher` 를 **다시 쪼갠 보조 칸**이다. 기존 두 칸의 뜻은 바뀌지 않았다 —
-                정의를 바꾸면 순매출조회·외상매출현황과 숫자가 갈린다.""")
-        long freeIcStudent,
-        @Schema(description = "무상 상세 — IC 교사용(`교사용` × 대분류 IC)") long freeIc,
-        @Schema(description = "무상 상세 — M+(무상 세부구분 `M+`)") long freeMplus,
-        @Schema(description = """
-                무상 상세 — 기타. ‼️**IC+ 가 여기로 떨어진다** — 레거시가 M+만 별도 칸으로 떼어냈다
-                (제품수불부.vb:121). 의도인지 누락인지 코드로는 알 수 없어 그대로 뒀다.""")
-        long freeEtc,
         @Schema(description = "재고실사 조정(순증감)") long adjust,
         @Schema(description = """
                 순매출수량 = 매출 − 반품. **교사용·증정은 무가라 들어가지 않는다.**

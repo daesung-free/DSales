@@ -23,7 +23,6 @@ import com.daesung.sales.sale.dto.ReturnableResponse;
 import com.daesung.sales.sale.dto.SaleResponse;
 import com.daesung.sales.sale.dto.SalesEntryRequest;
 import com.daesung.sales.sale.dto.SalesEntryResponse;
-import com.daesung.sales.sale.entity.Parts;
 import com.daesung.sales.sale.entity.Sale;
 import com.daesung.sales.sale.entity.SalesType;
 import com.daesung.sales.sale.repository.SaleRepository;
@@ -115,8 +114,6 @@ public class SaleService {
             sale.applyWarehouse(warehouse);   // 출고 창고(7p 재고위치 · 27p 출고창고)
             sale.applyUploadDetail(item.schoolCode(), item.schoolName(), item.round());   // 학교·회차(12p)
             sale.applyPackType(item.packType());   // 포장구분(회차별 작업현황 집계축)
-            String part = Parts.normalize(item.part());   // 무상 세부구분(수불부 4칸 축)
-            sale.applyPart(part);
             saleRepository.save(sale);
 
             // 재고 반영(한 트랜잭션): 출고유형 → 부호/이벤트유형. 위탁·취소는 이 API 불가.
@@ -126,7 +123,7 @@ public class SaleService {
             if (product.isStockManaged()) {
                 TxnType txnType = (delta >= 0) ? TxnType.RETURN : TxnType.OUTBOUND;
                 stockBalance = inventoryService.applyShipment(product, warehouse, delta, txnType,
-                        item.shipmentType(), req.salesDate(), salesNo, item.memo(), part);
+                        item.shipmentType(), req.salesDate(), salesNo, item.memo());
             }
 
             // 물류 작업 단위(발송 건) 확보 — 레거시도 매출등록 시점에 sendData를 만든다(UC_TabPages.vb:752).

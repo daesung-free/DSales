@@ -67,15 +67,6 @@ public class InventoryTxn extends BaseEntity {
     @Column(name = "shipment_type", length = 20)
     private ShipmentType shipmentType;
 
-    /**
-     * 무상 세부구분 — 매출에서 복사해 온다.
-     *
-     * <p>‼️제품수불부는 sales 가 아니라 이 테이블을 집계한다. 매출에만 담으면 수불부가 못 본다.
-     * shipmentType 이 이미 같은 이유로 복사돼 있다.
-     */
-    @Column(name = "part", length = 30)
-    private String part;
-
     @Column(name = "trade_date", nullable = false)
     private LocalDate tradeDate;
 
@@ -148,14 +139,6 @@ public class InventoryTxn extends BaseEntity {
      * 출고/반품(매출 연동). 정상출고=OUTBOUND(qty 음수), 반품=RETURN(qty 양수).
      * shipmentType을 실어 수불부가 매출/무상/교사용/반품으로 분해. refNo=매출번호(I-...).
      */
-    public static InventoryTxn shipment(Product product, Warehouse warehouse, int qty, TxnType txnType,
-                                        ShipmentType shipmentType, LocalDate tradeDate, String refNo, String memo,
-                                        String part) {
-        InventoryTxn t = shipment(product, warehouse, qty, txnType, shipmentType, tradeDate, refNo, memo);
-        t.part = part;
-        return t;
-    }
-
     public static InventoryTxn shipment(Product product, Warehouse warehouse, int qty, TxnType txnType,
                                         ShipmentType shipmentType, LocalDate tradeDate, String refNo, String memo) {
         InventoryTxn t = new InventoryTxn();
