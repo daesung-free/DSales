@@ -42,6 +42,7 @@ public class WorkTypeService {
      */
     private final org.springframework.beans.factory.ObjectProvider<DsreGateway> dsreGatewayProvider;
     private final CurrentAuditor currentAuditor;
+    private final ProductLogisRateService productLogisRateService;
 
     public List<WorkTypeResponse> findAll(boolean includeUnused) {
         return workTypeRepository.findAllByOrderBySortOrderAscPackTypeAsc().stream()
@@ -134,30 +135,37 @@ public class WorkTypeService {
         Set<Integer> exceptions = new HashSet<>();
         overrideRepository.findAll().forEach(o -> exceptions.add(o.getDtlCd()));
 
-        DsreGateway gateway = dsreGatewayProvider.getIfAvailable();
-        if (gateway == null) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT,
-                    "DSRE 연동이 꺼져 있어 단가를 반영할 수 없습니다.");
-        }
-
         List<Integer> targets = new ArrayList<>();
         List<Integer> skipped = new ArrayList<>();
-        for (LogisCostRate r : gateway.listLogisCosts()) {
-            if (r.packtype() != w.getPackType() || r.dtlCd() == 0) {
-                continue;   // 다른 작업구분 / 회수단가 특수행(dtl_cd=0)
-            }
-            if (exceptions.contains(r.dtlCd())) {
-                skipped.add(r.dtlCd());
-                continue;
-            }
-            targets.add(r.dtlCd());
-            if (!dryRun) {
-                gateway.upsertLogisCost(r.dtlCd(), w.getPaper(), w.getOmr(), w.getEtc(),
-                        w.getLabel(), w.getBasic(), w.getTrade(), w.getPackType(), r.bSpare());
+
+        // ① 매출프로그램 상품 단가(우리 DB) — DSRE 연동과 무관하게 항상 반영한다.
+        //    ‼️이걸 빼면 버튼 하나가 **절반만** 반영한다. 담당자는 기준단가를 바꾸고 눌렀는데
+        //    우리 상품 단가만 옛값으로 남아 있는 줄 모른다.
+        int[] ours = productLogisRateService.applyWorkType(w.getPackType(), dryRun);
+
+        // ② DSRE 시행 단가 — 연동이 꺼져 있으면 건너뛴다(막지 않는다).
+        //    예전엔 여기서 400을 던져, DSRE가 없는 환경에서는 ①까지 통째로 불가능했다.
+        DsreGateway gateway = dsreGatewayProvider.getIfAvailable();
+        boolean dsreApplied = gateway != null;
+        if (dsreApplied) {
+            for (LogisCostRate r : gateway.listLogisCosts()) {
+                if (r.packtype() != w.getPackType() || r.dtlCd() == 0) {
+                    continue;   // 다른 작업구분 / 회수단가 특수행(dtl_cd=0)
+                }
+                if (exceptions.contains(r.dtlCd())) {
+                    skipped.add(r.dtlCd());
+                    continue;
+                }
+                targets.add(r.dtlCd());
+                if (!dryRun) {
+                    gateway.upsertLogisCost(r.dtlCd(), w.getPaper(), w.getOmr(), w.getEtc(),
+                            w.getLabel(), w.getBasic(), w.getTrade(), w.getPackType(), r.bSpare());
+                }
             }
         }
         return new WorkTypeApplyResult(w.getPackType(), w.getName(), dryRun,
-                targets.size(), targets, skipped.size(), skipped);
+                targets.size() + ours[0], targets, skipped.size() + ours[1], skipped,
+                ours[0], dsreApplied);
     }
 
     /**

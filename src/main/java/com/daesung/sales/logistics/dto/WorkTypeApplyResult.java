@@ -23,6 +23,16 @@ public record WorkTypeApplyResult(
         @Schema(description = "대상 시행코드 목록 — 미리보기에서 '무엇이 덮이는지' 보여주려면 건수만으론 부족하다")
         List<Integer> appliedDtlCds,
         @Schema(description = "예외로 등록돼 건너뛴 행 수") int skipped,
-        @Schema(description = "건너뛴 시행코드 목록") List<Integer> skippedDtlCds
+        @Schema(description = "건너뛴 시행코드 목록") List<Integer> skippedDtlCds,
+
+        @Schema(description = """
+                그중 **매출프로그램 상품 단가**(우리 DB) 건수. 나머지는 DSRE 시행 단가다.
+                두 축이 한 버튼으로 반영되므로 어느 쪽 몇 건인지 갈라 준다.""")
+        int ourProductCount,
+
+        @Schema(description = """
+                DSRE 시행 단가까지 반영됐는지. **false면 DSRE 연동이 꺼져 있어 우리 상품 단가만 반영됐다** —
+                화면이 "전부 반영됨"으로 보여주면 담당자가 DSRE 쪽도 바뀐 줄 안다.""")
+        boolean dsreApplied
 ) {
 }

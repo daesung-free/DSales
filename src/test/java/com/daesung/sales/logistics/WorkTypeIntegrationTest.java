@@ -110,31 +110,34 @@ class WorkTypeIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("DSRE가 꺼져 있으면 일괄 반영은 거부한다 — 조용히 아무것도 안 하면 적용된 줄 안다")
-    void 연동_꺼짐_일괄반영_거부() {
+    @DisplayName("★DSRE가 꺼져 있어도 우리 상품 단가는 반영된다 — 대신 반쪽인 걸 숨기지 않는다")
+    void 연동_꺼짐_일괄반영() {
         int packType = 150 + (int) (System.nanoTime() % 50);
         long id = data(post("/masters/work-types", Map.of(
                 "packType", packType, "name", "반영시도",
                 "paper", 1, "omr", 1, "etc", 1, "label", 1, "basic", 1, "trade", 1))).path("id").asLong();
 
-        JsonNode r = post("/masters/work-types/" + id + "/apply", Map.of());
-        assertThat(r.path("success").asBoolean()).isFalse();
-        assertThat(r.path("error").path("message").asText()).contains("DSRE");
+        JsonNode d = data(post("/masters/work-types/" + id + "/apply", Map.of()));
+
+        // ‼️예전엔 여기서 400을 던졌다. 그러면 DSRE가 없는 환경에서 **우리 상품 단가까지**
+        //   통째로 반영 불가였다. 지금은 우리 쪽은 반영하고 DSRE 쪽은 건너뛴다.
+        assertThat(d.path("dsreApplied").asBoolean())
+                .as("DSRE는 못 건드렸다는 걸 화면이 알아야 한다").isFalse();
+        assertThat(d.path("appliedDtlCds")).as("DSRE 시행 단가는 하나도 안 건드렸다").isEmpty();
     }
 
     @Test
-    @DisplayName("★일괄반영 미리보기도 같은 자리에 있다 — DSRE가 꺼져 있으면 반영과 똑같이 막힌다")
+    @DisplayName("★일괄반영 미리보기는 아무것도 바꾸지 않는다")
     void 미리보기_경로() {
         int packType = 200 + (int) (System.nanoTime() % 50);
         long id = data(post("/masters/work-types", Map.of(
                 "packType", packType, "name", "미리보기대상",
                 "paper", 1, "omr", 1, "etc", 1, "label", 1, "basic", 1, "trade", 1))).path("id").asLong();
 
-        JsonNode r = get("/masters/work-types/" + id + "/apply/preview");
+        JsonNode d = data(get("/masters/work-types/" + id + "/apply/preview"));
 
-        // 404/405가 아니라 "DSRE 꺼짐"이어야 한다 — 경로가 붙어 있고 반영과 같은 코드를 탄다는 뜻이다.
-        assertThat(r.path("success").asBoolean()).isFalse();
-        assertThat(r.path("error").path("message").asText()).contains("DSRE");
+        assertThat(d.path("preview").asBoolean()).as("★안 바꿨다는 표시").isTrue();
+        assertThat(d.path("packType").asInt()).isEqualTo(packType);
     }
 
     @Test
