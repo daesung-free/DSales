@@ -8,6 +8,7 @@ import com.daesung.sales.inventory.service.InventoryService;
 import io.swagger.v3.oas.annotations.Operation;
 import com.daesung.sales.common.query.MultiSelect;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.format.annotation.DateTimeFormat;
 import java.time.LocalDate;
@@ -30,6 +31,28 @@ import org.springframework.web.bind.annotation.RestController;
 public class DisposalController {
 
     private final InventoryService inventoryService;
+    private final com.daesung.sales.common.audit.CurrentAuditor currentAuditor;
+
+    @Operation(summary = "전표 삭제(마감 前)",
+            description = """
+                    **잘못 입력한 전표를 없던 것으로** 만든다(발주처 2026-08-14 [4] "마감 확정 前 삭제 가능").
+
+                    ★취소와 다른 축이다 — 취소는 "되돌렸다"를 반대 이벤트로 장부에 남기고,
+                    삭제는 애초에 없던 일로 만든다(원 이벤트를 무효화하고 잔량만 되돌린다).
+
+                    · **사유 필수.** 지운 품목·수량은 상태변경 이력에 남는다.
+                    · **이미 취소된 전표는 400** — 되돌린 기록이 장부에 선 뒤라 오입력이 아니다.
+                    · **마감된 달은 400**(PERIOD_LOCKED).
+
+                    ⚠️{@code inventory_txn} 행은 남는다(논리삭제). 재고의 유일 진실이라
+                    물리삭제하면 수불부·채권이 파생되는 원장을 찢는 것과 같다.""")
+    @DeleteMapping("/{refNo}")
+    public ApiResponse<Void> deleteVoucher(
+            @Parameter(description = "전표번호", required = true) @PathVariable String refNo,
+            @Valid @RequestBody com.daesung.sales.logistics.dto.RevertRequest req) {
+        inventoryService.deleteVoucher(refNo, req.reason(), currentAuditor.username());
+        return ApiResponse.success(null);
+    }
 
     @Operation(summary = "폐기 등록",
             description = "등록 수량만큼 재고 즉시 차감(음수재고 방지) + 폐기번호(P) 채번. 한 트랜잭션.")

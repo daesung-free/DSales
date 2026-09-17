@@ -1,5 +1,6 @@
 package com.daesung.sales.inventory.service;
 
+import com.daesung.sales.audit.entity.StatusEntityType;
 import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.sequence.SequenceService;
 import com.daesung.sales.common.exception.ErrorCode;
@@ -63,6 +64,7 @@ public class InventoryService {
     private final StockWarningCollector stockWarningCollector;
     private final com.daesung.sales.inventory.repository.VoucherCancelRepository voucherCancelRepository;
     private final com.daesung.sales.closing.service.PeriodLockService periodLockService;
+    private final com.daesung.sales.audit.service.StatusHistoryService statusHistoryService;
 
     /** 일반 입고. 품목마다 (1) 재고이벤트 INBOUND 기록 + (2) 재고 잔량 가산을 한 트랜잭션으로. */
     @Transactional
@@ -667,6 +669,76 @@ public class InventoryService {
      * 재고 잔량 증감(원자적). delta>=0이면 가산(없으면 생성), delta<0이면 음수재고 방지 차감.
      * 반환값 = 갱신 후 잔량.
      */
+    /**
+     * 재고 전표 삭제(마감 前 오입력 정정) — 입고·폐기·이고·실사에 공통.
+     * 근거: 발주처 회신 2026-08-14 [4] "마감 확정 前 → 우클릭 삭제 가능".
+     *
+     * <p>취소({@link #cancelVoucher})와 갈라 두는 이유는 매출과 같다 —
+     * 취소는 "되돌렸다"를 장부에 남기고, 삭제는 "애초에 없던 일"로 만든다.
+     * 이미 취소된 전표는 삭제할 수 없다(되돌린 기록이 장부에 선 뒤라 오입력이 아니다).
+     */
+    @Transactional
+    public void deleteVoucher(String refNo, String reason, String actor) {
+        List<InventoryTxn> origins = inventoryTxnRepository.findAllByRefNo(refNo);
+        if (origins.isEmpty()) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "전표가 없습니다: " + refNo);
+        }
+        if (voucherCancelRepository.existsByRefNo(refNo)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "이미 취소된 전표는 삭제할 수 없습니다: " + refNo + " (취소 기록이 장부에 남아 있습니다)");
+        }
+        periodLockService.assertNotLocked(origins.get(0).getTradeDate());
+
+        // ‼️지운 내용을 먼저 남긴다 — 삭제 후에는 이 기록에만 남는다.
+        StringBuilder sb = new StringBuilder("전표 삭제(").append(refNo).append(") ");
+        for (InventoryTxn t : origins) {
+            sb.append(t.getProduct().getCode()).append(' ').append(t.getQty()).append("부 / ");
+        }
+        statusHistoryService.record(StatusEntityType.INVENTORY_VOUCHER, origins.get(0).getId(),
+                "deleted", "false", "true", sb.append("사유: ").append(reason).toString());
+
+        softDeleteByRefNo(refNo, actor);
+    }
+
+    /**
+     * 전표 하나가 만든 재고 이벤트를 <b>없던 것으로</b> 되돌린다(마감 前 삭제 전용).
+     *
+     * <p>취소({@link #reverseShipments})와 다르다 — 취소는 <b>반대 부호 이벤트를 새로 남겨</b>
+     * "되돌렸다"를 장부에 기록한다. 삭제는 애초에 잘못 친 것이라 그 기록이 남으면 안 된다.
+     * 그래서 원 이벤트를 논리삭제하고 잔량만 반대로 민다.
+     *
+     * <p>★<b>행은 지우지 않는다.</b> {@code inventory_txn}은 재고의 유일 진실이고
+     * 재고·수불부·채권이 전부 여기서 파생된다. 물리삭제하면 그 원장을 찢는 것과 같다.
+     * 삭제행은 {@code deleted_at}으로 집계에서만 빠지고, 누가·언제 지웠는지는 남는다.
+     *
+     * <p>이미 취소된 전표도 그대로 처리된다 — 원 이벤트와 역분개 이벤트의 합이 0이라
+     * 잔량이 움직이지 않고 두 행이 함께 삭제 표시된다.
+     *
+     * @return 삭제 표시된 이벤트 수(0이면 재고를 안 쓰는 전표였다 — 오류가 아니다)
+     */
+    @Transactional
+    public int softDeleteByRefNo(String refNo, String actor) {
+        List<InventoryTxn> txns = inventoryTxnRepository.findAllByRefNo(refNo);
+
+        // ‼️순서가 중요하다. applyDelta 의 원자적 UPDATE는 @Modifying(clearAutomatically=true)라
+        //   **영속성 컨텍스트를 비운다** — 먼저 잔량을 밀면 뒤이은 markDeleted 가 detached 엔티티에
+        //   걸려 조용히 아무것도 안 한다(실제로 이 순서로 짰다가 재고도 목록도 안 바뀌었다).
+        //   삭제 표시를 먼저 확정(flush)하고, 잔량은 미리 빼둔 값으로 민다.
+        record Delta(Product product, Warehouse warehouse, int qty) {
+        }
+        List<Delta> deltas = new ArrayList<>(txns.size());
+        for (InventoryTxn t : txns) {
+            deltas.add(new Delta(t.getProduct(), t.getWarehouse(), t.getQty()));
+            t.markDeleted(actor);
+        }
+        inventoryTxnRepository.flush();
+
+        for (Delta d : deltas) {
+            applyDelta(d.product(), d.warehouse(), -d.qty());
+        }
+        return txns.size();
+    }
+
     private int applyDelta(Product product, Warehouse warehouse, int delta) {
         // ★음수 재고는 **막지 않는다**. 발주처 확정(2026-08-31 화면7) 원문 —
         //   "재고 음수 차단 로직은 적용되면 안됩니다. 입고 전 출고되는 상품은 재고 (−)로 처리되며,

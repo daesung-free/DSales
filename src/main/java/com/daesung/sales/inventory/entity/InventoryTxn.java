@@ -27,9 +27,10 @@ import lombok.NoArgsConstructor;
  */
 @Entity
 @Table(name = "inventory_txn")
+@org.hibernate.annotations.SQLRestriction("deleted_at is null")
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
-public class InventoryTxn extends BaseEntity {
+public class InventoryTxn extends com.daesung.sales.common.entity.SoftDeletableEntity {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)

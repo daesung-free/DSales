@@ -18,7 +18,8 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
     @Query(value = """
             SELECT product_id, COALESCE(SUM(qty * unit_cost) / NULLIF(SUM(qty), 0), 0) AS avg_cost
             FROM inventory_txn
-            WHERE txn_type = 'INBOUND' AND inbound_type = 'PURCHASE' AND unit_cost IS NOT NULL
+            WHERE deleted_at IS NULL
+              AND txn_type = 'INBOUND' AND inbound_type = 'PURCHASE' AND unit_cost IS NOT NULL
             GROUP BY product_id
             """, nativeQuery = true)
     List<Object[]> avgInboundCostByProduct();
@@ -36,7 +37,8 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
     @Query(value = """
             SELECT product_id, COALESCE(SUM(qty), 0), COALESCE(SUM(qty * COALESCE(unit_cost, 0)), 0)
             FROM inventory_txn
-            WHERE txn_type = 'INBOUND' AND inbound_type = 'PURCHASE'
+            WHERE deleted_at IS NULL
+              AND txn_type = 'INBOUND' AND inbound_type = 'PURCHASE'
               AND trade_date BETWEEN :fromDate AND :toDate
             GROUP BY product_id
             """, nativeQuery = true)
@@ -139,7 +141,8 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
               JOIN products p ON p.id = t.product_id
               JOIN warehouses w ON w.id = t.warehouse_id
               LEFT JOIN inventory inv ON inv.product_id = t.product_id AND inv.warehouse_id = t.warehouse_id
-            WHERE (CAST(:productId AS SIGNED) IS NULL OR t.product_id = :productId)
+            WHERE t.deleted_at IS NULL
+              AND (CAST(:productId AS SIGNED) IS NULL OR t.product_id = :productId)
               AND (CAST(:warehouseId AS SIGNED) IS NULL OR t.warehouse_id = :warehouseId)
               AND (:warehouseType IS NULL OR w.type = :warehouseType)
               AND p.ledger_visible = TRUE
@@ -188,7 +191,8 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
             FROM inventory_txn t
               JOIN products p ON p.id = t.product_id
               JOIN warehouses w ON w.id = t.warehouse_id
-            WHERE (CAST(:productId AS SIGNED) IS NULL OR t.product_id = :productId)
+            WHERE t.deleted_at IS NULL
+              AND (CAST(:productId AS SIGNED) IS NULL OR t.product_id = :productId)
               AND (:warehouseType IS NULL OR w.type = :warehouseType)
               AND p.ledger_visible = TRUE
             GROUP BY p.cat_code, p.cat_name, t.product_id, p.code, p.name
@@ -227,7 +231,8 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
                    COALESCE(SUM(CASE WHEN t.txn_type = 'BOM_DISASSEMBLE' THEN -t.qty ELSE 0 END), 0) AS dis_qty,
                    MAX(t.trade_date) AS last_date
             FROM inventory_txn t JOIN products p ON p.id = t.product_id
-            WHERE ((t.txn_type = 'BOM_ASSEMBLE' AND t.qty > 0)
+            WHERE t.deleted_at IS NULL
+              AND ((t.txn_type = 'BOM_ASSEMBLE' AND t.qty > 0)
                 OR (t.txn_type = 'BOM_DISASSEMBLE' AND t.qty < 0))
               AND (CAST(:fromDate AS DATE) IS NULL OR t.trade_date >= :fromDate)
               AND (CAST(:toDate   AS DATE) IS NULL OR t.trade_date <= :toDate)
@@ -257,7 +262,8 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
                    COALESCE(SUM(CASE WHEN t.txn_type = 'BOM_ASSEMBLE' THEN -t.qty ELSE 0 END), 0) AS used,
                    COALESCE(SUM(CASE WHEN t.txn_type = 'BOM_DISASSEMBLE' THEN t.qty ELSE 0 END), 0) AS back
             FROM inventory_txn t JOIN products p ON p.id = t.product_id
-            WHERE ((t.txn_type = 'BOM_ASSEMBLE' AND t.qty < 0)
+            WHERE t.deleted_at IS NULL
+              AND ((t.txn_type = 'BOM_ASSEMBLE' AND t.qty < 0)
                 OR (t.txn_type = 'BOM_DISASSEMBLE' AND t.qty > 0))
               AND (CAST(:fromDate AS DATE) IS NULL OR t.trade_date >= :fromDate)
               AND (CAST(:toDate   AS DATE) IS NULL OR t.trade_date <= :toDate)
@@ -287,7 +293,8 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
     @Query(value = """
             SELECT p.cat_code, p.cat_name, COUNT(*) AS cnt, COALESCE(SUM(-t.qty), 0) AS qty
             FROM inventory_txn t JOIN products p ON p.id = t.product_id
-            WHERE t.txn_type = 'DISPOSE'
+            WHERE t.deleted_at IS NULL
+              AND t.txn_type = 'DISPOSE'
               AND (CAST(:fromDate AS DATE) IS NULL OR t.trade_date >= :fromDate)
               AND (CAST(:toDate   AS DATE) IS NULL OR t.trade_date <= :toDate)
               AND (:anyProduct = TRUE OR t.product_id IN (:productIds))
@@ -330,7 +337,8 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
               + COALESCE(SUM(CASE WHEN txn_type IN ('BOM_ASSEMBLE','BOM_DISASSEMBLE') THEN qty ELSE 0 END), 0)
                 AS consumed
             FROM inventory_txn
-            WHERE product_id IN (:productIds)
+            WHERE deleted_at IS NULL
+              AND product_id IN (:productIds)
               AND (CAST(:fromDate AS DATE) IS NULL OR trade_date >= :fromDate)
               AND (CAST(:toDate   AS DATE) IS NULL OR trade_date <= :toDate)
             GROUP BY product_id
@@ -353,7 +361,8 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
               COALESCE(SUM(CASE WHEN t.trade_date BETWEEN :fromDate AND :toDate AND t.txn_type='INBOUND' AND t.qty<0 THEN -t.qty*COALESCE(t.unit_cost,0) ELSE 0 END),0) AS cancel_amt,
               COALESCE(SUM(CASE WHEN t.trade_date <= :toDate THEN t.qty ELSE 0 END),0) AS stock_qty
             FROM inventory_txn t JOIN products p ON p.id = t.product_id
-            WHERE (CAST(:catCode AS CHAR) IS NULL OR p.cat_code = :catCode)
+            WHERE t.deleted_at IS NULL
+              AND (CAST(:catCode AS CHAR) IS NULL OR p.cat_code = :catCode)
               AND (CAST(:productId AS SIGNED) IS NULL OR t.product_id = :productId)
             GROUP BY t.product_id, p.code, p.name, p.cat_code, p.cat_name, p.price
             ORDER BY p.code

@@ -91,6 +91,11 @@ public abstract class IntegrationTestSupport {
         return exchange(HttpMethod.DELETE, path, null, true);
     }
 
+    /** 본문 있는 DELETE(삭제 사유 등). */
+    protected JsonNode del(String path, Object body) {
+        return exchange(HttpMethod.DELETE, path, body, true);
+    }
+
     /** data 노드만 반환(성공 응답 가정). */
     protected JsonNode data(JsonNode apiResponse) {
         return apiResponse.path("data");

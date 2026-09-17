@@ -44,6 +44,7 @@ import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -273,6 +274,34 @@ public class SaleController {
     @PostMapping("/return-inbound")
     public ApiResponse<SalesEntryResponse> returnInbound(@Valid @RequestBody ReturnInboundRequest req) {
         return ApiResponse.success(saleService.returnInbound(req));
+    }
+
+    @Operation(summary = "매출 삭제(마감 前)",
+            description = """
+                    **잘못 입력한 매출을 없던 것으로** 만든다. 발주처 확정(2026-08-14 [4]) —
+                    "마감 확정 前 → 등록담당자가 우클릭 삭제 가능(레거시 수준)".
+
+                    ★**취소와 다른 축이다.**
+                    · **취소**: 있었던 거래를 되돌림 → 역분개가 장부에 **남는다**(그게 사실이다).
+                    · **삭제**: 애초에 잘못 친 것 → 장부에 **남으면 안 된다**(없던 거래다).
+                    합치면 마감 후 정당한 반품 취소와 오입력이 섞여, 세무 소명 때 가릴 수 없다.
+
+                    · 재고는 **원 이벤트를 무효화**해 되돌린다(취소처럼 반대 이벤트를 새로 남기지 않는다).
+                    · **사유 필수.** 지운 내용(거래처·도서·수량·금액)은 상태변경 이력에 남는다
+                      — 삭제 후에는 거기에만 남는다.
+                    · **마감된 달은 400**(PERIOD_LOCKED) — 그때는 취소로 간다.
+                    · **위탁정산 매출은 400** — 정산 행위의 결과물이지 오입력이 아니다.
+                      취소로 가야 위탁 미결원장이 함께 되돌아간다.
+
+                    ⚠️행은 DB에 남는다(논리삭제). 담당자가 보는 결과는 레거시와 같다 —
+                    목록에서 사라진다. 복구 가능성만 더 얻는 것이다.""")
+    // ‼️경로변수를 숫자로 제한한다. 안 그러면 이 매핑이 `/sales/summary`·`/sales/statement` 같은
+    //   조회 경로까지 삼켜, "메서드만 틀린" 요청이 405가 아니라 400(숫자 변환 실패)이 된다.
+    @DeleteMapping("/{id:\\d+}")
+    public ApiResponse<Void> delete(@PathVariable Long id,
+                                    @Valid @RequestBody com.daesung.sales.logistics.dto.RevertRequest req) {
+        saleService.delete(id, req.reason());
+        return ApiResponse.success(null);
     }
 
     @Operation(summary = "매출 취소(논리 취소)",

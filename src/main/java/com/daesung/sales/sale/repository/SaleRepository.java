@@ -179,7 +179,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
               JOIN products p  ON p.id = s.product_id
               JOIN partners pt ON pt.id = s.partner_id
               LEFT JOIN sales_divisions d ON d.code = p.sales_division
-            WHERE s.canceled = false
+            WHERE s.deleted_at IS NULL AND s.canceled = false
               AND s.sales_date BETWEEN :fromDate AND :toDate
             GROUP BY p.id, pt.id, d.major_category, pt.client_category, s.shipment_type, pt.region,
                      p.sales_division
@@ -250,7 +250,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
               COALESCE(SUM(CASE WHEN s.sales_category='SALE' THEN s.supply_amount
                                 WHEN s.sales_category='RETURN' THEN -s.supply_amount ELSE 0 END),0) AS net_amt
             FROM sales s
-            WHERE s.canceled = false
+            WHERE s.deleted_at IS NULL AND s.canceled = false
               AND EXTRACT(YEAR FROM s.sales_date) = :year
               AND (CAST(:productId AS SIGNED) IS NULL OR s.product_id = :productId)
             GROUP BY EXTRACT(MONTH FROM s.sales_date)
@@ -314,7 +314,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
               COALESCE(SUM(s.tax),0) AS tax,
               COALESCE(SUM(s.total_amount),0) AS total
             FROM sales s JOIN products p ON p.id = s.product_id
-            WHERE s.canceled = false
+            WHERE s.deleted_at IS NULL AND s.canceled = false
               AND s.sales_date BETWEEN :fromDate AND :toDate
               AND (CAST(:partnerId AS SIGNED) IS NULL OR s.partner_id = :partnerId)
               -- 구분(매출/반품/교사용/증정용) · 매출유형(일반/위탁) 필터. null이면 전체.
@@ -355,7 +355,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
               COALESCE(SUM(CASE WHEN s.sales_category='SALE' THEN s.qty ELSE 0 END),0) AS sale_qty,
               COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN s.qty ELSE 0 END),0) AS return_qty
             FROM sales s
-            WHERE s.canceled = false
+            WHERE s.deleted_at IS NULL AND s.canceled = false
               AND s.sales_date BETWEEN :fromDate AND :toDate
               AND (CAST(:partnerId AS SIGNED) IS NULL OR s.partner_id = :partnerId)
             GROUP BY s.partner_id
@@ -388,7 +388,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
             FROM sales s
               JOIN products p ON p.id = s.product_id
               LEFT JOIN sales_divisions d ON d.code = p.sales_division
-            WHERE s.canceled = false
+            WHERE s.deleted_at IS NULL AND s.canceled = false
               AND s.sales_date BETWEEN :fromDate AND :toDate
               AND (CAST(:partnerId AS SIGNED) IS NULL OR s.partner_id = :partnerId)
             GROUP BY s.partner_id, COALESCE(d.major_category,'')
@@ -422,7 +422,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
               COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN s.supply_amount ELSE 0 END),0) return_amt,
               COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN s.tax ELSE 0 END),0) return_tax
             FROM sales s JOIN products p ON p.id = s.product_id
-            WHERE s.canceled = false
+            WHERE s.deleted_at IS NULL AND s.canceled = false
               AND s.sales_date BETWEEN :fromDate AND :toDate
               AND (CAST(:contentType AS CHAR) IS NULL OR p.content_type = :contentType)
             GROUP BY s.product_id, p.code, p.name, p.content_type, p.cat_code, p.cat_name
@@ -461,7 +461,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
               COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN -s.supply_amount ELSE s.supply_amount END),0) AS net_supply,
               COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN -s.tax ELSE s.tax END),0) AS net_tax
             FROM sales s JOIN partners pt ON pt.id = s.partner_id
-            WHERE s.canceled = false
+            WHERE s.deleted_at IS NULL AND s.canceled = false
               AND s.sales_date BETWEEN :fromDate AND :toDate
               AND ( :taxFilter = 'ALL'
                     OR (:taxFilter = 'FREE' AND s.tax = 0)
@@ -491,7 +491,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
             FROM sales s
               JOIN partners pt ON pt.id = s.partner_id
               JOIN products p ON p.id = s.product_id
-            WHERE s.canceled = false
+            WHERE s.deleted_at IS NULL AND s.canceled = false
               AND s.sales_date BETWEEN :fromDate AND :toDate
               AND (CAST(:partnerId AS SIGNED) IS NULL OR s.partner_id = :partnerId)
               AND (:taxType = 'ALL'
@@ -519,7 +519,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
               COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN s.supply_amount ELSE 0 END),0) AS return_supply,
               COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN -s.tax ELSE s.tax END),0)      AS net_tax
             FROM sales s
-            WHERE s.canceled = false
+            WHERE s.deleted_at IS NULL AND s.canceled = false
               AND EXTRACT(YEAR FROM s.sales_date) = :year
             GROUP BY EXTRACT(MONTH FROM s.sales_date),
                      CASE WHEN s.tax = 0 THEN 'INVOICE' ELSE 'TAX_INVOICE' END
@@ -537,7 +537,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
             FROM sales s
               JOIN partners pt ON pt.id = s.partner_id
               JOIN products p  ON p.id = s.product_id
-            WHERE s.canceled = false
+            WHERE s.deleted_at IS NULL AND s.canceled = false
               AND s.sales_category = 'RETURN'
               AND EXTRACT(YEAR FROM s.sales_date) = :year
               AND EXTRACT(MONTH FROM s.sales_date) = :month
@@ -567,7 +567,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
               COALESCE(SUM(s.tax),0)                                                           AS vat
             FROM sales s JOIN products p ON p.id = s.product_id
               LEFT JOIN sales_divisions d ON d.code = p.sales_division
-            WHERE s.canceled = false
+            WHERE s.deleted_at IS NULL AND s.canceled = false
               AND s.sales_category = 'SALE'
               AND EXTRACT(YEAR FROM s.sales_date) = :year
               AND EXTRACT(MONTH FROM s.sales_date) = :month
@@ -589,7 +589,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
                    COALESCE(SUM(CASE WHEN s.pack_type = 'CLASS_BUNDLE' THEN s.qty END), 0) AS cls,
                    COALESCE(SUM(s.qty), 0) AS total
               FROM sales s JOIN products p ON p.id = s.product_id
-             WHERE s.canceled = false
+             WHERE s.deleted_at IS NULL AND s.canceled = false
                AND s.sales_date BETWEEN :fromDate AND :toDate
                AND s.book_round IS NOT NULL AND s.book_round <> 0
                AND (:catCode IS NULL OR p.cat_code = :catCode)

@@ -17,6 +17,13 @@ public enum StatusEntityType {
     /** 계정 — 활성/비활성 */
     APP_USER,
     /**
+     * 재고 전표(입고·폐기·이고·실사) — 삭제. entityId = 첫 이벤트 id.
+     *
+     * <p>전표는 자체 테이블이 아니라 {@code inventory_txn} 여러 행의 묶음(refNo)이라
+     * 대표 id를 쓴다. 무엇을 지웠는지는 reason 에 품목·수량까지 적어 둔다.
+     */
+    INVENTORY_VOUCHER,
+    /**
      * 발송 건(작업요청서) — 출력·확인 표시.
      *
      * <p>둘 다 <b>되돌릴 수 있게</b> 열었기 때문에 이력이 필요하다(B-14). 특히 출력 되돌리기는

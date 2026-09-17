@@ -64,6 +64,7 @@ public class SaleService {
     private final com.daesung.sales.inventory.service.StockWarningCollector stockWarningCollector;
     private final PeriodLockService periodLockService;
     private final StatusHistoryService statusHistoryService;
+    private final com.daesung.sales.common.audit.CurrentAuditor currentAuditor;
     private final SequenceService sequenceService;
     private final com.daesung.sales.logistics.service.ShipmentService shipmentService;
 
@@ -451,6 +452,66 @@ public class SaleService {
         SaleResponse response = SaleResponse.from(sale, divisionOf(sale));
         inventoryService.reverseShipments(sale.getSalesNo(), LocalDate.now());
         return response;
+    }
+
+    /**
+     * 매출 삭제(마감 前 오입력 정정). 근거: 발주처 회신 2026-08-14 [4] —
+     * "마감 확정 前 → 등록담당자가 우클릭 삭제 가능(레거시 수준)".
+     *
+     * <p>★<b>취소와 다른 축이다.</b> 합치지 말 것 —
+     * <ul>
+     *   <li><b>취소</b>: 있었던 거래를 되돌림 → 역분개가 장부에 <b>남는다</b>(그게 사실이다).</li>
+     *   <li><b>삭제</b>: 애초에 잘못 친 것 → 장부에 <b>남으면 안 된다</b>(없던 거래다).</li>
+     * </ul>
+     * 한 플래그로 합치면 마감 후 정당한 반품 취소와 오입력이 섞여, 세무 소명 때 가릴 수 없다.
+     *
+     * <p>★<b>물리삭제하지 않는다.</b> 레거시는 진짜로 지웠지만(`UC_TabPages.vb:543`),
+     * 그건 레거시가 재고 잔고를 저장하지 않아 행을 지우면 재고가 저절로 맞았기 때문이다.
+     * 우리는 {@code inventory_txn}이 유일 진실이라 같은 행동이 정반대로 작동한다.
+     * 담당자가 보는 결과는 같다(목록에서 사라진다) — 복구 가능성만 더 얻는다.
+     *
+     * <p><b>거부하는 경우</b>
+     * <ul>
+     *   <li>마감된 달 → {@code PERIOD_LOCKED}. 발주처 확정대로 그때는 취소로 간다.</li>
+     *   <li>위탁정산 매출 → 정산 행위의 결과물이지 오입력이 아니다. 취소로 가야
+     *       미결원장이 정상 복원된다({@link #cancel}).</li>
+     * </ul>
+     *
+     * <p>발송 건(작업요청서)은 건드리지 않는다 — 지시 목록은 매출에서 파생되므로
+     * 삭제된 매출은 자동으로 빠진다. 품목이 하나도 안 남은 발송 건이 0수량으로 보일 수 있다.
+     */
+    @Transactional
+    public void delete(Long id, String reason) {
+        Sale sale = saleRepository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "매출이 없습니다. id=" + id));
+        periodLockService.assertNotLocked(sale.getSalesDate());
+
+        if (sale.getSalesType() == SalesType.CONSIGN_SALES) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "위탁정산으로 만들어진 매출은 삭제할 수 없습니다. 매출 취소(/sales/" + id
+                            + "/cancel)로 처리하세요 — 그래야 위탁 미결원장이 함께 되돌아갑니다.");
+        }
+
+        // ‼️지운 내용을 먼저 남긴다. 삭제 후에는 무엇을 지웠는지 이 기록에만 남는다.
+        statusHistoryService.record(StatusEntityType.SALE, sale.getId(), "deleted",
+                "false", "true", summarize(sale, reason));
+
+        // ‼️매출 삭제 표시를 **먼저** 확정한다. 재고 되돌리기가 원자적 UPDATE라
+        //   영속성 컨텍스트를 비우고, 그 뒤에 markDeleted 를 부르면 detached 엔티티에 걸려
+        //   조용히 아무 일도 안 일어난다(취소 쪽 주석과 같은 이유).
+        sale.markDeleted(currentAuditor.username());
+        saleRepository.flush();
+
+        inventoryService.softDeleteByRefNo(sale.getSalesNo(), currentAuditor.username());
+    }
+
+    /** 삭제 이력에 남길 요약 — 나중에 "무엇을 지웠나"에 답할 수 있어야 한다. */
+    private static String summarize(Sale sale, String reason) {
+        return "매출 삭제(" + sale.getSalesNo() + ") "
+                + sale.getPartner().getName() + " / " + sale.getProduct().getCode()
+                + " " + sale.getQty() + "부 / 공급가 " + sale.getSupplyAmount()
+                + " / 매출일 " + sale.getSalesDate()
+                + " — 사유: " + reason;
     }
 
     /**
