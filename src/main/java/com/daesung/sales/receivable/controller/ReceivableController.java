@@ -8,6 +8,7 @@ import com.daesung.sales.common.excel.ExcelExportUtil.Heading;
 import com.daesung.sales.common.response.ApiResponse;
 import com.daesung.sales.common.response.PageResponse;
 import com.daesung.sales.receivable.dto.ArLedgerResponse;
+import com.daesung.sales.product.entity.MajorCategory;
 import com.daesung.sales.receivable.dto.ArStatusResponse;
 import com.daesung.sales.receivable.dto.CarryforwardResult;
 import com.daesung.sales.receivable.dto.CollectionRequest;
@@ -21,6 +22,9 @@ import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
+import java.util.Map;
 import java.util.List;
 import lombok.RequiredArgsConstructor;
 import org.springdoc.core.annotations.ParameterObject;
@@ -213,13 +217,8 @@ public class ReceivableController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @RequestParam(required = false) Long partnerId) {
-        List<Col> cols = List.of(
-                new Col("거래처코드", "partnerCode"), new Col("거래처명", "partnerName"), new Col("이월", "opening"),
-                new Col("매출액", "saleAmount"), new Col("반품액", "returnAmount"), new Col("세액", "tax"),
-                new Col("채권발생", "receivableGen"), new Col("수금", "collected"), new Col("잔액", "balance"),
-                new Col("교사용수량", "teacherQty"), new Col("교사용(증정포함)", "teacherAmount"),
-                new Col("담보금액", "assureAmount"), new Col("담보비율", "assureRatio"), new Col("담보등급", "assureLevel"));
-        byte[] xlsx = excel.toXlsx("미수금현황", cols, receivableService.arStatus(fromDate, toDate, partnerId).rows(),
+        List<ArStatusResponse.Row> rows = receivableService.arStatus(fromDate, toDate, partnerId).rows();
+        byte[] xlsx = excel.toXlsx("미수금현황", arStatusCols(), arStatusRows(rows),
                 Heading.period("외상매출현황조회", fromDate, toDate));
         return excel.asDownload(xlsx, "미수금현황.xlsx");
     }
@@ -227,6 +226,103 @@ public class ReceivableController {
     @Operation(summary = "외상매출장 조회(24p, 거래처 상세)",
             description = "단일 거래처의 기초이월 + 기간 내 매출/교사용/반품/수금 **도서 단위 명세** + 일자별 누계. "
                     + "기간 미지정 시 올해 1/1~오늘.")
+    /**
+     * 외상매출현황 엑셀 컬럼. 근거: 재무팀 실파일 {@code 외상매출현황조회_20260630.xlsx}(24칸) —
+     * 거래처명·사장명·이월·매출수량/금액·세액 뒤에 <b>상품군별 수량·금액</b>이 붙고,
+     * 교사용·반품(상품군별 포함)·입금액·잔액으로 끝난다.
+     *
+     * <p>★<b>상품군 칸을 데이터에서 만들지 않는다.</b> 그 달에 안 팔린 상품군이 통째로 빠지면
+     * 달마다 컬럼 수가 달라져 재무팀이 파일을 겹쳐 볼 수 없다. 대분류 전체를 고정으로 깐다.
+     *
+     * <p>‼️실파일은 상품군 4칸(교재·모의고사·기타·특강)인데 우리 대분류는 5종이다
+     * (기타고사가 더 있다). <b>합치지 않고 5칸을 그대로 낸다</b> —
+     * 기타고사를 기타에 섞으면 어느 쪽 매출인지 파일에서 되찾을 수 없다.
+     * 4칸으로 맞출지는 발주처 확인 대상이다.
+     */
+    private static List<Col> arStatusCols() {
+        List<Col> cols = new ArrayList<>(List.of(
+                new Col("거래처코드", "partnerCode"), new Col("거래처명", "partnerName"),
+                new Col("사장명", "bossName"), new Col("이월", "opening"),
+                new Col("매출수량", "saleQty"), new Col("매출액", "saleAmount"), new Col("세액", "tax")));
+        for (MajorCategory c : arCategories()) {
+            cols.add(new Col("수량(" + c.label() + ")", "saleQty_" + c.name()));
+            cols.add(new Col("매출(" + c.label() + ")", "saleAmount_" + c.name()));
+        }
+        cols.add(new Col("교사용수량", "teacherQty"));
+        cols.add(new Col("교사용(증정포함)", "teacherAmount"));
+        cols.add(new Col("반품수량", "returnQty"));
+        for (MajorCategory c : arCategories()) {
+            cols.add(new Col("반품수량(" + c.label() + ")", "returnQty_" + c.name()));
+        }
+        cols.add(new Col("반품액", "returnAmount"));
+        for (MajorCategory c : arCategories()) {
+            cols.add(new Col("반품금액(" + c.label() + ")", "returnAmount_" + c.name()));
+        }
+        cols.addAll(List.of(
+                new Col("채권발생", "receivableGen"), new Col("수금", "collected"), new Col("잔액", "balance"),
+                new Col("담보금액", "assureAmount"), new Col("담보비율", "assureRatio"),
+                new Col("담보등급", "assureLevel")));
+        return cols;
+    }
+
+    /** 엑셀에 낼 상품군 — 화면에서 숨기는 IC는 뺀다(미사용 확정이라 늘 0이다). */
+    private static List<MajorCategory> arCategories() {
+        List<MajorCategory> out = new ArrayList<>();
+        for (MajorCategory c : MajorCategory.values()) {
+            if (c.visible()) {
+                out.add(c);
+            }
+        }
+        return out;
+    }
+
+    /**
+     * 행을 평탄화한다 — 상품군 분해가 리스트라 엑셀 컬럼(field 한 개)으로는 못 꺼낸다.
+     * 대분류를 못 붙인 매출(미분류)은 <b>컬럼이 없어 상품군 칸에는 안 나온다</b>.
+     * 다만 전체 매출수량·매출액에는 들어 있으므로, 상품군 합이 전체보다 작으면 미분류가 있다는 뜻이다.
+     */
+    private static List<Map<String, Object>> arStatusRows(List<ArStatusResponse.Row> rows) {
+        List<Map<String, Object>> out = new ArrayList<>();
+        for (ArStatusResponse.Row r : rows) {
+            Map<String, Object> m = new LinkedHashMap<>();
+            m.put("partnerCode", r.partnerCode());
+            m.put("partnerName", r.partnerName());
+            m.put("bossName", r.bossName());
+            m.put("opening", r.opening());
+            m.put("saleQty", r.saleQty());
+            m.put("saleAmount", r.saleAmount());
+            m.put("tax", r.tax());
+            m.put("teacherQty", r.teacherQty());
+            m.put("teacherAmount", r.teacherAmount());
+            m.put("returnQty", r.returnQty());
+            m.put("returnAmount", r.returnAmount());
+            m.put("receivableGen", r.receivableGen());
+            m.put("collected", r.collected());
+            m.put("balance", r.balance());
+            m.put("assureAmount", r.assureAmount());
+            m.put("assureRatio", r.assureRatio());
+            m.put("assureLevel", r.assureLevel());
+            for (MajorCategory c : arCategories()) {
+                m.put("saleQty_" + c.name(), 0L);
+                m.put("saleAmount_" + c.name(), 0L);
+                m.put("returnQty_" + c.name(), 0L);
+                m.put("returnAmount_" + c.name(), 0L);
+            }
+            for (ArStatusResponse.CategoryBreakdown c : r.byCategory()) {
+                if (c.majorCategory() == null) {
+                    continue;
+                }
+                String k = c.majorCategory().name();
+                m.put("saleQty_" + k, c.saleQty());
+                m.put("saleAmount_" + k, c.saleAmount());
+                m.put("returnQty_" + k, c.returnQty());
+                m.put("returnAmount_" + k, c.returnAmount());
+            }
+            out.add(m);
+        }
+        return out;
+    }
+
     @GetMapping("/ar-ledger")
     public ApiResponse<ArLedgerResponse> arLedger(
             @Parameter(description = "거래처 id", example = "1") @RequestParam Long partnerId,

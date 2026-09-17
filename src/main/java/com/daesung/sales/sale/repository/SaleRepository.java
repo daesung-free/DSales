@@ -341,7 +341,8 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
      * 24p 외상매출현황이 "이 거래처에 무가로 얼마가 나갔나"를 같이 보여 준다.
      * 채권 계산(receivableGen·balance)에는 절대 더하지 말 것.
      *
-     * 반환 Object[]: [partnerId, receivableGen, saleAmt, returnAmt, tax, teacherAmt, teacherQty].
+     * 반환 Object[]: [partnerId, receivableGen, saleAmt, returnAmt, tax, teacherAmt, teacherQty,
+     *                 saleQty, returnQty].
      */
     @Query(value = """
             SELECT s.partner_id,
@@ -350,7 +351,9 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
               COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN s.supply_amount ELSE 0 END),0) AS return_amt,
               COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN -s.tax ELSE s.tax END),0) AS tax_net,
               COALESCE(SUM(CASE WHEN s.sales_category='FREE' THEN s.supply_amount ELSE 0 END),0) AS teacher_amt,
-              COALESCE(SUM(CASE WHEN s.sales_category='FREE' THEN s.qty ELSE 0 END),0) AS teacher_qty
+              COALESCE(SUM(CASE WHEN s.sales_category='FREE' THEN s.qty ELSE 0 END),0) AS teacher_qty,
+              COALESCE(SUM(CASE WHEN s.sales_category='SALE' THEN s.qty ELSE 0 END),0) AS sale_qty,
+              COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN s.qty ELSE 0 END),0) AS return_qty
             FROM sales s
             WHERE s.canceled = false
               AND s.sales_date BETWEEN :fromDate AND :toDate
@@ -360,6 +363,39 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     List<Object[]> receivableByPartner(@Param("fromDate") LocalDate fromDate,
                                        @Param("toDate") LocalDate toDate,
                                        @Param("partnerId") Long partnerId);
+
+    /**
+     * 외상매출현황의 <b>상품군(대분류)별 분해</b>. 근거: 재무팀 실파일
+     * {@code 외상매출현황조회_20260630.xlsx} — 거래처 한 행이 24칸이고 그중 12칸이
+     * 상품군별 수량·금액이다(수량/매출 × 교재·모의고사·기타·특강, 반품수량·반품금액 × 교재·기타).
+     *
+     * <p>★<b>칸을 고정하지 않고 대분류별로 내려준다.</b> 실파일은 4칸인데 우리 대분류는
+     * 5종이다(모의고사·교재·기타고사·특강·기타). 기타고사를 기타에 합쳐 4칸으로 맞출 수도 있지만,
+     * 그건 <b>발주처가 정할 문제</b>다 — 여기서 조용히 합치면 기타고사 매출이 어느 칸에
+     * 섞여 들어갔는지 화면에서 알 수 없다. 대분류를 그대로 주고 묶는 건 화면에서 한다.
+     *
+     * <p>대분류가 없는 상품(세부구분 미지정)은 {@code ''}로 나온다 — 빼지 않는다.
+     * 빼면 상품군 합이 전체 매출과 안 맞고, 그러면 담당자는 어느 쪽이 틀렸는지 모른다.
+     *
+     * <p>반환 Object[]: [partnerId, majorCategory, saleQty, saleAmt, returnQty, returnAmt].
+     */
+    @Query(value = """
+            SELECT s.partner_id, COALESCE(d.major_category,'') AS major_category,
+              COALESCE(SUM(CASE WHEN s.sales_category='SALE' THEN s.qty ELSE 0 END),0) AS sale_qty,
+              COALESCE(SUM(CASE WHEN s.sales_category='SALE' THEN s.supply_amount ELSE 0 END),0) AS sale_amt,
+              COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN s.qty ELSE 0 END),0) AS return_qty,
+              COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN s.supply_amount ELSE 0 END),0) AS return_amt
+            FROM sales s
+              JOIN products p ON p.id = s.product_id
+              LEFT JOIN sales_divisions d ON d.code = p.sales_division
+            WHERE s.canceled = false
+              AND s.sales_date BETWEEN :fromDate AND :toDate
+              AND (CAST(:partnerId AS SIGNED) IS NULL OR s.partner_id = :partnerId)
+            GROUP BY s.partner_id, COALESCE(d.major_category,'')
+            """, nativeQuery = true)
+    List<Object[]> receivableByPartnerAndCategory(@Param("fromDate") LocalDate fromDate,
+                                                  @Param("toDate") LocalDate toDate,
+                                                  @Param("partnerId") Long partnerId);
 
     /**
      * 콘텐츠구분 순매출: 상품별 매출/무상/반품 집계 + 콘텐츠구분 + 상품분류. 취소 제외.

@@ -6,6 +6,7 @@ import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.common.response.PageResponse;
 import com.daesung.sales.partner.entity.Partner;
+import com.daesung.sales.product.entity.MajorCategory;
 import com.daesung.sales.partner.repository.PartnerRepository;
 import com.daesung.sales.receivable.dto.ArLedgerResponse;
 import com.daesung.sales.receivable.dto.ArStatusResponse;
@@ -28,6 +29,7 @@ import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.HashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -382,6 +384,8 @@ public class ReceivableService {
         Map<Long, Long> carry = toAmountMap(carryforwardRepository.sumByYear(to.getYear(), partnerId));
         Map<Long, long[]> sales = toSalesMap(saleRepository.receivableByPartner(from, to, partnerId));
         Map<Long, Long> coll = toAmountMap(collectionRepository.sumByPartner(from, to, partnerId));
+        Map<Long, List<ArStatusResponse.CategoryBreakdown>> byCat =
+                toCategoryMap(saleRepository.receivableByPartnerAndCategory(from, to, partnerId));
 
         Set<Long> ids = new LinkedHashSet<>();
         ids.addAll(carry.keySet());
@@ -393,13 +397,15 @@ public class ReceivableService {
 
         List<ArStatusResponse.Row> rows = new ArrayList<>();
         long tOpen = 0, tSale = 0, tRet = 0, tTax = 0, tGen = 0, tColl = 0, tBal = 0, tTeacher = 0, tTeacherQty = 0;
+        long tSaleQty = 0, tRetQty = 0;
         for (Long pid : ids) {
             Partner p = partners.get(pid);
             if (p == null) {
                 continue;
             }
             long opening = carry.getOrDefault(pid, 0L);
-            long[] s = sales.getOrDefault(pid, new long[6]); // [gen, saleAmt, returnAmt, tax, teacherAmt, teacherQty]
+            // [gen, saleAmt, returnAmt, tax, teacherAmt, teacherQty, saleQty, returnQty]
+            long[] s = sales.getOrDefault(pid, new long[8]);
             long collected = coll.getOrDefault(pid, 0L);
             long balance = opening + s[0] - collected;
 
@@ -410,16 +416,19 @@ public class ReceivableService {
                 ratio = Math.round((double) balance / assureAmount * 100 * 10) / 10.0;
                 level = ratio >= 100 ? "OVER" : ratio >= 70 ? "WARN" : ratio > 50 ? "WATCH" : "NORMAL";
             }
-            rows.add(new ArStatusResponse.Row(pid, p.getCode(), p.getName(),
-                    opening, s[1], s[2], s[3], s[0], collected, balance, s[4], s[5],
+            rows.add(new ArStatusResponse.Row(pid, p.getCode(), p.getName(), p.getBossName(),
+                    opening, s[6], s[1], s[7], s[2], s[3], s[0], collected, balance, s[4], s[5],
+                    byCat.getOrDefault(pid, List.of()),
                     assureAmount, ratio, p.getAssureExpiry(), p.getAssureNote(), level));
 
             tOpen += opening; tSale += s[1]; tRet += s[2]; tTax += s[3]; tGen += s[0];
             tColl += collected; tBal += balance; tTeacher += s[4]; tTeacherQty += s[5];
+            tSaleQty += s[6]; tRetQty += s[7];
         }
         rows.sort((a, b) -> a.partnerCode().compareTo(b.partnerCode()));
-        ArStatusResponse.Row total = new ArStatusResponse.Row(null, "합계", null,
-                tOpen, tSale, tRet, tTax, tGen, tColl, tBal, tTeacher, tTeacherQty,
+        ArStatusResponse.Row total = new ArStatusResponse.Row(null, "합계", null, null,
+                tOpen, tSaleQty, tSale, tRetQty, tRet, tTax, tGen, tColl, tBal, tTeacher, tTeacherQty,
+                sumCategories(byCat.values()),
                 null, null, null, null, null);
         return new ArStatusResponse(from, to, rows, total);
     }
@@ -595,10 +604,67 @@ public class ReceivableService {
     }
 
     /** receivableByPartner: [partnerId, gen, saleAmt, returnAmt, tax, teacherAmt, teacherQty] → Map<partnerId, long[..]>. */
+    /**
+     * 상품군(대분류)별 분해를 거래처별로 묶는다.
+     *
+     * <p>대분류 순서는 {@link MajorCategory} 선언순을 따른다 — 거래처마다 칸 순서가 달라지면
+     * 화면이 열마다 다른 상품군을 그린다. 대분류가 없는 상품은 {@code 미분류}로 <b>남긴다</b>
+     * (빼면 상품군 합이 전체 매출과 안 맞고, 그러면 어느 쪽이 틀렸는지 알 수 없다).
+     */
+    private static Map<Long, List<ArStatusResponse.CategoryBreakdown>> toCategoryMap(List<Object[]> rows) {
+        Map<Long, List<ArStatusResponse.CategoryBreakdown>> m = new LinkedHashMap<>();
+        for (Object[] r : rows) {
+            m.computeIfAbsent(num(r[0]), k -> new ArrayList<>()).add(breakdown(
+                    str(r[1]), num(r[2]), num(r[3]), num(r[4]), num(r[5])));
+        }
+        m.values().forEach(list -> list.sort(Comparator.comparingInt(ReceivableService::categoryOrder)));
+        return m;
+    }
+
+    /** 합계행의 상품군 칸 — 거래처별 분해를 대분류 단위로 합친다. */
+    private static List<ArStatusResponse.CategoryBreakdown> sumCategories(
+            java.util.Collection<List<ArStatusResponse.CategoryBreakdown>> all) {
+        Map<String, long[]> acc = new LinkedHashMap<>();
+        Map<String, MajorCategory> codes = new HashMap<>();
+        for (List<ArStatusResponse.CategoryBreakdown> list : all) {
+            for (ArStatusResponse.CategoryBreakdown c : list) {
+                long[] v = acc.computeIfAbsent(c.majorName(), k -> new long[4]);
+                v[0] += c.saleQty(); v[1] += c.saleAmount();
+                v[2] += c.returnQty(); v[3] += c.returnAmount();
+                codes.put(c.majorName(), c.majorCategory());
+            }
+        }
+        List<ArStatusResponse.CategoryBreakdown> out = new ArrayList<>();
+        acc.forEach((name, v) -> out.add(new ArStatusResponse.CategoryBreakdown(
+                codes.get(name), name, v[0], v[1], v[2], v[3])));
+        out.sort(Comparator.comparingInt(ReceivableService::categoryOrder));
+        return out;
+    }
+
+    private static ArStatusResponse.CategoryBreakdown breakdown(String rawCode, long saleQty,
+                                                               long saleAmt, long retQty, long retAmt) {
+        MajorCategory code = null;
+        if (rawCode != null && !rawCode.isBlank()) {
+            try {
+                code = MajorCategory.valueOf(rawCode);
+            } catch (IllegalArgumentException ignored) {
+                code = null;   // 우리가 모르는 값이 DB에 있어도 행을 버리지 않는다(합이 어긋난다)
+            }
+        }
+        String name = (code != null) ? code.label() : "미분류";
+        return new ArStatusResponse.CategoryBreakdown(code, name, saleQty, saleAmt, retQty, retAmt);
+    }
+
+    /** 미분류는 항상 맨 뒤. 그 외는 enum 선언순. */
+    private static int categoryOrder(ArStatusResponse.CategoryBreakdown c) {
+        return (c.majorCategory() == null) ? Integer.MAX_VALUE : c.majorCategory().ordinal();
+    }
+
     private static Map<Long, long[]> toSalesMap(List<Object[]> rows) {
         Map<Long, long[]> m = new HashMap<>();
         for (Object[] r : rows) {
-            m.put(num(r[0]), new long[]{num(r[1]), num(r[2]), num(r[3]), num(r[4]), num(r[5]), num(r[6])});
+            m.put(num(r[0]), new long[]{num(r[1]), num(r[2]), num(r[3]), num(r[4]), num(r[5]),
+                    num(r[6]), num(r[7]), num(r[8])});
         }
         return m;
     }
