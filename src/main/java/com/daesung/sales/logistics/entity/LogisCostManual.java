@@ -158,6 +158,8 @@ public class LogisCostManual extends SoftDeletableEntity {
         long total = paperAmount + omrAmount + etcAmount + basicAmount + tradeAmount;
         return new LogisCostDetailRow(reqDate, reqCd, productCode, productName, grade,
                 dtlCd, detailName, partnerCode, partnerName,
+                // 수기 등록분엔 지역·도시명·학교명이 없다 — 담당자가 금액만 적는 화면이다.
+                null, null, null,
                 materialQty, paperQty, paperAmount, omrQty, omrAmount, etcQty, etcAmount,
                 inwon, basicAmount, tradeAmount, total, applyGn, false, true);
     }

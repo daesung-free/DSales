@@ -195,6 +195,9 @@ public class LogisCostDetailService {
         private String detailName;
         private String partnerCode;
         private String partnerName;
+        private String region;
+        private String cityName;
+        private String schoolName;
         private long materialQty;
         private long paperQty;
         private long paperAmount;
@@ -217,6 +220,9 @@ public class LogisCostDetailService {
             this.detailName = r.detailName();
             this.partnerCode = r.partnerCode();
             this.partnerName = r.partnerName();
+            this.region = r.region();
+            this.cityName = r.cityName();
+            this.schoolName = r.schoolName();
         }
 
         private Acc() {
@@ -265,6 +271,7 @@ public class LogisCostDetailService {
                     detail ? productCode : null, detail ? productName : null,
                     detail ? grade : null, detail ? dtlCd : null, detail ? detailName : null,
                     detail ? partnerCode : null, detail ? partnerName : null,
+                    detail ? region : null, detail ? cityName : null, detail ? schoolName : null,
                     materialQty, paperQty, paperAmount, omrQty, omrAmount, etcQty, etcAmount,
                     inwon, basicAmount, tradeAmount, totalAmount);
         }

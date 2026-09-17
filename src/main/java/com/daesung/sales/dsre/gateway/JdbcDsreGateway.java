@@ -133,7 +133,13 @@ public class JdbcDsreGateway implements DsreGateway {
     //   서로 다른 거래처가 한 덩어리로 뭉친다. 이름은 못 붙여도 코드로는 갈라져야 한다.
     private static final String OUT_DETAIL_SQL = """
             SELECT req.REQ_DATE, req.REQ_CD, pi.PROD_CD, pi.PROD_NM,
-                   pd.GRADE, req.DTL_CD, pd.DTL_NM, req.CUST_CD, cu.CUST_NM,
+                   pd.GRADE, req.DTL_CD, pd.DTL_NM, req.CUST_CD,
+              -- ★거래처명은 CUST_NM(상호)이 아니라 CUST_FNM(지사 풀네임)이다.
+              --   레거시 물류비계산2.vb 가 `max(CUST_FNM) AS '거래처명'` 으로 쓴다. 우리가 상호를
+              --   쓰고 있어 화면에 짧은 이름이 나갔다(2026-09-17 레거시 대조로 발견).
+                   cu.CUST_FNM,
+              -- 지역=특약지역명(거래처의 관할), 도시명=도시지역명. 레거시가 이 둘을 나눠 보여 준다.
+                   cu.CITY_NM, city.CITY_NM AS city_nm, sch.SCH_NM,
               COALESCE(SUM(lc.REQCNT),0) mat_qty,
               COALESCE(SUM(CASE WHEN c.NAME NOT IN ('OMR','단행본','책자','라벨') THEN lc.REQCNT ELSE 0 END),0) paper_qty,
               COALESCE(SUM(CASE WHEN c.NAME NOT IN ('OMR','단행본','책자','라벨') THEN lc.REQCNT*cost.PAPER ELSE 0 END),0) paper_amt,
@@ -155,9 +161,16 @@ public class JdbcDsreGateway implements DsreGateway {
               JOIN tbl_product_dtl pd ON pd.DTL_CD=req.DTL_CD
               JOIN tbl_product_info pi ON pi.PROD_CD=pd.PROD_CD
               LEFT JOIN tbl_cust_info cu ON cu.CUST_CD=req.CUST_CD
+              LEFT JOIN tbl_city_info city ON city.CITY_CD=cu.CITY_CD
+              -- ‼️레거시는 학교를 **내부 조인**으로 걸어 학교가 없으면 행이 통째로 사라진다.
+              --   우리 복제본은 학교·학원 매칭이 5%뿐이라 그대로 베끼면 95%가 증발한다 → LEFT JOIN.
+              LEFT JOIN (SELECT MGR_CD, SCH_NM FROM tbl_school_info
+                         UNION ALL
+                         SELECT MGR_CD, HAK_NM FROM tbl_hakwon_info) sch ON sch.MGR_CD=req.MGR_CD
             WHERE lc.RES_GN='R' AND req.REQ_DATE BETWEEN ? AND ?
             GROUP BY req.REQ_DATE, req.REQ_CD, pi.PROD_CD, pi.PROD_NM,
-                     pd.GRADE, req.DTL_CD, pd.DTL_NM, req.CUST_CD, cu.CUST_NM
+                     pd.GRADE, req.DTL_CD, pd.DTL_NM, req.CUST_CD, cu.CUST_FNM,
+                     cu.CITY_NM, city.CITY_NM, sch.SCH_NM
             ORDER BY pi.PROD_CD, pd.GRADE DESC, req.DTL_CD DESC, req.CUST_CD, req.REQ_DATE
             """;
 
@@ -173,7 +186,8 @@ public class JdbcDsreGateway implements DsreGateway {
                     parseYmd(rs.getString("REQ_DATE")), rs.getInt("REQ_CD"),
                     rs.getString("PROD_CD"), rs.getString("PROD_NM"),
                     rs.getString("GRADE"), rs.getInt("DTL_CD"), rs.getString("DTL_NM"),
-                    rs.getString("CUST_CD"), rs.getString("CUST_NM"),
+                    rs.getString("CUST_CD"), rs.getString("CUST_FNM"),
+                    rs.getString("CITY_NM"), rs.getString("city_nm"), rs.getString("SCH_NM"),
                     rs.getLong("mat_qty"),
                     rs.getLong("paper_qty"), rs.getLong("paper_amt"),
                     rs.getLong("omr_qty"), rs.getLong("omr_amt"),

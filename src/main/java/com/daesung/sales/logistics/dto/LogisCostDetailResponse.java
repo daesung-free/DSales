@@ -51,6 +51,10 @@ public record LogisCostDetailResponse(
             @Schema(description = "시행명") String detailName,
             @Schema(description = "거래처코드") String partnerCode,
             @Schema(description = "거래처명") String partnerName,
+            @Schema(description = "지역(거래처 관할명). 레거시 '특약지역명'") String region,
+            @Schema(description = "도시명. 레거시 '도시지역명'") String cityName,
+            @Schema(description = "학교·학원명. 못 찾으면 null") String schoolName,
+
             @Schema(description = "자재 합") long materialQty,
             @Schema(description = "시험지 합") long paperQty,
             @Schema(description = "시험지 금액") long paperAmount,

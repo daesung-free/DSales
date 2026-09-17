@@ -25,7 +25,21 @@ public record LogisCostDetailRow(
         @Schema(description = "시행코드(DTL_CD)") int dtlCd,
         @Schema(description = "시행명") String detailName,
         @Schema(description = "거래처코드") String partnerCode,
-        @Schema(description = "거래처명") String partnerName,
+        @Schema(description = "거래처명 — **지사 풀네임**(CUST_FNM). 상호(CUST_NM)가 아니다 — 레거시가 풀네임을 쓴다") String partnerName,
+        @Schema(description = """
+                지역 — 거래처의 **관할명**(DSRE `tbl_cust_info.CITY_NM`).
+                레거시 물류비계산2.vb 가 `특약지역명`으로 부르던 값이다.
+                ⚠️일부 법인은 여기에 브랜드·그룹명이 들어 있다(DSRE 원본 그대로, 우리가 보정하지 않는다).""")
+        String region,
+
+        @Schema(description = "도시명 — `tbl_city_info.CITY_NM`(거래처의 CITY_CD 기준). 레거시 `도시지역명`.")
+        String cityName,
+
+        @Schema(description = """
+                학교·학원명 — `tbl_school_info` ∪ `tbl_hakwon_info` 를 MGR_CD로 찾은 값.
+                ‼️못 찾으면 null이다(레거시는 내부 조인이라 행이 사라졌는데, 우리는 행을 남긴다).""")
+        String schoolName,
+
         @Schema(description = "자재 합(수량)") long materialQty,
         @Schema(description = "시험지 합(수량)") long paperQty,
         @Schema(description = "시험지 금액") long paperAmount,

@@ -147,6 +147,8 @@ public class LogisCostSnapshot {
     public LogisCostDetailRow toRow() {
         return new LogisCostDetailRow(reqDate, reqCd, productCode, productName, grade,
                 dtlCd, detailName, partnerCode, partnerName,
+                // 지역·도시명·학교명은 스냅샷에 안 담겨 있다(집계 시점 값이라 굳이 얼리지 않았다).
+                null, null, null,
                 materialQty, paperQty, paperAmount, omrQty, omrAmount, etcQty, etcAmount,
                 inwon, basicAmount, tradeAmount, totalAmount, applyGn, canceled, false);
     }
