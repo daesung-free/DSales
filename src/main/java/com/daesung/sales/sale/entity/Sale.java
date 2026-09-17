@@ -141,6 +141,21 @@ public class Sale extends BaseEntity {
     @Column(name = "pack_type", length = 20)
     private PackType packType;
 
+    /**
+     * 무상 세부구분(학생용/교사용/M+/IC+). 레거시 {@code salesData.part}.
+     *
+     * <p>★출고유형(shipmentType)과 <b>다른 축</b>이다. 출고유형은 "무상이냐 매출이냐"를,
+     * 이건 "그 무상이 누구 몫이냐"를 가른다. 제품수불부 무상 4칸이 이 값으로 갈린다.
+     * 무상이 아닌 건에는 보통 비어 있다.
+     */
+    @Column(name = "part", length = 30)
+    private String part;
+
+    /** 무상 세부구분 지정. 등록·업로드에서 호출. */
+    public void applyPart(String part) {
+        this.part = part;
+    }
+
     @Column(name = "book_round")
     private Integer bookRound;
 

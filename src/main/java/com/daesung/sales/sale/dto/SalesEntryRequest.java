@@ -76,6 +76,14 @@ public record SalesEntryRequest(
                     + "INDIVIDUAL_1(개별1·개별봉투)/INDIVIDUAL_2(개별2·개별봉투SET)/CLASS_BUNDLE(반별)",
                     example = "INDIVIDUAL_1")
             PackType packType,
+            @Schema(description = """
+                    무상 세부구분 — `학생용` / `교사용` / `M+` / `IC+`. 미지정 가능.
+                    ★출고유형과 다른 축이다. 출고유형이 "무상이냐"를, 이 값이 "누구 몫이냐"를 가른다.
+                    제품수불부 무상 4칸(IC학생용·IC·M+·기타)이 이 값으로 갈린다.
+                    ‼️모르는 값은 400 — 조용히 받으면 표기가 갈려 집계가 쪼개진다.""",
+                    example = "학생용")
+            String part,
+
 
             @Schema(description = "비고", example = "6월 정상 매출")
             String memo

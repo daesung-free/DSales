@@ -147,7 +147,10 @@ public class InventoryController {
                 new Col("도서코드", "productCode"), new Col("도서명", "productName"), new Col("창고", "warehouseName"),
                 new Col("이월", "opening"), new Col("입고", "inbound"), new Col("이고", "transfer"),
                 new Col("조립해체", "bom"), new Col("폐기", "dispose"), new Col("매출", "sale"),
-                new Col("무상", "free"), new Col("교사용", "teacher"), new Col("반품", "salesReturn"),
+                new Col("무상", "free"), new Col("교사용", "teacher"),
+                new Col("└IC학생용", "freeIcStudent"), new Col("└IC", "freeIc"),
+                new Col("└M+", "freeMplus"), new Col("└기타", "freeEtc"),
+                new Col("반품", "salesReturn"),
                 new Col("조정", "adjust"), new Col("순매출수량", "netSaleQty"),
                 new Col("현재재고", "closing"));
         byte[] xlsx = excel.toXlsx("제품수불부", cols,
