@@ -37,4 +37,17 @@ public interface InventoryRepository extends JpaRepository<Inventory, Long> {
     @org.springframework.data.jpa.repository.Query(
             "select coalesce(sum(i.qty), 0) from Inventory i where i.warehouse.id = :warehouseId")
     int totalQtyByWarehouse(@org.springframework.data.repository.query.Param("warehouseId") Long warehouseId);
+
+    /**
+     * 창고별 재고 수량 합계(19p 상세 대시보드 '창고별 재고 수량').
+     *
+     * <p>‼️<b>사용 중인 창고만</b> 낸다 — 쓰지 않기로 한 창고가 도넛에 남으면
+     * 담당자는 그 창고에 아직 물건이 있다고 읽는다.
+     *
+     * <p>반환 Object[]: [warehouseId, name, type, qty].
+     */
+    @Query("select w.id, w.name, w.type, coalesce(sum(i.qty), 0) "
+            + "from Inventory i join i.warehouse w where w.useYn = true "
+            + "group by w.id, w.name, w.type order by w.id")
+    java.util.List<Object[]> stockQtyByWarehouse();
 }

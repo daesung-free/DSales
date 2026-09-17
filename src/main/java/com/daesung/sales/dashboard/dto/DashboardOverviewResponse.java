@@ -20,7 +20,20 @@ public record DashboardOverviewResponse(
         @Schema(description = "제품별 목표대비(당해 누적, 목표 등록분만)") List<ProductTarget> productTargets,
         @Schema(description = "월별 누적 트렌드(1~12월)") List<TrendPoint> monthlyTrend,
         @Schema(description = "거래처별 비중(당해 누적, 비중 큰 순)") List<Share> partnerShares,
-        @Schema(description = "순매출 TOP5(당해 누적)") List<Share> topProducts
+        @Schema(description = "순매출 TOP5(당해 누적)") List<Share> topProducts,
+
+        @Schema(description = """
+                출고유형별 순매출(19p 상세 대시보드). 정상출고·위탁출고·증정용·교사용·반품·취소.
+                ★키는 enum 이름, `name`은 한글 표기다 — 화면이 라벨을 다시 만들지 않아도 된다.""")
+        List<Share> shipTypeShares,
+
+        @Schema(description = """
+                지역별 순매출(19p). 축은 **거래처의 지역**이다(매출에는 지역 컬럼이 없다).
+                ‼️지역이 비어 있는 거래처의 매출은 이 축에서 빠진다 — 합이 총매출과 다를 수 있다.""")
+        List<Share> regionShares,
+
+        @Schema(description = "창고별 재고 수량(19p '창고별 재고 수량 · 물류/위탁'). 사용 중인 창고만.")
+        List<WarehouseStock> warehouseStocks
 ) {
     @Schema(name = "DashboardKpi")
     public record Kpi(
@@ -62,6 +75,18 @@ public record DashboardOverviewResponse(
             @Schema(description = "표시명") String name,
             @Schema(description = "순매출") long netSales,
             @Schema(description = "비중 %(전체 대비). 전체가 0이면 null") Double sharePct
+    ) {
+    }
+
+    @Schema(name = "DashboardWarehouseStock", description = "창고별 재고 수량")
+    public record WarehouseStock(
+            @Schema(description = "창고 id") Long warehouseId,
+            @Schema(description = "창고명") String name,
+            @Schema(description = "창고구분 MAIN(물류)/CONSIGN(위탁)") String type,
+            @Schema(description = """
+                    재고 수량(부). ★금액이 아니라 **수량**이다 — 그래서 Share를 쓰지 않는다.
+                    같은 그릇에 담으면 언젠가 금액으로 더해진다.""")
+            long qty
     ) {
     }
 }

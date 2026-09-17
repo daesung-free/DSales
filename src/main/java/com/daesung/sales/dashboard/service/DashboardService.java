@@ -31,6 +31,7 @@ public class DashboardService {
     private final SalesTargetRepository targetRepository;
     private final SaleRepository saleRepository;
     private final DashboardSnapshotRepository snapshotRepository;
+    private final com.daesung.sales.inventory.repository.InventoryRepository inventoryRepository;
 
     /** 매출목표 등록/수정(같은 연·월·대상·종류면 금액 갱신). */
     @Transactional
@@ -190,9 +191,17 @@ public class DashboardService {
                 (top == null) ? null : top.sharePct(),
                 dealerMonth);
 
+        // 출고유형·지역은 같은 breakdown에서 접는다(축마다 쿼리를 새로 파지 않는다).
+        List<DashboardOverviewResponse.Share> shipTypes = fold(breakdown, 7, 7).stream()
+                .map(x -> new DashboardOverviewResponse.Share(
+                        x.key(), shipTypeLabel(x.key()), x.netSales(), x.sharePct()))
+                .toList();
+        List<DashboardOverviewResponse.Share> regions = fold(breakdown, 8, 8);
+
         return new DashboardOverviewResponse(year, month, kpi,
                 productTargets(year, products), trend,
-                partners, products.stream().limit(5).toList());
+                partners, products.stream().limit(5).toList(),
+                shipTypes, regions, warehouseStocks());
     }
 
     /** 거래처구분 '특약점'. 정본 19p KPI "특약점 당월매출". */
@@ -342,5 +351,28 @@ public class DashboardService {
     /** 전년비 성장률 = (실적−전년)/전년 ×100(소수1). 전년 0이면 null. */
     private static Double growth(long actual, long prev) {
         return (prev == 0) ? null : Math.round((double) (actual - prev) / prev * 100 * 10) / 10.0;
+    }
+
+    /** 출고유형 enum 이름 → 한글 표기. 화면이 라벨을 다시 만들지 않게 서버가 붙여 준다. */
+    private static String shipTypeLabel(String code) {
+        return switch (code) {
+            case "NORMAL_SHIP" -> "정상출고";
+            case "CONSIGN_SHIP" -> "위탁출고";
+            case "GIFT" -> "증정용";
+            case "TEACHER_USE" -> "교사용";
+            case "RETURN" -> "반품";
+            case "CANCEL" -> "취소";
+            default -> code;
+        };
+    }
+
+    /** 창고별 재고 수량. 사용 중인 창고만(쓰지 않는 창고가 도넛에 남으면 물건이 있는 줄 안다). */
+    private List<DashboardOverviewResponse.WarehouseStock> warehouseStocks() {
+        List<DashboardOverviewResponse.WarehouseStock> out = new ArrayList<>();
+        for (Object[] r : inventoryRepository.stockQtyByWarehouse()) {
+            out.add(new DashboardOverviewResponse.WarehouseStock(
+                    num(r[0]), str(r[1]), String.valueOf(r[2]), num(r[3])));
+        }
+        return out;
     }
 }
