@@ -21,7 +21,14 @@ public record InboundRequest(
         @Schema(description = "도착 창고 id", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotNull Long destinationWarehouseId,
 
-        @Schema(description = "입고구분: NORMAL(정상입고)/PURCHASE(매입입고, 외부콘텐츠 매입 — 16p 순매출조회 매입액에 반영). 미지정 시 NORMAL",
+        @Schema(description = """
+                입고구분. 미지정 시 NORMAL.
+                · `NORMAL` 정상입고(인쇄소 등 자체 제작·조달)
+                · `PURCHASE` 매입입고 — **16p 순매출조회 매입액에 반영**
+                · `RETURN` 반품입고 — 거래처에서 되돌아온 물량. **매입액에는 안 들어간다**
+                  (반품으로 들어온 건 사 온 게 아니다).
+                  ‼️매출 반품 라인까지 함께 만들려면 `POST /sales/return-inbound`를 쓴다 —
+                  여기서는 재고만 늘고 매출은 건드리지 않는다.""",
                 example = "NORMAL")
         InboundType inboundType,
 

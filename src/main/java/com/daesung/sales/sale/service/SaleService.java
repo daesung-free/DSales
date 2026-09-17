@@ -78,9 +78,12 @@ public class SaleService {
         Partner partner = partnerRepository.findById(req.partnerId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                         "거래처가 없습니다. id=" + req.partnerId()));
-        Warehouse warehouse = warehouseRepository.findById(req.warehouseId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
-                        "물류창고가 없습니다. id=" + req.warehouseId()));
+        // ★창고는 선택이다 — '미출고 매출'(문항사용료·학원매출 등)은 실물이 안 나간다.
+        //   재고를 건드리지 않고 매출만 세우며, 거래명세서·물류 작업으로도 안 넘어간다.
+        Warehouse warehouse = (req.warehouseId() == null) ? null
+                : warehouseRepository.findById(req.warehouseId())
+                        .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                                "물류창고가 없습니다. id=" + req.warehouseId()));
 
         // 1단계: 라인 해석(상품·회계구분·정가·공급률 자동적용). 저장 전에 전 라인을 확정해야
         //        반품 범위검증을 요청 단위로(순서 무관) 판정할 수 있다.
@@ -88,6 +91,7 @@ public class SaleService {
         for (SalesEntryRequest.Item item : req.items()) {
             resolved.add(resolve(item, partner));
         }
+        assertWarehouseWhenStockMoves(req, warehouse);
         List<SalesEntryResponse.Warning> warnings = collectReturnWarnings(partner.getId(), resolved);
 
         // 2단계: 저장 + 재고 반영.
@@ -120,7 +124,7 @@ public class SaleService {
             // 재고 미관리 상품(모의고사 등 인원기반)은 차감·이벤트 없음. shipmentType 유효성은 항상 검사.
             int delta = stockDelta(item.shipmentType(), item.qty());
             int stockBalance = 0;
-            if (product.isStockManaged()) {
+            if (warehouse != null && product.isStockManaged()) {
                 TxnType txnType = (delta >= 0) ? TxnType.RETURN : TxnType.OUTBOUND;
                 stockBalance = inventoryService.applyShipment(product, warehouse, delta, txnType,
                         item.shipmentType(), req.salesDate(), salesNo, item.memo());
@@ -128,7 +132,9 @@ public class SaleService {
 
             // 물류 작업 단위(발송 건) 확보 — 레거시도 매출등록 시점에 sendData를 만든다(UC_TabPages.vb:752).
             // 반품은 들어오는 물건이라 내보낼 작업이 없다.
-            if (r.salesCategory() != SalesCategory.RETURN) {
+            // ★미출고 매출(창고 없음)도 만들지 않는다 — 내보낼 물건이 없는데 작업지시가 서면
+            //   물류 대기목록에 영원히 안 끝나는 건이 쌓인다(정본 13p "거래명세서·물류 연계 제외").
+            if (r.salesCategory() != SalesCategory.RETURN && warehouse != null) {
                 shipmentService.ensureFor(sale);
             }
 
@@ -376,6 +382,31 @@ public class SaleService {
                 .filter(r -> r.returnableQty() != 0)
                 .toList();
         return new ReturnableResponse(partnerId, rows);
+    }
+
+    /**
+     * 재고가 움직이는 거래에는 창고가 있어야 한다.
+     *
+     * <p>창고를 선택으로 연 것은 <b>미출고 매출</b>(문항사용료·학원매출 등) 때문이다 —
+     * 실물이 안 나가는 매출이라 창고가 없는 게 맞다.
+     * 그런데 정상출고·증정·교사용·반품은 재고가 실제로 움직인다. 창고 없이 받으면
+     * <b>재고를 조용히 안 건드리고 매출만 서서</b> 장부가 갈라진다.
+     *
+     * <p>★재고관리 상품인지까지 본다 — 모의고사처럼 재고를 안 세는 상품만 있는 요청이라면
+     * 창고가 없어도 어긋날 게 없다.
+     */
+    private void assertWarehouseWhenStockMoves(SalesEntryRequest req, Warehouse warehouse) {
+        if (warehouse != null) {
+            return;
+        }
+        for (SalesEntryRequest.Item item : req.items()) {
+            Product p = productRepository.findById(item.productId()).orElse(null);
+            if (p != null && p.isStockManaged()) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT,
+                        "재고가 움직이는 매출은 창고를 지정해야 합니다. 출고 없는 매출(문항사용료 등)만 "
+                        + "창고를 비울 수 있습니다. 상품=" + p.getCode());
+            }
+        }
     }
 
     /** 출고유형별 물류재고 증감 부호. 정상출고/증정/교사용=−차감, 반품=+복구. 위탁·취소는 이 API 불가. */

@@ -21,9 +21,18 @@ public record SalesEntryRequest(
         @Schema(description = "거래처 id", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotNull Long partnerId,
 
-        @Schema(description = "출고 물류창고 id(정상출고=−차감 / 반품=+복구)", example = "1",
-                requiredMode = Schema.RequiredMode.REQUIRED)
-        @NotNull Long warehouseId,
+        @Schema(description = """
+                출고 물류창고 id(정상출고=−차감 / 반품=+복구).
+
+                <p>★<b>비워 둘 수 있다 — '미출고 매출'이다.</b> 문항사용료·학원매출처럼
+                **실제 출고가 일어나지 않는 매출**은 창고가 없다(정본 13p 필요기능).
+                이 경우 재고를 건드리지 않고 매출만 선다.
+                ‼️거래명세서·물류 작업으로도 연계되지 않는다 — 내보낼 물건이 없기 때문이다.
+
+                <p>‼️<b>반품·정상출고는 창고가 필요하다.</b> 재고가 움직이는 거래라
+                어느 창고인지 없으면 어디서 빼고 어디로 넣을지 알 수 없다 → 미지정 시 400.""",
+                example = "1")
+        Long warehouseId,
 
         @Schema(description = "매출 품목 목록", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotEmpty @Valid List<Item> items
