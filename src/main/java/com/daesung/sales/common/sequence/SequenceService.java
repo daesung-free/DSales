@@ -22,6 +22,9 @@ public class SequenceService {
     public static final String SEQ_COLLECTION = "seq_collection_no";
     public static final String SEQ_STOCKTAKE = "seq_stocktake_no";
 
+    /** IN: 입고번호. ‼️예전엔 입고에 전표번호가 없어 "무엇을 되돌릴지" 특정할 수 없었다(취소 신설 시 추가). */
+    public static final String SEQ_INBOUND = "seq_inbound_no";
+
     private final SequenceRepository repository;
 
     /** 다음 순번(원자적). */

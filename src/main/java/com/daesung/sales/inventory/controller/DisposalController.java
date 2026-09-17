@@ -1,5 +1,6 @@
 package com.daesung.sales.inventory.controller;
 
+import org.springframework.web.bind.annotation.PathVariable;
 import com.daesung.sales.common.response.ApiResponse;
 import com.daesung.sales.inventory.dto.DisposalRequest;
 import com.daesung.sales.inventory.dto.DisposalResponse;
@@ -94,4 +95,20 @@ public class DisposalController {
                 MultiSelect.merge(productId, productIds),
                 MultiSelect.merge(warehouseId, warehouseIds)));
     }
+    @Operation(summary = "폐기 취소(역분개)",
+            description = """
+                    폐기 전표를 통째로 되돌린다. **물리 삭제가 아니다** —
+                    반대 부호 이벤트를 새로 적어 상쇄하고 취소 이력을 남긴다.
+                    재고는 이벤트 로그가 유일 진실이라, 지우면 "언제 왜 되돌렸나"가 사라진다.
+
+                    · 같은 전표를 두 번 취소하면 재고가 반대로 밀린다 → **두 번째는 400**.
+                    · **마감된 달은 막는다**(PERIOD_LOCKED) — 되돌리면 그 달 숫자가 바뀐다.
+                    · `reversed`가 0일 수 있다. 재고 미관리 상품만 있던 전표라는 뜻이고 오류가 아니다.""")
+    @PostMapping("/{refNo}/cancel")
+    public ApiResponse<com.daesung.sales.inventory.dto.VoucherCancelResponse> cancel(
+            @Parameter(description = "전표번호", required = true) @PathVariable String refNo,
+            @Parameter(description = "취소 사유") @RequestParam(required = false) String reason) {
+        return ApiResponse.success(inventoryService.cancelVoucher(refNo, reason));
+    }
+
 }

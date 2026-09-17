@@ -7,6 +7,10 @@ import java.util.List;
 /** 입고 결과. 품목별 입고수량 + 갱신된 현재 잔량. */
 public record InboundResponse(
 
+        @Schema(description = "입고 전표번호(IN-yyyyMMdd-n). 취소할 때 이 번호로 지정한다",
+                example = "IN-20260917-1")
+        String inboundNo,
+
         @Schema(description = "도착 창고 id", example = "1")
         Long warehouseId,
 

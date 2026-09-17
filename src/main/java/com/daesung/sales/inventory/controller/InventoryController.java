@@ -1,5 +1,6 @@
 package com.daesung.sales.inventory.controller;
 
+import org.springframework.web.bind.annotation.PathVariable;
 import com.daesung.sales.common.excel.ExcelExportUtil;
 import com.daesung.sales.common.excel.ExcelExportUtil.Col;
 import com.daesung.sales.common.excel.ExcelExportUtil.Heading;
@@ -304,4 +305,19 @@ public class InventoryController {
                 Heading.period("세트 조립·해체 현황", fromDate, toDate));
         return excel.asDownload(xlsx, "세트_조립해체현황.xlsx");
     }
+    @Operation(summary = "입고 취소(역분개)",
+            description = """
+                    입고 전표를 통째로 되돌린다. **물리 삭제가 아니다** —
+                    반대 부호 이벤트를 새로 적어 상쇄하고 취소 이력을 남긴다.
+
+                    · 같은 전표를 두 번 취소하면 재고가 반대로 밀린다 → **두 번째는 400**.
+                    · **마감된 달은 막는다**(PERIOD_LOCKED).
+                    · ‼️입고는 예전에 전표번호가 없었다. 지금은 등록 응답의 `inboundNo`(IN-…)를 쓴다.""")
+    @PostMapping("/inbound/{refNo}/cancel")
+    public ApiResponse<com.daesung.sales.inventory.dto.VoucherCancelResponse> cancelInbound(
+            @Parameter(description = "입고 전표번호(IN-…)", required = true) @PathVariable String refNo,
+            @Parameter(description = "취소 사유") @RequestParam(required = false) String reason) {
+        return ApiResponse.success(inventoryService.cancelVoucher(refNo, reason));
+    }
+
 }

@@ -42,6 +42,11 @@ public record SaleResponse(
         SalesType salesType,
         ShipmentType shipmentType,
         @Schema(description = """
+                출고유형 명칭(정상출고/위탁출고/증정용/교사용/반품/취소).
+                ★코드(enum)와 한글을 <b>둘 다</b> 준다 — 화면마다 라벨표를 만들면 언젠가 갈린다.
+                실제로 엑셀에 `NORMAL_SHIP`이 그대로 찍히고 있었다(2026-09-17 지적).""")
+        String shipmentTypeName,
+        @Schema(description = """
                 거래분류 코드(표준 4축 중 첫째). 매출 원장에서는 SALES/FREE/RETURN만 나온다 —
                 INBOUND(입고)·DISPOSE(폐기)는 재고 원장의 거래다.
                 **구분(상세)에서 파생**되며 따로 저장하지 않는다(두 값이 어긋날 여지를 두지 않는다).""")
@@ -81,6 +86,7 @@ public record SaleResponse(
                 major, (major == null) ? null : major.label(),
                 s.getProduct().getId(), s.getProduct().getCode(), s.getProduct().getName(), s.getBookRound(),
                 s.getSalesType(), s.getShipmentType(),
+                ShipmentType.labelOf(s.getShipmentType()),
                 TradeClass.of(s.getSalesCategory()),
                 (s.getSalesCategory() == null) ? null : TradeClass.of(s.getSalesCategory()).label(),
                 s.getSalesCategory(),

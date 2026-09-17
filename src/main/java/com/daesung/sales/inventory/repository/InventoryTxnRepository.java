@@ -101,6 +101,16 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
             + " where t.refNo = :refNo and t.shipmentType is not null")
     List<InventoryTxn> findShipmentsByRefNo(String refNo);
 
+    /**
+     * 특정 전표(refNo)의 <b>모든</b> 재고 이벤트. 폐기·입고 취소 역분개용.
+     *
+     * <p>{@link #findShipmentsByRefNo}와 달리 {@code shipmentType} 조건이 없다 —
+     * 폐기(DISPOSE)·입고(INBOUND)에는 출고유형이 없기 때문이다.
+     */
+    @Query("select t from InventoryTxn t join fetch t.product join fetch t.warehouse"
+            + " where t.refNo = :refNo")
+    List<InventoryTxn> findAllByRefNo(String refNo);
+
     /** 이고 도착다리 조회(위탁 반품 역-자동이고용). sourceTxn=출발다리인 도착 이벤트 → 위탁창고. */
     @Query("select t from InventoryTxn t join fetch t.warehouse where t.sourceTxn.id = :sourceTxnId")
     java.util.Optional<InventoryTxn> findBySourceTxnId(Long sourceTxnId);

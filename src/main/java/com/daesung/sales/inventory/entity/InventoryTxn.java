@@ -84,6 +84,14 @@ public class InventoryTxn extends BaseEntity {
 
     /** 일반 입고 이벤트. qty는 양수. inboundType: NORMAL(정상)/PURCHASE(매입입고). */
     public static InventoryTxn inbound(Product product, Warehouse warehouse, int qty, Long unitCost,
+                                       InboundType inboundType, LocalDate tradeDate, Partner partner,
+                                       String memo, String refNo) {
+        InventoryTxn t = inbound(product, warehouse, qty, unitCost, inboundType, tradeDate, partner, memo);
+        t.refNo = refNo;
+        return t;
+    }
+
+    public static InventoryTxn inbound(Product product, Warehouse warehouse, int qty, Long unitCost,
                                        InboundType inboundType, LocalDate tradeDate, Partner partner, String memo) {
         InventoryTxn t = new InventoryTxn();
         t.product = product;

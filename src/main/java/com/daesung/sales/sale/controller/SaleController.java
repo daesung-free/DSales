@@ -195,7 +195,7 @@ public class SaleController {
                 new Col("분류코드", "catCode"), new Col("분류명", "catName"),
                 new Col("도서코드", "productCode"), new Col("도서명", "productName"),
                 new Col("학년", "grade"), new Col("회차", "bookRound"),
-                new Col("거래분류", "tradeClassName"), new Col("출고유형", "shipmentType"),
+                new Col("거래분류", "tradeClassName"), new Col("출고유형", "shipmentTypeName"),
                 new Col("창고", "warehouseName"),
                 new Col("정가", "unitPrice"), new Col("공급률(%)", "supplyRate"),
                 new Col("할인액", "discountAmount"), new Col("수량", "qty"),

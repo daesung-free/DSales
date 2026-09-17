@@ -24,6 +24,7 @@ import com.daesung.sales.inventory.entity.BomDirection;
 import com.daesung.sales.inventory.entity.Inventory;
 import com.daesung.sales.inventory.entity.InventoryTxn;
 import com.daesung.sales.inventory.entity.TxnType;
+import com.daesung.sales.inventory.entity.VoucherCancel;
 import com.daesung.sales.inventory.repository.InventoryRepository;
 import com.daesung.sales.inventory.repository.InventoryTxnRepository;
 import com.daesung.sales.partner.entity.Partner;
@@ -60,6 +61,8 @@ public class InventoryService {
     private final BomItemRepository bomItemRepository;
     private final com.daesung.sales.inventory.config.InventoryProperties inventoryProperties;
     private final StockWarningCollector stockWarningCollector;
+    private final com.daesung.sales.inventory.repository.VoucherCancelRepository voucherCancelRepository;
+    private final com.daesung.sales.closing.service.PeriodLockService periodLockService;
 
     /** 일반 입고. 품목마다 (1) 재고이벤트 INBOUND 기록 + (2) 재고 잔량 가산을 한 트랜잭션으로. */
     @Transactional
@@ -71,6 +74,10 @@ public class InventoryService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                         "거래처가 없습니다. id=" + req.supplierClientId()));
 
+        // ★전표번호를 붙인다. 예전엔 입고에만 없어 "무엇을 되돌릴지" 특정할 수 없었다(취소 신설).
+        String inboundNo = "IN-" + req.processedDate().format(YYYYMMDD) + "-"
+                + sequenceService.next(SequenceService.SEQ_INBOUND);
+
         List<InboundResponse.Line> lines = new ArrayList<>();
         for (InboundRequest.InboundItem item : req.items()) {
             Product product = productRepository.findById(item.productId())
@@ -78,7 +85,7 @@ public class InventoryService {
                             "상품이 없습니다. id=" + item.productId()));
 
             InventoryTxn txn = InventoryTxn.inbound(product, warehouse, item.qty(),
-                    item.unitCost(), req.inboundType(), req.processedDate(), supplier, item.memo());
+                    item.unitCost(), req.inboundType(), req.processedDate(), supplier, item.memo(), inboundNo);
             txn.applyLogisCostTarget(Boolean.TRUE.equals(req.logisCostTarget()));   // 물류작업비 대상(8p)
             inventoryTxnRepository.save(txn);
             int currentQty = applyDelta(product, warehouse, item.qty());
@@ -87,7 +94,7 @@ public class InventoryService {
                     product.getId(), product.getCode(), item.qty(), currentQty));
         }
         InboundType type = (req.inboundType() != null) ? req.inboundType() : InboundType.NORMAL;
-        return new InboundResponse(warehouse.getId(), warehouse.getName(), type, lines);
+        return new InboundResponse(inboundNo, warehouse.getId(), warehouse.getName(), type, lines);
     }
 
     /** 단순 이고(창고 이동). 출발창고 −qty(음수재고 방지), 도착창고 +qty. 매출 미발생. */
@@ -158,6 +165,65 @@ public class InventoryService {
                     origin.getTxnType(), origin.getShipmentType(), reverseDate, refNo,
                     "매출취소 역분개: " + refNo));
         }
+    }
+
+    /**
+     * 폐기·입고 전표 취소. 물리 삭제가 아니라 <b>역분개 + 취소 이력</b>이다.
+     *
+     * <p>근거: 발주처 회신 「삭제권한」 — "마감 확정 전에는 잘못 등록한 건을 삭제할 수 있어야.
+     * 확정 후에는 물리 삭제 없이 취소 처리로". 재고는 이벤트 로그가 유일 진실이라
+     * 확정 전후와 무관하게 <b>지우지 않고 되돌린다</b> — 지우면 이력이 사라진다.
+     *
+     * <p>‼️<b>마감된 달은 막는다.</b> 되돌리면 그 달 재고·수불부가 바뀌는데,
+     * 마감은 "이 달 숫자를 더 안 건드린다"는 선언이다.
+     *
+     * @param refNo 폐기 {@code P-…} / 입고 {@code IN-…}
+     */
+    @Transactional
+    public com.daesung.sales.inventory.dto.VoucherCancelResponse cancelVoucher(String refNo, String reason) {
+        if (voucherCancelRepository.existsByRefNo(refNo)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "이미 취소된 전표입니다: " + refNo);
+        }
+        List<InventoryTxn> origins = inventoryTxnRepository.findAllByRefNo(refNo);
+        if (origins.isEmpty()) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "전표가 없습니다: " + refNo);
+        }
+        // 원 전표의 거래일 기준으로 마감을 본다 — 되돌리는 대상이 그 달의 숫자다.
+        periodLockService.assertNotLocked(origins.get(0).getTradeDate());
+
+        String kind = origins.get(0).getTxnType() == TxnType.INBOUND ? "INBOUND" : "DISPOSE";
+        int n = reverseByRefNo(refNo, LocalDate.now(),
+                (kind.equals("INBOUND") ? "입고취소" : "폐기취소") + " 역분개: " + refNo);
+        voucherCancelRepository.save(VoucherCancel.of(refNo, kind, reason, n));
+        return new com.daesung.sales.inventory.dto.VoucherCancelResponse(
+                refNo, kind, n, stockWarningCollector.drain());
+    }
+
+    /**
+     * 전표(refNo)의 재고 이벤트를 <b>통째로</b> 되돌린다. 폐기·입고 취소용.
+     *
+     * <p>★<b>물리 삭제하지 않는다.</b> 반대 부호 이벤트를 새로 적어 상쇄한다 —
+     * 재고는 이벤트 로그가 유일 진실이라, 지우면 "언제 왜 되돌렸나"가 사라진다.
+     * 매출취소({@link #reverseShipments})와 같은 규율이다.
+     *
+     * <p>‼️이미 되돌린 전표를 또 되돌리면 재고가 반대로 밀린다. 중복 취소는 호출부가 막는다
+     * (폐기·입고 엔티티의 canceled 플래그).
+     *
+     * @return 되돌린 이벤트 수. 0이면 그 전표로 만들어진 재고 이벤트가 없다는 뜻이다
+     *         (재고 미관리 상품만 있던 전표 등) — 오류가 아니다.
+     */
+    @Transactional
+    public int reverseByRefNo(String refNo, LocalDate reverseDate, String memo) {
+        int n = 0;
+        for (InventoryTxn origin : inventoryTxnRepository.findAllByRefNo(refNo)) {
+            int reverseDelta = -origin.getQty();
+            applyDelta(origin.getProduct(), origin.getWarehouse(), reverseDelta);
+            inventoryTxnRepository.save(InventoryTxn.shipment(
+                    origin.getProduct(), origin.getWarehouse(), reverseDelta,
+                    origin.getTxnType(), origin.getShipmentType(), reverseDate, refNo, memo));
+            n++;
+        }
+        return n;
     }
 
     /**
