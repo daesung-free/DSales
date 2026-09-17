@@ -65,6 +65,18 @@ public class Shipment extends BaseEntity {
     @Column(name = "completed_at")
     private LocalDateTime completedAt;
 
+    /**
+     * 작업 확인 시각 = 작업결과의 '확인' ○. 출력 다음 단계다(V73).
+     *
+     * <p>{@link #completedAt}과 <b>다른 축</b>이다 — 그쪽은 레거시에 쓰기 경로가 없어 늘 비어 있고,
+     * 거기에 확인을 얹으면 나중에 레거시 데이터를 대조할 때 완료인지 확인인지 가릴 수 없다.
+     */
+    @Column(name = "acknowledged_at")
+    private LocalDateTime acknowledgedAt;
+
+    @Column(name = "acknowledged_by", length = 50)
+    private String acknowledgedBy;
+
     @Column(name = "box_count", nullable = false)
     private int boxCount;
 
@@ -122,6 +134,42 @@ public class Shipment extends BaseEntity {
             return false;
         }
         printedAt = at;
+        return true;
+    }
+
+    /**
+     * 출력 표시를 내린다 — 잘못 출력한 건을 되돌리는 경로(B-14).
+     *
+     * <p>‼️<b>사유는 호출부가 status_history 에 남긴다.</b> "언제 처음 지시가 나갔나"를 지우는
+     * 행위라 누가·왜가 없으면 나중에 소명할 수 없다. 여기서는 값만 내린다.
+     *
+     * @return 실제로 내려갔으면 true(애초에 출력 전이면 false)
+     */
+    public boolean revertPrinted() {
+        if (printedAt == null) {
+            return false;
+        }
+        printedAt = null;
+        return true;
+    }
+
+    /** 작업 확인 표시. 이미 확인된 건이면 최초 시각·처리자를 덮지 않는다(출력과 같은 규칙). */
+    public boolean acknowledge(String by, LocalDateTime at) {
+        if (acknowledgedAt != null) {
+            return false;
+        }
+        acknowledgedAt = at;
+        acknowledgedBy = by;
+        return true;
+    }
+
+    /** 확인 표시를 내린다. 사유는 호출부가 status_history 에 남긴다. */
+    public boolean revertAcknowledged() {
+        if (acknowledgedAt == null) {
+            return false;
+        }
+        acknowledgedAt = null;
+        acknowledgedBy = null;
         return true;
     }
 

@@ -2,6 +2,7 @@ package com.daesung.sales.logistics.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 
@@ -10,8 +11,10 @@ public record WorkTypeRequest(
 
         @Schema(description = """
                 DSRE2 PACKTYPE 값(등록 시 필수, 이후 불변). 단가 행과 잇는 키다 —
-                바꾸면 그 작업구분으로 등록된 상품이 통째로 연결을 잃는다.""", example = "4")
-        Integer packType,
+                바꾸면 그 작업구분으로 등록된 상품이 통째로 연결을 잃는다.
+                **1~3에 갇혀 있지 않다** — 4번 이상도 만들 수 있고, 만들면 물류단가도 그 번호를 받는다.""",
+                example = "4")
+        @Positive Integer packType,
 
         @Schema(description = "작업구분명", example = "개별봉투(대형)",
                 requiredMode = Schema.RequiredMode.REQUIRED)

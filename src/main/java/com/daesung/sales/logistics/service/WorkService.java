@@ -48,7 +48,8 @@ public class WorkService {
      * <p>'출력'·'완료'는 레거시처럼 <b>날짜가 채워졌는지</b>로 판단한다. 별도 상태 컬럼이 없다.
      */
     public List<WorkResultRow> workResults(LocalDate from, LocalDate to, String tradeClass,
-                                           Long partnerId, Boolean printed, WarehouseType warehouseType) {
+                                           Long partnerId, Boolean printed, Boolean acknowledged,
+                                           WarehouseType warehouseType) {
         // ★역할별 기본값(발주처 확정 3-2 나): "물류에서 실제 발송하는 상품은 모두 본사물류창고이므로
         //   출고창고는 본사물류창고만 디폴트, 본사 출고담당(관리자)은 전체/본사물류/위탁 선택 가능".
         //   물류는 요청에 무엇을 넣든 본사물류창고로 강제한다 — 프론트도 필터를 관리자 전용으로 만들었고,
@@ -72,7 +73,7 @@ public class WorkService {
         }
 
         List<WorkResultRow> rows = new ArrayList<>();
-        for (Shipment s : shipmentRepository.search(from, to, tradeClass, partnerId, printed, null)) {
+        for (Shipment s : shipmentRepository.search(from, to, tradeClass, partnerId, printed, acknowledged, null)) {
             String k = key(s.getTradeDate(), s.getPartner().getId(), s.getSchoolCode(), s.getTradeClass());
             List<ShipmentWarehouseAgg> whs = whByKey.getOrDefault(k, List.of());
 
@@ -90,7 +91,9 @@ public class WorkService {
             rows.add(new WorkResultRow(s.getId(), s.getTradeClass(), s.getTradeDate(), s.getTradeSeq(),
                     s.getPartner().getCode(), s.getPartner().getName(),
                     s.getSchoolCode(), s.getSchoolName(),
-                    s.getPrintedAt() != null, s.getCompletedAt() != null, s.getSentDate(),
+                    s.getPrintedAt() != null,
+                    s.getAcknowledgedAt() != null, s.getAcknowledgedBy(),
+                    s.getCompletedAt() != null, s.getSentDate(),
                     whNames.isEmpty() ? null : whNames,
                     q, total, s.getBoxCount(), s.getSendMemo(), s.getMemo()));
         }
@@ -99,7 +102,7 @@ public class WorkService {
 
     /** 작업요청서 — 발송 건 + 그 안에 담을 도서 목록(무엇을 몇 개 넣어라). */
     public List<WorkOrderResponse> workOrders(LocalDate from, LocalDate to, String tradeClass,
-                                              Long partnerId, Boolean printed,
+                                              Long partnerId, Boolean printed, Boolean acknowledged,
                                               DeliveryType deliveryType) {
         Map<String, List<WorkOrderResponse.Line>> linesByKey = new LinkedHashMap<>();
         for (WorkOrderLineAgg a : saleRepository.workOrderLines(from, to)) {
@@ -112,7 +115,7 @@ public class WorkService {
         }
 
         List<WorkOrderResponse> out = new ArrayList<>();
-        for (Shipment s : shipmentRepository.search(from, to, tradeClass, partnerId, printed, deliveryType)) {
+        for (Shipment s : shipmentRepository.search(from, to, tradeClass, partnerId, printed, acknowledged, deliveryType)) {
             List<WorkOrderResponse.Line> lines = linesByKey.getOrDefault(
                     key(s.getTradeDate(), s.getPartner().getId(), s.getSchoolCode(), s.getTradeClass()),
                     List.of());
@@ -121,6 +124,7 @@ public class WorkService {
             out.add(new WorkOrderResponse(s.getId(), s.getTradeClass(), s.getTradeDate(),
                     s.getPartner().getCode(), s.getPartner().getName(),
                     s.getSchoolCode(), s.getSchoolName(), s.getPrintedAt() != null,
+                    s.getAcknowledgedAt() != null, s.getAcknowledgedBy(),
                     s.getBoxCount(), s.getSentDate(), s.getSendMemo(),
                     dt, (dt == null) ? null : dt.label(),
                     s.getReceiverName(), s.getReceiverPhone(),

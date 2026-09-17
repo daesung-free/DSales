@@ -190,6 +190,7 @@ public class LogisticsController {
     @PutMapping("/rates")
     public ApiResponse<LogisCostBulkResult> bulkUpdateRates(
             @Valid @RequestBody LogisCostBulkRequest req) {
+        workTypeService.assertRegisteredPackType(req.packtype());
         return ApiResponse.success(logisCostBulkService.bulkUpdate(req));
     }
 
@@ -207,6 +208,7 @@ public class LogisticsController {
     public ApiResponse<Void> upsertRate(
             @Parameter(description = "시행코드(DTL_CD)", example = "10") @PathVariable int dtlCd,
             @Valid @RequestBody LogisCostUpsertRequest req) {
+        workTypeService.assertRegisteredPackType(req.packtype());
         dsreGateway.upsertLogisCost(dtlCd, req.paper(), req.omr(), req.etc(), req.label(),
                 req.basic(), req.trade(), req.packtype(), req.bSpare());
         workTypeService.markOverride(dtlCd);

@@ -105,6 +105,31 @@ public class WorkTypeService {
      */
     @Transactional
     public WorkTypeApplyResult apply(Long id) {
+        return run(id, false);
+    }
+
+    /**
+     * 일괄 반영 <b>미리보기</b> — 무엇도 바꾸지 않고 "이대로 누르면 몇 건이 덮이는지"만 돌려준다.
+     * 근거: 프론트 회신(2026-09-17) B-13 — "반영 전에 대상 건수를 미리 보여 드릴 수 없습니다".
+     *
+     * <p>★미리보기가 없으면 담당자는 <b>눌러 봐야</b> 몇 건인지 안다. 그런데 이 동작은
+     * 되돌리는 경로가 없다(덮이기 전 값이 어디에도 안 남는다). 확인 없이 누르게 두면
+     * 잘못 고른 작업구분 하나로 수백 행의 단가가 바뀌고 되돌릴 방법이 없다.
+     *
+     * <p>반영과 <b>같은 코드</b>로 센다 — 따로 세면 미리보기엔 12건인데 실제로는 15건이
+     * 바뀌는 상황이 생기고, 그러면 미리보기가 있으나 마나다.
+     */
+    public WorkTypeApplyResult previewApply(Long id) {
+        return run(id, true);
+    }
+
+    /**
+     * 일괄 반영 본체. {@code dryRun}이면 대상만 세고 쓰지 않는다.
+     *
+     * <p><b>예외로 등록된 행은 건너뛴다.</b> 담당자가 개별 수정한 행은 의도적으로 다른 값이라,
+     * 일괄적용 한 번에 조용히 덮이면 그 상품이 잘못된 단가로 청구된다.
+     */
+    private WorkTypeApplyResult run(Long id, boolean dryRun) {
         WorkType w = getOrThrow(id);
         Set<Integer> exceptions = new HashSet<>();
         overrideRepository.findAll().forEach(o -> exceptions.add(o.getDtlCd()));
@@ -115,7 +140,7 @@ public class WorkTypeService {
                     "DSRE 연동이 꺼져 있어 단가를 반영할 수 없습니다.");
         }
 
-        int applied = 0;
+        List<Integer> targets = new ArrayList<>();
         List<Integer> skipped = new ArrayList<>();
         for (LogisCostRate r : gateway.listLogisCosts()) {
             if (r.packtype() != w.getPackType() || r.dtlCd() == 0) {
@@ -125,11 +150,36 @@ public class WorkTypeService {
                 skipped.add(r.dtlCd());
                 continue;
             }
-            gateway.upsertLogisCost(r.dtlCd(), w.getPaper(), w.getOmr(), w.getEtc(),
-                    w.getLabel(), w.getBasic(), w.getTrade(), w.getPackType(), r.bSpare());
-            applied++;
+            targets.add(r.dtlCd());
+            if (!dryRun) {
+                gateway.upsertLogisCost(r.dtlCd(), w.getPaper(), w.getOmr(), w.getEtc(),
+                        w.getLabel(), w.getBasic(), w.getTrade(), w.getPackType(), r.bSpare());
+            }
         }
-        return new WorkTypeApplyResult(w.getPackType(), w.getName(), applied, skipped.size(), skipped);
+        return new WorkTypeApplyResult(w.getPackType(), w.getName(), dryRun,
+                targets.size(), targets, skipped.size(), skipped);
+    }
+
+    /**
+     * 물류단가의 작업구분이 <b>등록된 작업구분인지</b> 확인한다(B-13).
+     *
+     * <p>★예전엔 단가 DTO에 {@code @Min(1) @Max(3)}이 박혀 있었다. 그래서 작업구분 관리에서
+     * 4번을 새로 만들 수는 있는데 그 번호로 단가를 넣으면 400이 났고, 벌크 경로엔 그 제약이
+     * 아예 없어 <b>경로마다 다르게 굴었다</b>. 상한을 코드에 박는 대신
+     * {@code work_type} 테이블을 단일 기준으로 삼는다 — 작업구분을 늘리면 단가도 따라 열린다.
+     */
+    public void assertRegisteredPackType(Integer packType) {
+        if (packType == null) {
+            return;   // 벌크에서 "미지정 = 기존값 유지"
+        }
+        if (workTypeRepository.findByPackType(packType).isEmpty()) {
+            String valid = workTypeRepository.findAllByOrderBySortOrderAscPackTypeAsc().stream()
+                    .map(w -> w.getPackType() + "(" + w.getName() + ")")
+                    .collect(java.util.stream.Collectors.joining(", "));
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "등록되지 않은 작업구분입니다: " + packType
+                            + ". 작업구분 관리에 먼저 등록하세요. 현재 사용 가능: " + valid);
+        }
     }
 
     /**

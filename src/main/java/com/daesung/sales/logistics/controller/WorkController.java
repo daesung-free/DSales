@@ -4,6 +4,7 @@ import com.daesung.sales.common.query.Keywords;
 import com.daesung.sales.common.excel.ExcelExportUtil;
 import com.daesung.sales.common.excel.ExcelExportUtil.Col;
 import com.daesung.sales.common.response.ApiResponse;
+import com.daesung.sales.logistics.dto.RevertRequest;
 import com.daesung.sales.logistics.dto.ShippingUpdateRequest;
 import com.daesung.sales.logistics.dto.TrackingUploadResponse;
 import com.daesung.sales.logistics.entity.DeliveryType;
@@ -70,10 +71,13 @@ public class WorkController {
             @Parameter(description = "거래처 id. 미지정=전체") @RequestParam(required = false) Long partnerId,
             @Parameter(description = "출력여부 true=출력분/false=미출력분/미지정=전체")
             @RequestParam(required = false) Boolean printed,
+            @Parameter(description = "확인여부 true=확인분/false=미확인분/미지정=전체. "
+                    + "printed=true & acknowledged=false 로 '지시는 나갔는데 아직 확인 안 된 건'을 추린다")
+            @RequestParam(required = false) Boolean acknowledged,
             @Parameter(description = "발송구분 COURIER(택배)/FREIGHT(화물). 미지정=전체(미선택 건 포함)")
             @RequestParam(required = false) DeliveryType deliveryType) {
-        return ApiResponse.success(
-                workService.workOrders(fromDate, toDate, tradeClass, partnerId, printed, deliveryType));
+        return ApiResponse.success(workService.workOrders(
+                fromDate, toDate, tradeClass, partnerId, printed, acknowledged, deliveryType));
     }
 
     @Operation(summary = "미확인 출고요청 건수",
@@ -100,6 +104,44 @@ public class WorkController {
     @PostMapping("/work-orders/{id}/print")
     public ApiResponse<Boolean> markPrinted(@PathVariable Long id) {
         return ApiResponse.success(shipmentService.markPrinted(id));
+    }
+
+    @Operation(summary = "작업요청서 출력 되돌리기",
+            description = """
+                    잘못 출력한 건의 '출력' 표시를 내린다 → 다시 미출력분으로 돌아온다.
+
+                    **사유가 필수다.** 이 기록의 의미는 "언제 처음 작업지시가 나갔나"이고,
+                    되돌리기는 그 답을 지우는 행위다. 사유 없이 내릴 수 있으면 나중에
+                    "이 건은 왜 지시가 안 나간 걸로 되어 있나"에 아무도 답하지 못한다.
+
+                    지운 값은 사라지지만 **누가·언제·왜 내렸는지는 상태변경 이력에 남는다**
+                    (`GET /audit/status-history`, 대상 SHIPMENT). 애초에 출력 전이면 `false`.""")
+    @PostMapping("/work-orders/{id}/print/revert")
+    public ApiResponse<Boolean> revertPrinted(@PathVariable Long id,
+                                              @Valid @RequestBody RevertRequest req) {
+        return ApiResponse.success(shipmentService.revertPrinted(id, req.reason()));
+    }
+
+    @Operation(summary = "작업 확인 표시",
+            description = """
+                    작업을 확인한 것으로 표시한다 → 작업결과의 '확인' ○. **출력 다음 단계**다.
+
+                    · 재확인해도 최초 시각·처리자를 덮지 않는다(출력과 같은 규칙).
+                      이미 확인된 건이면 `false`를 돌려준다.
+                    · ⚠️레거시 '완료'(`completed_at`)와는 **다른 축**이다. 그쪽은 레거시에도
+                      쓰기 경로가 없어 늘 비어 있고, 거기에 확인을 얹으면 나중에 레거시 데이터를
+                      대조할 때 완료인지 확인인지 가릴 수 없다.""")
+    @PostMapping("/work-orders/{id}/acknowledge")
+    public ApiResponse<Boolean> acknowledge(@PathVariable Long id) {
+        return ApiResponse.success(shipmentService.acknowledge(id));
+    }
+
+    @Operation(summary = "작업 확인 되돌리기",
+            description = "'확인' 표시를 내린다. 출력 되돌리기와 같은 이유로 **사유가 필수**이고 이력에 남는다.")
+    @PostMapping("/work-orders/{id}/acknowledge/revert")
+    public ApiResponse<Boolean> revertAcknowledged(@PathVariable Long id,
+                                                   @Valid @RequestBody RevertRequest req) {
+        return ApiResponse.success(shipmentService.revertAcknowledged(id, req.reason()));
     }
 
     @Operation(summary = "발송정보 입력",
@@ -146,7 +188,7 @@ public class WorkController {
                 new Col("연락처", "receiverPhone"), new Col("Box", "boxCount"),
                 new Col("발송구분", "deliveryTypeName"));
         byte[] xlsx = excel.toXlsx("송장등록", cols,
-                workService.workOrders(fromDate, toDate, null, partnerId, null, deliveryType));
+                workService.workOrders(fromDate, toDate, null, partnerId, null, null, deliveryType));
         return excel.asDownload(xlsx, "송장등록양식_" + fromDate + "_" + toDate + ".xlsx");
     }
 
@@ -174,8 +216,11 @@ public class WorkController {
                     · '출력'·'완료'는 **날짜가 채워졌는지**로 판단한다(레거시에 상태 컬럼이 없다).
                     · **출고창고**: 물류는 본사물류창고만 보이고, 관리자만 전체·본사물류·위탁을 고를 수 있다
                       (발주처 확정 3-2 나). 물류가 다른 값을 보내도 본사물류창고로 강제된다.
+                    · **'확인'은 우리가 신설한 축**이다(출력 다음 단계).
+                      `printed=true & acknowledged=false` 로 "지시는 나갔는데 아직 확인 안 된 건"을 추린다.
                     · ⚠️'완료'는 레거시에도 값을 넣는 코드가 없어 **항상 false**다.
-                      임의로 만들면 화면 의미가 달라져, 발주처 확인 후 붙일 항목으로 남겨 두었다.""")
+                      임의로 만들면 화면 의미가 달라져, 발주처 확인 후 붙일 항목으로 남겨 두었다.
+                      '확인'과 섞지 말 것 — 축이 다르다.""")
     @GetMapping("/work-results")
     public ApiResponse<List<WorkResultRow>> workResults(
             @RequestParam(name = "fromDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
@@ -183,12 +228,14 @@ public class WorkController {
             @RequestParam(required = false) String tradeClass,
             @RequestParam(required = false) Long partnerId,
             @RequestParam(required = false) Boolean printed,
+            @Parameter(description = "확인여부 true=확인분/false=미확인분/미지정=전체")
+            @RequestParam(required = false) Boolean acknowledged,
             @Parameter(description = "출고창고 구분 MAIN(본사물류창고)/CONSIGN(위탁창고). 미지정=전체(관리자만)")
             @RequestParam(required = false) WarehouseType warehouseType,
             @Parameter(description = "키워드 — 코드·명칭을 함께 훑는다(부분일치)")
             @RequestParam(required = false) String keyword) {
         return ApiResponse.success(Keywords.filter(
-                workService.workResults(fromDate, toDate, tradeClass, partnerId, printed, warehouseType),
+                workService.workResults(fromDate, toDate, tradeClass, partnerId, printed, acknowledged, warehouseType),
                 keyword,
                 r -> new Object[]{r.partnerCode(), r.partnerName(), r.schoolCode(), r.schoolName(),
                         r.warehouseName()}));
@@ -202,18 +249,20 @@ public class WorkController {
             @RequestParam(required = false) String tradeClass,
             @RequestParam(required = false) Long partnerId,
             @RequestParam(required = false) Boolean printed,
+            @RequestParam(required = false) Boolean acknowledged,
             @RequestParam(required = false) WarehouseType warehouseType) {
         List<Col> cols = List.of(
                 new Col("분류", "tradeClass"), new Col("거래일자", "tradeDate"),
                 new Col("거래순번", "tradeSeq"),
                 new Col("거래처코드", "partnerCode"), new Col("거래처명", "partnerName"),
                 new Col("학교코드", "schoolCode"), new Col("학교명", "schoolName"),
-                new Col("출력", "printed"), new Col("완료", "completed"),
+                new Col("출력", "printed"), new Col("확인", "acknowledged"),
+                new Col("확인자", "acknowledgedBy"), new Col("완료", "completed"),
                 new Col("발송일", "sentDate"), new Col("출고창고", "warehouseName"),
                 new Col("수량", "totalQty"),
                 new Col("Box", "boxCount"), new Col("발송메모", "sendMemo"), new Col("비고", "memo"));
         byte[] xlsx = excel.toXlsx("작업결과", cols,
-                workService.workResults(fromDate, toDate, tradeClass, partnerId, printed, warehouseType));
+                workService.workResults(fromDate, toDate, tradeClass, partnerId, printed, acknowledged, warehouseType));
         return excel.asDownload(xlsx, "작업결과.xlsx");
     }
 }

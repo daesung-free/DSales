@@ -90,6 +90,23 @@ public class WorkTypeController {
         return ApiResponse.success(workTypeService.apply(id));
     }
 
+    @Operation(summary = "기준단가 일괄 반영 — 미리보기",
+            description = """
+                    **아무것도 바꾸지 않고** "이대로 누르면 몇 건이 덮이는지"만 돌려준다(B-13).
+
+                    ★이 동작은 **되돌릴 수 없다** — 덮이기 전 값이 어디에도 남지 않는다.
+                    확인 없이 누르게 두면 작업구분을 잘못 고른 한 번으로 수백 행의 단가가 바뀌고
+                    복구할 방법이 없다. 그래서 반영 전에 대상을 먼저 보여준다.
+
+                    · 응답의 `preview=true`가 "안 바꿨다"는 표시다. **화면에서 반영 결과와 같은
+                      문구로 보여주지 말 것** — 담당자가 이미 반영된 줄 안다.
+                    · 반영과 **같은 코드로 센다**. 따로 세면 미리보기엔 12건인데 실제로는 15건이
+                      바뀌는 상황이 생기고, 그러면 미리보기가 있으나 마나다.""")
+    @GetMapping("/{id}/apply/preview")
+    public ApiResponse<WorkTypeApplyResult> previewApply(@PathVariable Long id) {
+        return ApiResponse.success(workTypeService.previewApply(id));
+    }
+
     @Operation(summary = "예외 해제",
             description = "개별 수정 표시를 지운다. 이후 일괄 반영이 다시 이 행에도 적용된다.")
     @DeleteMapping("/overrides/{dtlCd}")

@@ -21,6 +21,8 @@ public record WorkResultRow(
         @Schema(description = "학교코드") String schoolCode,
         @Schema(description = "학교명") String schoolName,
         @Schema(description = "출력 여부(작업요청서 출력됨)") boolean printed,
+        @Schema(description = "확인 여부(출력 다음 단계). 우리가 신설한 축이다") boolean acknowledged,
+        @Schema(description = "확인 처리자") String acknowledgedBy,
         @Schema(description = "완료 여부. ⚠️레거시에 쓰기 경로가 없어 항상 false") boolean completed,
         @Schema(description = "발송일") LocalDate sentDate,
         @Schema(description = "출고창고(여러 창고에서 나갔으면 쉼표로 이어 붙인다). 창고 기록 전 매출은 비어 있다")

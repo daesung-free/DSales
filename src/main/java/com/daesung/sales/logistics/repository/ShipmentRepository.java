@@ -26,6 +26,8 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long> {
     /**
      * 기간·조건 조회. printed: true=출력분만, false=미출력분만, null=전체
      * (레거시 작업요청서의 '출력 안 된 건만' 필터에 대응).
+     * acknowledged 도 같은 규칙이다 — 확인은 출력 다음 단계라 "출력됐는데 아직 확인 안 된 건"을
+     * {@code printed=true &amp; acknowledged=false} 로 추릴 수 있어야 한다.
      */
     @Query("""
             select s from Shipment s join fetch s.partner p
@@ -35,6 +37,9 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long> {
                and (:printed is null
                     or (:printed = true  and s.printedAt is not null)
                     or (:printed = false and s.printedAt is null))
+               and (:acknowledged is null
+                    or (:acknowledged = true  and s.acknowledgedAt is not null)
+                    or (:acknowledged = false and s.acknowledgedAt is null))
                and (:deliveryType is null or s.deliveryType = :deliveryType)
              order by s.tradeDate desc, p.code, s.schoolCode
             """)
@@ -42,6 +47,7 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long> {
                           @Param("tradeClass") String tradeClass,
                           @Param("partnerId") Long partnerId,
                           @Param("printed") Boolean printed,
+                          @Param("acknowledged") Boolean acknowledged,
                           @Param("deliveryType") DeliveryType deliveryType);
 
     /**

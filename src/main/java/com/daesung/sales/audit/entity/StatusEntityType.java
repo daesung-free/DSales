@@ -17,6 +17,13 @@ public enum StatusEntityType {
     /** 계정 — 활성/비활성 */
     APP_USER,
     /**
+     * 발송 건(작업요청서) — 출력·확인 표시.
+     *
+     * <p>둘 다 <b>되돌릴 수 있게</b> 열었기 때문에 이력이 필요하다(B-14). 특히 출력 되돌리기는
+     * "언제 처음 작업지시가 나갔나"를 지우는 행위라, 사유 없이 내리면 나중에 소명할 수 없다.
+     */
+    SHIPMENT,
+    /**
      * DSRE2 주문 — 진행상태. entityId = REQ_CD.
      *
      * <p>원본 상태는 DSRE2 {@code tbl_request_info.STATE}에 있고 <b>DSRE2에는 이력 테이블이 없다</b>

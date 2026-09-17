@@ -1,5 +1,8 @@
 package com.daesung.sales.logistics.service;
 
+import com.daesung.sales.audit.entity.StatusEntityType;
+import com.daesung.sales.audit.service.StatusHistoryService;
+import com.daesung.sales.common.audit.CurrentAuditor;
 import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.logistics.dto.ShippingUpdateRequest;
@@ -28,7 +31,13 @@ import org.springframework.transaction.annotation.Transactional;
 @RequiredArgsConstructor
 public class ShipmentService {
 
+    /** status_history 의 상태축 이름. 화면 라벨이 아니라 감사 조회 키라 바꾸면 과거 이력과 끊긴다. */
+    private static final String FIELD_PRINTED = "printed";
+    private static final String FIELD_ACKNOWLEDGED = "acknowledged";
+
     private final ShipmentRepository shipmentRepository;
+    private final StatusHistoryService statusHistoryService;
+    private final CurrentAuditor currentAuditor;
 
     /**
      * 매출 1건에 대응하는 발송 건을 확보한다(없으면 생성). 근거: UC_TabPages.vb:752 —
@@ -58,7 +67,62 @@ public class ShipmentService {
      */
     @Transactional
     public boolean markPrinted(Long shipmentId) {
-        return getOrThrow(shipmentId).markPrinted(LocalDateTime.now());
+        boolean changed = getOrThrow(shipmentId).markPrinted(LocalDateTime.now());
+        if (changed) {
+            statusHistoryService.record(StatusEntityType.SHIPMENT, shipmentId,
+                    FIELD_PRINTED, false, true, null);
+        }
+        return changed;
+    }
+
+    /**
+     * 출력 표시를 되돌린다(B-14). 근거: 프론트 회신 2026-09-17 —
+     * "되돌리기는 아직 준비 중입니다 — 한번 올린 출력 기록은 내릴 수 없습니다".
+     *
+     * <p>‼️<b>사유를 반드시 받는다.</b> 이 기록의 의미는 "언제 처음 작업지시가 나갔나"이고,
+     * 되돌리기는 그 답을 지우는 행위다. 사유 없이 내릴 수 있게 하면 나중에
+     * "이 건은 왜 지시가 안 나간 걸로 되어 있나"에 아무도 답하지 못한다.
+     * 값은 {@code shipment}에서 지우되 <b>누가·언제·왜</b>는 {@code status_history}에 남는다.
+     *
+     * @return 실제로 내려갔으면 true(애초에 출력 전이면 false — 이미 원하는 상태다)
+     */
+    @Transactional
+    public boolean revertPrinted(Long shipmentId, String reason) {
+        boolean changed = getOrThrow(shipmentId).revertPrinted();
+        if (changed) {
+            statusHistoryService.record(StatusEntityType.SHIPMENT, shipmentId,
+                    FIELD_PRINTED, true, false, reason);
+        }
+        return changed;
+    }
+
+    /**
+     * 작업 확인 표시(B-14). 출력 다음 단계로, 작업결과의 '확인' ○가 된다.
+     *
+     * <p>재확인해도 최초 시각·처리자를 덮지 않는다 — 출력과 같은 규칙이다.
+     *
+     * @return 이번 호출로 표시가 붙었으면 true(이미 확인된 건이면 false)
+     */
+    @Transactional
+    public boolean acknowledge(Long shipmentId) {
+        boolean changed = getOrThrow(shipmentId)
+                .acknowledge(currentAuditor.username(), LocalDateTime.now());
+        if (changed) {
+            statusHistoryService.record(StatusEntityType.SHIPMENT, shipmentId,
+                    FIELD_ACKNOWLEDGED, false, true, null);
+        }
+        return changed;
+    }
+
+    /** 확인 표시를 되돌린다. 출력 되돌리기와 같은 이유로 사유를 받는다. */
+    @Transactional
+    public boolean revertAcknowledged(Long shipmentId, String reason) {
+        boolean changed = getOrThrow(shipmentId).revertAcknowledged();
+        if (changed) {
+            statusHistoryService.record(StatusEntityType.SHIPMENT, shipmentId,
+                    FIELD_ACKNOWLEDGED, true, false, reason);
+        }
+        return changed;
     }
 
     /**

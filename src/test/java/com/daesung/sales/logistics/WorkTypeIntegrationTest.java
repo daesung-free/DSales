@@ -1,7 +1,11 @@
 package com.daesung.sales.logistics;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.daesung.sales.common.exception.BusinessException;
+import com.daesung.sales.logistics.service.WorkTypeService;
 import com.daesung.sales.support.IntegrationTestSupport;
 import com.fasterxml.jackson.databind.JsonNode;
 import java.util.Map;
@@ -22,6 +26,10 @@ import org.junit.jupiter.api.TestInstance;
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
 @DisplayName("작업구분 관리(36p)")
 class WorkTypeIntegrationTest extends IntegrationTestSupport {
+
+    /** ‼️DSRE가 꺼진 환경이라 단가 HTTP 경로를 탈 수 없다 — 규칙 자체는 서비스에서 고정한다. */
+    @org.springframework.beans.factory.annotation.Autowired
+    private WorkTypeService workTypeService;
 
     @BeforeAll
     void auth() {
@@ -112,6 +120,45 @@ class WorkTypeIntegrationTest extends IntegrationTestSupport {
         JsonNode r = post("/masters/work-types/" + id + "/apply", Map.of());
         assertThat(r.path("success").asBoolean()).isFalse();
         assertThat(r.path("error").path("message").asText()).contains("DSRE");
+    }
+
+    @Test
+    @DisplayName("★일괄반영 미리보기도 같은 자리에 있다 — DSRE가 꺼져 있으면 반영과 똑같이 막힌다")
+    void 미리보기_경로() {
+        int packType = 200 + (int) (System.nanoTime() % 50);
+        long id = data(post("/masters/work-types", Map.of(
+                "packType", packType, "name", "미리보기대상",
+                "paper", 1, "omr", 1, "etc", 1, "label", 1, "basic", 1, "trade", 1))).path("id").asLong();
+
+        JsonNode r = get("/masters/work-types/" + id + "/apply/preview");
+
+        // 404/405가 아니라 "DSRE 꺼짐"이어야 한다 — 경로가 붙어 있고 반영과 같은 코드를 탄다는 뜻이다.
+        assertThat(r.path("success").asBoolean()).isFalse();
+        assertThat(r.path("error").path("message").asText()).contains("DSRE");
+    }
+
+    @Test
+    @DisplayName("★물류단가의 작업구분은 work_type이 기준이다 — 1~3에 갇혀 있지 않다")
+    void 단가_작업구분_기준() {
+        int packType = 250 + (int) (System.nanoTime() % 50);
+        data(post("/masters/work-types", Map.of(
+                "packType", packType, "name", "단가기준검증",
+                "paper", 1, "omr", 1, "etc", 1, "label", 1, "basic", 1, "trade", 1)));
+
+        // 새로 만든 4번 이상도 단가가 받아야 한다.
+        // ‼️예전엔 단가 DTO에 @Max(3)이 박혀 있어, 작업구분은 만들어지는데 그 번호로 단가를 넣으면 400이었다.
+        assertThatCode(() -> workTypeService.assertRegisteredPackType(packType))
+                .as("등록된 작업구분이면 통과").doesNotThrowAnyException();
+
+        // 등록 안 된 값은 거부하되, 무엇이 되는지 알려줘야 한다 — "안 된다"만 하면 담당자가 다음 수를 못 둔다.
+        assertThatThrownBy(() -> workTypeService.assertRegisteredPackType(99_999))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("등록되지 않은 작업구분")
+                .hasMessageContaining("반별봉투");
+
+        // 벌크는 "미지정 = 기존값 유지"라 null이 정상 입력이다.
+        assertThatCode(() -> workTypeService.assertRegisteredPackType(null))
+                .as("미지정은 유지 의미").doesNotThrowAnyException();
     }
 
     private JsonNode byPackType(JsonNode list, int packType) {

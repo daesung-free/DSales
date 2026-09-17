@@ -2,6 +2,7 @@ package com.daesung.sales.logistics.dto;
 
 import io.swagger.v3.oas.annotations.media.Schema;
 import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.Positive;
 import jakarta.validation.constraints.PositiveOrZero;
 import jakarta.validation.constraints.Size;
 import java.util.List;
@@ -39,9 +40,10 @@ public record LogisCostBulkRequest(
         @PositiveOrZero Integer trade,
 
         @Schema(description = """
-                작업구분(1 반별봉투 / 2 개별봉투 / 3 개별봉투SET) — 미지정이면 유지.
+                작업구분(PACKTYPE) — 미지정이면 유지. **등록된 작업구분이어야 한다**
+                (개별 수정 경로와 같은 기준 — 예전엔 벌크에만 검증이 없어 경로마다 다르게 굴었다).
                 ⚠️작업구분이 서로 다른 행을 함께 선택하면 거부된다(아래 설명 참고).""", example = "1")
-        Integer packtype
+        @Positive Integer packtype
 ) {
     /** 바꿀 항목이 하나도 없으면 무의미한 요청이다(전 건을 훑고 아무것도 안 한다). */
     public boolean hasNoField() {

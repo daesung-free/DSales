@@ -21,6 +21,8 @@ public record WorkOrderResponse(
         @Schema(description = "학교코드") String schoolCode,
         @Schema(description = "학교명") String schoolName,
         @Schema(description = "출력 여부") boolean printed,
+        @Schema(description = "확인 여부(출력 다음 단계). ⚠️레거시 '완료'와는 다른 축이다") boolean acknowledged,
+        @Schema(description = "확인 처리자") String acknowledgedBy,
         @Schema(description = "박스 수") int boxCount,
         @Schema(description = "발송일") LocalDate sentDate,
         @Schema(description = "발송메모") String sendMemo,
