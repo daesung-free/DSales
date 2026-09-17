@@ -33,6 +33,22 @@ public record DsreOrderRow(
         @Schema(description = "담당 선생님") String teacher,
         @Schema(description = "연락처") String tel,
         @Schema(description = "주소") String address,
-        @Schema(description = "비고") String memo
+        @Schema(description = "비고") String memo,
+
+        @Schema(description = """
+                총 신청수량 — DSRE2 `tbl_request_cnt.CNT` 합계(과목별 신청갯수).
+                2026-09-16에 붙였다. 화면이 이 값이 없어 주문조회 연결을 미뤄 두고 있었다.""",
+                example = "1200")
+        long totalQty,
+
+        @Schema(description = "품목건수 — 서로 다른 과목(RES_CD) 수", example = "4")
+        int itemCount,
+
+        @Schema(description = """
+                총금액. ‼️**항상 null이다** — DSRE2에는 금액이 없다.
+                신청(주문) 자료지 매출이 아니라서, 금액을 내려면 과목코드를 우리 도서 마스터에
+                매핑해 단가를 붙여야 한다. 그 매핑이 매출일괄등록의 UNMAPPED와 같은 미결 과제다.
+                <b>0으로 채우지 않는다</b> — 0원짜리 주문으로 읽히면 그게 더 나쁘다.""")
+        Long totalAmount
 ) {
 }

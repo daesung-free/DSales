@@ -400,6 +400,31 @@ public class ReceivableService {
     }
 
     /**
+     * 외상매출장 — <b>전체 거래처</b>(24p). 거래처별 원장을 한 번에 낸다.
+     *
+     * <p>화면이 "전체 거래처 한 번에 보기는 준비 중"으로 막아 두고 있었다(2026-09-16 번들 실측).
+     * 원장은 거래처 하나가 단위라 <b>거래처마다 한 벌씩</b> 담아 낸다 — 한 표로 합치면
+     * 러닝밸런스가 남의 거래에 밀려 의미를 잃는다.
+     *
+     * <p>★대상 거래처는 <b>외상매출현황과 같은 집합</b>이다(이월이 있거나 기간 내 거래가 있는 곳).
+     * 다른 기준으로 고르면 두 화면의 거래처 수가 달라져 어느 쪽도 못 믿는다.
+     *
+     * <p>‼️거래처마다 원장을 만들므로 거래처 수만큼 조회가 돈다. 기간을 넓게 잡으면 느리다 —
+     * 화면이 기간을 좁혀 쓰도록 안내하는 편이 낫다.
+     */
+    @Transactional(readOnly = true)
+    public List<ArLedgerResponse> arLedgerAll(LocalDate fromDate, LocalDate toDate) {
+        List<ArLedgerResponse> out = new ArrayList<>();
+        for (ArStatusResponse.Row r : arStatus(fromDate, toDate, null).rows()) {
+            if (r.partnerId() == null) {
+                continue;   // 합계행
+            }
+            out.add(arLedger(r.partnerId(), fromDate, toDate));
+        }
+        return out;
+    }
+
+    /**
      * 외상매출장(24p) — <b>도서 단위 명세</b> + 러닝밸런스.
      * 근거: 레거시 외상매출장조회.vb {@code Refresh_DataGridView()} + 정본 24p 데이터 항목.
      *

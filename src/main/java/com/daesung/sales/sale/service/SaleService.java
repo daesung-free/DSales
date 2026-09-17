@@ -345,6 +345,10 @@ public class SaleService {
         // 정가·공급률은 그 도서의 출고 중 수량이 가장 많은 건의 값을 대표로 보여 준다(입력 기본값 용도).
         Map<Long, ReturnableResponse.Row> byProduct = new LinkedHashMap<>();
         Map<Long, Long> repQty = new HashMap<>();
+        // ★합치기 전의 출고조건별 내역도 같이 담는다. 화면이 "출고조건(정가·공급률)별로 나뉜
+        //   내역이 제공되지 않는다"며 비워 두고 있었다(2026-09-16 번들 실측).
+        //   원자료가 이미 조건별이라 쿼리를 새로 파지 않는다.
+        Map<Long, List<ReturnableResponse.Condition>> conditions = new LinkedHashMap<>();
         for (ReturnableAgg a : saleRepository.returnableAgg(partnerId, productId)) {
             ReturnableResponse.Row prev = byProduct.get(a.getProductId());
             long saleQty = a.getSaleQty() + (prev == null ? 0 : prev.saleQty());
@@ -356,9 +360,13 @@ public class SaleService {
             if (takeRep) {
                 repQty.put(a.getProductId(), a.getSaleQty());
             }
+            conditions.computeIfAbsent(a.getProductId(), k -> new ArrayList<>())
+                    .add(new ReturnableResponse.Condition(
+                            a.getUnitPrice(), a.getSupplyRate(), a.getSaleQty(), a.getReturnQty()));
             byProduct.put(a.getProductId(), new ReturnableResponse.Row(
                     a.getProductId(), a.getProductCode(), a.getProductName(),
-                    unitPrice, supplyRate, saleQty, returned, saleQty - returned));
+                    unitPrice, supplyRate, saleQty, returned, saleQty - returned,
+                    conditions.get(a.getProductId())));
         }
         // ★0만 걸러낸다(더 반품할 것도, 잘못된 것도 없는 도서). **음수는 보여준다** —
         //   반품 초과를 허용한 뒤로(발주처 2026-08-31 화면28) 잔여가 음수가 될 수 있는데,

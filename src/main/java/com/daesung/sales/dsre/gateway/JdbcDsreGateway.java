@@ -541,7 +541,9 @@ public class JdbcDsreGateway implements DsreGateway {
                    req.TEACHER                                  teacher,
                    req.TEL                                      tel,
                    req.ADDRESS                                  address,
-                   req.BIGO                                     bigo
+                   req.BIGO                                     bigo,
+                   COALESCE(cnt.TOTAL_QTY, 0)                   total_qty,
+                   COALESCE(cnt.ITEM_CNT, 0)                    item_cnt
               FROM tbl_request_info req
               LEFT JOIN tbl_product_dtl  dtl  ON dtl.DTL_CD  = req.DTL_CD
               LEFT JOIN tbl_product_info prod ON prod.PROD_CD = dtl.PROD_CD
@@ -551,6 +553,11 @@ public class JdbcDsreGateway implements DsreGateway {
               LEFT JOIN tbl_hakwon_info  hak  ON hak.MGR_CD  = req.MGR_CD
               LEFT JOIN (SELECT REQ_CD, COUNT(CLS_NM) CLS_CNT
                            FROM tbl_request_dtl GROUP BY REQ_CD) cls ON cls.REQ_CD = req.REQ_CD
+              -- ★총수량·품목건수. 화면이 "신청 자료에 총수량·품목건수가 없다"며 주문조회 연결을
+              --   미뤄 두고 있었다(2026-09-16). tbl_request_cnt 에 과목별 신청갯수가 있다.
+              --   ‼️금액은 이 테이블에도, DSRE2 어디에도 없다 — 신청이지 매출이 아니다.
+              LEFT JOIN (SELECT REQ_CD, SUM(CNT) TOTAL_QTY, COUNT(DISTINCT RES_CD) ITEM_CNT
+                           FROM tbl_request_cnt GROUP BY REQ_CD) cnt ON cnt.REQ_CD = req.REQ_CD
             """;
 
     // 기간·필터 조회 / 단건 조회. 앞부분(ORDER_SQL)을 공유해 컬럼 구성이 갈리지 않게 한다.
@@ -586,7 +593,10 @@ public class JdbcDsreGateway implements DsreGateway {
                 rs.getString("teacher"),
                 rs.getString("tel"),
                 rs.getString("address"),
-                rs.getString("bigo"));
+                rs.getString("bigo"),
+                rs.getLong("total_qty"),
+                rs.getInt("item_cnt"),
+                null);   // 총금액 — DSRE2에 없다(DsreOrderRow.totalAmount 주석 참고)
     };
 
     @Override

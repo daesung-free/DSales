@@ -240,6 +240,26 @@ public class ReceivableController {
                                 x.productCode(), x.productName()})));
     }
 
+    @Operation(summary = "외상매출장 — 전체 거래처(24p)",
+            description = """
+                    거래처별 원장을 한 번에 낸다. **거래처마다 한 벌씩** 담긴다 —
+                    한 표로 합치면 러닝밸런스가 남의 거래에 밀려 의미를 잃는다.
+
+                    · 대상 거래처는 **외상매출현황과 같은 집합**이다(이월이 있거나 기간 내 거래가 있는 곳).
+                    · ‼️거래처 수만큼 조회가 돈다. 기간을 넓게 잡으면 느리다.""")
+    @GetMapping("/ar-ledger/all")
+    public ApiResponse<List<ArLedgerResponse>> arLedgerAll(
+            @Parameter(description = "시작일(yyyy-MM-dd, 미지정 시 올해 1/1)") @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @Parameter(description = "종료일(yyyy-MM-dd, 미지정 시 오늘)") @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @Parameter(description = "키워드 — 거래처명으로 좁힌다(부분일치)")
+            @RequestParam(required = false) String keyword) {
+        return ApiResponse.success(Keywords.filter(
+                receivableService.arLedgerAll(fromDate, toDate), keyword,
+                x -> new Object[]{x.partnerName()}));
+    }
+
     @Operation(summary = "외상매출장 '더프모만'(24p)",
             description = """
                     모의고사 매출을 **학교(원)·시행월·학년·처리** 단위로 본다.
