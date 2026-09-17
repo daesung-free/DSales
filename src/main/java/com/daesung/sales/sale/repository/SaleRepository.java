@@ -670,15 +670,21 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
                and b.catCode like 'M%'
                and (b.catCode like 'M%A%' or b.catCode like 'M%B%' or b.catCode like 'M%C%')
                and s.salesDate between :fromDate and :toDate
-               and (:grade is null or b.grade = :grade)
+               and (:anyGrade = true or b.grade in :grades)
                and (:partnerId is null or p.id = :partnerId)
              group by p.region, p.code, p.name, s.schoolCode, s.schoolName, b.grade,
                       year(s.salesDate), month(s.salesDate)
              order by p.region, p.code, s.schoolCode, b.grade
             """)
+    // ‼️더프 판별은 **대분류로 바꿀 수 없다**(2026-09-17 시도했다가 되돌림).
+    //   대분류 MOCK_EXAM 으로 바꿔 봤더니 더프가 아닌 모의고사 계열(M…D)까지 섞여 들어왔다 —
+    //   AttendancePeriodIntegrationTest 가 그 케이스를 일부러 넣어 두고 있어 바로 깨졌다.
+    //   더프는 분류코드 M+A/B/C 계열이라는 레거시 규칙이 유일한 판별 기준이다.
+    //   (분류코드 형식은 [영문1][연도4][영문·숫자1~3]로 이미 검증되고 있어 자유 문자열은 아니다.)
     List<AttendancePeriodAgg> attendancePeriod(@Param("fromDate") LocalDate fromDate,
                                                @Param("toDate") LocalDate toDate,
-                                               @Param("grade") String grade,
+                                               @Param("anyGrade") boolean anyGrade,
+                                               @Param("grades") java.util.Collection<String> grades,
                                                @Param("partnerId") Long partnerId);
 
     /**

@@ -717,9 +717,19 @@ public class SaleController {
             @RequestParam(required = false) String grade,
             @Parameter(description = "거래처(특약점) 필터. 미지정=전체")
             @RequestParam(required = false) Long partnerId,
+            @Parameter(description = """
+                    학년 **다중선택** — 예: `1,2,3`. 레거시 조회화면의 학년 체크박스에 대응한다.
+                    단건 `grade`와 함께 주면 합집합이다.""")
+            @RequestParam(required = false) List<String> grades,
+            @Parameter(description = """
+                    조회구분 — `REGION`(지역별) / `PARTNER`(특약점별) / `SCHOOL`(학교별, 기본).
+                    레거시 라디오 버튼에 대응한다. 고른 단위까지만 펼치고 아래는 접는다.
+                    ‼️모르는 값은 400 — 조용히 기본값으로 주면 행 수가 수십 배 달라지는데 오류가 안 난다.""")
+            @RequestParam(required = false) String groupBy,
             @Parameter(description = "키워드 — 코드·명칭을 함께 훑는다(부분일치)")
             @RequestParam(required = false) String keyword) {
-        AttendancePeriodResponse r = attendanceService.period(fromDate, toDate, grade, partnerId);
+        AttendancePeriodResponse r = attendanceService.period(fromDate, toDate, grade, grades,
+                partnerId, groupBy);
         return ApiResponse.success(new AttendancePeriodResponse(r.fromDate(), r.toDate(), r.months(),
                 Keywords.filter(r.rows(), keyword,
                         x -> new Object[]{x.region(), x.partnerCode(), x.partnerName(),

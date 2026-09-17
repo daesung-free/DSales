@@ -89,6 +89,56 @@ public class AttendanceService {
      */
     public AttendancePeriodResponse period(LocalDate fromDate, LocalDate toDate,
                                            String grade, Long partnerId) {
+        return period(fromDate, toDate, grade, null, partnerId, null);
+    }
+
+    /**
+     * 응시현황(기간별) — <b>조회구분·학년 다중선택</b>까지 받는다.
+     *
+     * <p>근거: 테스트 피드백 1차(2026-09-17) — "레거시와 조회구분·컬럼 축이 다름".
+     * 레거시({@code 고사별처리인원.vb})는 <b>지역별/특약점별/학교별</b> 라디오와
+     * <b>학년 다중 체크(1·2·3)</b>를 갖고 있었다.
+     *
+     * <p>★<b>레거시의 분류코드 해독은 옮기지 않았다.</b> 레거시는 3,422줄에 걸쳐
+     * 연도마다 {@code catCode='M{2}A' and bookCode='11' → 1학년 4월} 식으로 코드 글자를 뒤진다.
+     * 학년·회차 필드가 없어서 그랬던 것이고, <b>우리는 그 필드를 갖고 있다</b>
+     * ({@code products.grade}·{@code sales.book_round}·{@code procType}).
+     * 그래서 코드 규칙(이슈2)이 정해지지 않아도 같은 숫자를 낼 수 있다.
+     *
+     * @param groupBy {@code REGION}(지역별) / {@code PARTNER}(특약점별) / {@code SCHOOL}(학교별, 기본)
+     *                — 어느 단위까지 펼칠지. 소계는 항상 지역→거래처 순으로 붙는다.
+     */
+    public AttendancePeriodResponse period(LocalDate fromDate, LocalDate toDate,
+                                           String grade, List<String> grades,
+                                           Long partnerId, String groupBy) {
+        List<String> gradeFilter = com.daesung.sales.common.query.MultiSelect.merge(
+                blankToNull(grade), grades);
+        String unit = normalizeGroupBy(groupBy);
+        return periodInternal(fromDate, toDate, gradeFilter, partnerId, unit);
+    }
+
+    /**
+     * 조회구분 정규화. 미지정이면 학교까지 펼친다(가장 잘게 — 레거시 기본).
+     *
+     * <p>‼️모르는 값은 거부한다. 조용히 기본값으로 넘기면 담당자는 지역별로 본다고 믿는데
+     * 학교별 목록을 보게 된다 — 행 수가 수십 배 달라지는데 오류가 안 난다.
+     */
+    private static String normalizeGroupBy(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "SCHOOL";
+        }
+        String v = raw.trim();
+        if (List.of("REGION", "PARTNER", "SCHOOL").contains(v)) {
+            return v;
+        }
+        throw new com.daesung.sales.common.exception.BusinessException(
+                com.daesung.sales.common.exception.ErrorCode.INVALID_INPUT,
+                "알 수 없는 조회구분입니다: " + raw + " (REGION=지역별 / PARTNER=특약점별 / SCHOOL=학교별)");
+    }
+
+    private AttendancePeriodResponse periodInternal(LocalDate fromDate, LocalDate toDate,
+                                                    List<String> gradeFilter, Long partnerId,
+                                                    String unit) {
         List<String> months = monthsBetween(fromDate, toDate);
         Map<String, Integer> monthIndex = new LinkedHashMap<>();
         for (int i = 0; i < months.size(); i++) {
@@ -98,7 +148,9 @@ public class AttendanceService {
         // 학교×학년 단위로 월 칸을 채운다(빈 달은 0).
         Map<String, PeriodBucket> byKey = new LinkedHashMap<>();
         for (AttendancePeriodAgg a : saleRepository.attendancePeriod(fromDate, toDate,
-                blankToNull(grade), partnerId)) {
+                com.daesung.sales.common.query.MultiSelect.isAny(gradeFilter),
+                com.daesung.sales.common.query.MultiSelect.orPlaceholder(gradeFilter, "\u0000"),
+                partnerId)) {
             String region = nz(a.getRegion());
             String key = region + "|" + nz(a.getPartnerCode()) + "|" + nz(a.getSchoolCode())
                     + "|" + nz(a.getGrade());
@@ -123,7 +175,9 @@ public class AttendanceService {
 
         for (PeriodBucket b : sortedBuckets(byKey.values())) {
             if (partnerSub != null && !java.util.Objects.equals(b.partnerCode, curPartner)) {
-                rows.add(partnerSub.toRow("PARTNER_SUBTOTAL"));
+                if (!"REGION".equals(unit)) {
+                    rows.add(partnerSub.toRow("PARTNER_SUBTOTAL"));
+                }
                 partnerSub = null;
             }
             if (regionSub != null && !java.util.Objects.equals(b.region, curRegion)) {
@@ -139,12 +193,17 @@ public class AttendanceService {
                 partnerSub = new PeriodBucket(months.size(), b.region, b.partnerCode, b.partnerName,
                         null, null, null);
             }
-            rows.add(b.toRow("SCHOOL"));
+            // ★조회구분이 SCHOOL 일 때만 학교 줄을 편다.
+            //   지역별·특약점별을 골랐는데 학교 줄이 다 나오면 행이 수십 배가 되고,
+            //   담당자는 소계만 보려던 화면에서 원하는 줄을 찾지 못한다.
+            if ("SCHOOL".equals(unit)) {
+                rows.add(b.toRow("SCHOOL"));
+            }
             partnerSub.add(b);
             regionSub.add(b);
             grand.add(b);
         }
-        if (partnerSub != null) {
+        if (partnerSub != null && !"REGION".equals(unit)) {
             rows.add(partnerSub.toRow("PARTNER_SUBTOTAL"));
         }
         if (regionSub != null) {
