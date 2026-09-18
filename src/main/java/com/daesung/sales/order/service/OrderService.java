@@ -250,4 +250,48 @@ public class OrderService {
         return (v == null || v.isBlank()) ? fallback : v;
     }
 
+
+    /**
+     * 주문 삭제(접수완료 건만). 근거: 발주처 회신 2026-08-14 [4] —
+     * "주문(접수완료) — <b>상품검수로 넘어가기 전까지</b> 영업·관리자가 삭제 가능".
+     *
+     * <p>★<b>물리삭제가 아니다.</b> DSRE2 컬럼 주석이 이미 그렇게 정의한다 —
+     * {@code STATE = 'C' : 삭제(지사외 본사 및 물류에서 삭제시)}. 행을 지우면 반·과목 수량까지
+     * 함께 사라져 "무엇이 있었는지"가 남지 않고, order 사이트·DSRE2 데스크톱이 같은 행을
+     * 보고 있어 우리가 지울 자리가 아니다.
+     *
+     * <p>★<b>접수완료(A)에서만 된다.</b> 상품검수 이후는 물류가 이미 움직이기 시작한 건이라
+     * 그때 지우면 작업지시와 실물이 어긋난다. 그 뒤로는 DSRE2 쪽 처리를 따른다.
+     *
+     * <p>이 경로가 없으면 <b>우리가 만든 주문을 우리가 되돌릴 수 없다</b> —
+     * 잘못 넣은 건이 영구히 남아 물류 목록을 더럽힌다(테스트 신청 79069가 그 사례다).
+     */
+    @Transactional
+    public ItemResult delete(int reqCd, String reason) {
+        DsreOrderRow order = dsreGateway.findOrder(reqCd)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                        "주문이 없습니다. reqCd=" + reqCd));
+        OrderState from = OrderState.ofCode(order.stateCode()).orElse(null);
+
+        if (from != OrderState.RECEIVED) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "접수완료 상태에서만 삭제할 수 있습니다. 현재 "
+                            + ((from == null) ? order.stateCode() : from.label())
+                            + " — 상품검수 이후는 물류가 이미 움직인 건이라 DSRE2에서 처리해야 합니다.");
+        }
+
+        int changed = dsreGateway.changeState(reqCd, OrderState.RECEIVED.code(), OrderState.CANCELED.code());
+        if (changed == 0) {
+            // 조회와 UPDATE 사이에 DSRE2 데스크톱이 먼저 옮겼다. 성공으로 보고하면 담당자가 속는다.
+            return skip(reqCd, order.stateCode(), OrderState.CANCELED,
+                    "그 사이 다른 곳에서 상태가 바뀌었습니다. 다시 조회해 주세요.");
+        }
+        statusHistoryService.record(StatusEntityType.DSRE_ORDER, (long) reqCd, "state",
+                OrderState.RECEIVED.code(), OrderState.CANCELED.code(),
+                "주문 삭제" + ((reason == null || reason.isBlank()) ? "" : " — 사유: " + reason.trim()));
+        return new ItemResult(reqCd, true,
+                OrderState.RECEIVED.code(), OrderState.RECEIVED.label(),
+                OrderState.CANCELED.code(), OrderState.CANCELED.label(), null);
+    }
+
 }

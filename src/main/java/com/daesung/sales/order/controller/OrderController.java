@@ -24,6 +24,7 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -60,6 +61,27 @@ public class OrderController {
     private final DsreGateway dsreGateway;
     private final OrderService orderService;
     private final ExcelExportUtil excel;
+
+    @Operation(summary = "주문 삭제(접수완료 건만)",
+            description = """
+                    잘못 넣은 주문을 지운다. 발주처 확정(2026-08-14 [4]) —
+                    "주문(접수완료) — **상품검수로 넘어가기 전까지** 영업·관리자가 삭제 가능".
+
+                    · **접수완료(A)에서만** 됩니다. 상품검수 이후는 물류가 이미 움직인 건이라
+                      그때 지우면 작업지시와 실물이 어긋납니다 → 400.
+                    · ⚠️**물리삭제가 아닙니다.** DSRE2가 그렇게 정의합니다 —
+                      `STATE = 'C' : 삭제`. 행을 지우면 반·과목 수량까지 사라져
+                      "무엇이 있었는지"가 남지 않고, order 사이트·DSRE2 데스크톱이
+                      같은 행을 보고 있어 우리가 지울 자리가 아닙니다.
+                    · 조회와 변경 사이에 DSRE2 쪽이 먼저 옮겼으면 `changed=false`로 돌려줍니다
+                      (성공으로 보고하면 담당자가 속습니다).
+                    · 누가·언제·왜 지웠는지는 상태변경 이력에 남습니다.""")
+    @DeleteMapping("/{reqCd}")
+    public ApiResponse<OrderService.ItemResult> delete(
+            @Parameter(description = "신청번호(REQ_CD)", required = true) @PathVariable int reqCd,
+            @Parameter(description = "삭제 사유") @RequestParam(required = false) String reason) {
+        return ApiResponse.success(orderService.delete(reqCd, reason));
+    }
 
     @Operation(summary = "신청 가능 시행 목록",
             description = """

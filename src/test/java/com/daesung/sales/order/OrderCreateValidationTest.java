@@ -137,4 +137,47 @@ class OrderCreateValidationTest {
         assertThat(o.procYn2()).isEqualTo("N");
         assertThat(o.deliveryGubun()).as("미지정이면 화물").isEqualTo("H");
     }
+
+    @Test
+    @DisplayName("★접수완료 건만 삭제된다 — 검수 이후는 물류가 이미 움직였다")
+    void 삭제는_접수완료만() {
+        when(gateway.findOrder(79069)).thenReturn(java.util.Optional.of(order("G")));
+
+        assertThatThrownBy(() -> service.delete(79069, "테스트 정리"))
+                .isInstanceOf(BusinessException.class)
+                .hasMessageContaining("접수완료 상태에서만")
+                .hasMessageContaining("상품검수");
+    }
+
+    @Test
+    @DisplayName("★삭제는 행을 지우지 않고 상태를 C(삭제)로 바꾼다")
+    void 삭제는_상태전환() {
+        when(gateway.findOrder(79069)).thenReturn(java.util.Optional.of(order("A")));
+        when(gateway.changeState(79069, "A", "C")).thenReturn(1);
+
+        OrderService.ItemResult r = service.delete(79069, "연동 테스트 정리");
+
+        assertThat(r.changed()).isTrue();
+        assertThat(r.fromCode()).isEqualTo("A");
+        assertThat(r.toCode()).as("물리삭제가 아니라 C(삭제) 상태").isEqualTo("C");
+    }
+
+    @Test
+    @DisplayName("그 사이 DSRE2가 먼저 옮겼으면 성공으로 보고하지 않는다")
+    void 삭제_경합() {
+        when(gateway.findOrder(79069)).thenReturn(java.util.Optional.of(order("A")));
+        when(gateway.changeState(79069, "A", "C")).thenReturn(0);
+
+        OrderService.ItemResult r = service.delete(79069, null);
+
+        assertThat(r.changed()).isFalse();
+        assertThat(r.message()).contains("다른 곳에서 상태가 바뀌었");
+    }
+
+    /** 상태코드만 의미 있는 최소 주문 행. */
+    private static com.daesung.sales.dsre.gateway.DsreOrderRow order(String stateCode) {
+        return new com.daesung.sales.dsre.gateway.DsreOrderRow(
+                79069, "20260918", stateCode, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null, 0L, 0, null);
+    }
 }
