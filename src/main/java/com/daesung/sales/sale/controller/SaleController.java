@@ -541,9 +541,33 @@ public class SaleController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
             @Parameter(description = "종료일(yyyy-MM-dd)", required = true) @RequestParam(name = "toDate")
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @Parameter(description = """
+                    학교/학원코드 — **그 학교 건만** 싣는다. 실물 양식의 「학교(원)」 칸은 값이 하나라
+                    명세서는 (거래처 × 학교) 단위로 발행된다.
+                    ‼️안 주면 기간의 모든 학교가 한 장에 섞이고 이름은 첫 학교만 찍힌다 —
+                    발행 대상은 `GET /sales/transaction-statement/schools` 로 먼저 뽑을 것.""")
+            @RequestParam(required = false) String schoolCode,
             @Parameter(description = "회계구분(미지정=매출+무가, RETURN=반품명세서)") @RequestParam(required = false)
             SalesCategory category) {
-        return ApiResponse.success(saleReportService.transactionStatement(partnerId, from, to, category));
+        return ApiResponse.success(
+                saleReportService.transactionStatement(partnerId, from, to, category, schoolCode));
+    }
+
+    @Operation(summary = "거래명세서 발행 대상 학교 목록",
+            description = """
+                    그 거래처·기간에 **명세서를 몇 장 발행해야 하는지**. 한 장에 한 학교다.
+
+                    실물 양식의 「학교(원)」 칸은 값이 하나라, 학교가 여럿이면 여러 장이다.
+                    이 목록 없이 발행하면 학교가 섞인 한 장이 나오고 **첫 학교 이름만** 찍혀,
+                    나머지 학교 물량이 남의 명세서에 실린다.""")
+    @GetMapping("/transaction-statement/schools")
+    public ApiResponse<List<com.daesung.sales.sale.repository.SaleRepository.StatementSchool>>
+            transactionStatementSchools(
+            @Parameter(description = "거래처 id", required = true) @RequestParam Long partnerId,
+            @RequestParam(name = "fromDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @RequestParam(name = "toDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @RequestParam(required = false) SalesCategory category) {
+        return ApiResponse.success(saleReportService.statementSchools(partnerId, from, to, category));
     }
 
     @Operation(summary = "거래명세서 엑셀 다운로드", description = "유가+무가 라인 통합(품명·정가·공급률·단가·수량·금액·세액).")

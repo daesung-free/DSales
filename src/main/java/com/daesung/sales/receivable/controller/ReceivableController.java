@@ -208,7 +208,7 @@ public class ReceivableController {
         return ApiResponse.success(new ArStatusResponse(r.fromDate(), r.toDate(),
                 Keywords.filter(r.rows(), keyword,
                         x -> new Object[]{x.partnerCode(), x.partnerName()}),
-                r.total()));
+                r.total(), r.warnings()));
     }
 
     @Operation(summary = "미수금현황 엑셀 다운로드", description = "거래처별 이월·매출·반품·채권발생·수금·잔액·담보비율.")

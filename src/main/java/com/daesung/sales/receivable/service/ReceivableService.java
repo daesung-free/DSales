@@ -430,7 +430,16 @@ public class ReceivableService {
                 tOpen, tSaleQty, tSale, tRetQty, tRet, tTax, tGen, tColl, tBal, tTeacher, tTeacherQty,
                 sumCategories(byCat.values()),
                 null, null, null, null, null);
-        return new ArStatusResponse(from, to, rows, total);
+        // ★이월 스냅샷이 없는 연도는 **없다고 말한다**. 예전엔 조용히 0으로 나가서,
+        //   이월이 안 잡힌 채 "잔액이 맞다"고 읽혔다(프론트 실측: 부산지사 2025 미수 3,646만 원 누락).
+        //   숫자를 고치는 게 아니라 — 이월을 자동 생성하면 아무도 모르는 사이에 장부가 생긴다 —
+        //   **비어 있다는 사실**을 알린다. 만드는 것은 담당자가 [이월생성]으로 명시적으로 한다.
+        List<String> warnings = new ArrayList<>();
+        if (carry.isEmpty()) {
+            warnings.add(to.getYear() + "년 이월 스냅샷이 없습니다. 이월이 0으로 계산되어 "
+                    + "전년 미수금이 잔액에 빠져 있습니다 — 마감관리에서 이월을 먼저 생성하세요.");
+        }
+        return new ArStatusResponse(from, to, rows, total, warnings);
     }
 
     /**

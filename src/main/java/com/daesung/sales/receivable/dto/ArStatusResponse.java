@@ -10,7 +10,15 @@ public record ArStatusResponse(
         @Schema(description = "집계 시작일") LocalDate fromDate,
         @Schema(description = "집계 종료일") LocalDate toDate,
         @Schema(description = "거래처별 채권 현황") List<Row> rows,
-        @Schema(description = "합계행") Row total
+        @Schema(description = "합계행") Row total,
+
+        @Schema(description = """
+                경고 — 비어 있으면 이상 없음.
+
+                ★**이월 스냅샷이 없는 연도**를 조회하면 여기로 알린다. 예전엔 조용히 0으로 나가서,
+                이월이 안 잡힌 채 "잔액이 맞다"고 읽혔다(실측: 부산지사 2025 미수 3,646만 원 누락).
+                숫자가 틀린 게 아니라 **없는 것을 없다고 말하지 않은 것**이 문제였다.""")
+        List<String> warnings
 ) {
     @Schema(name = "ArStatusRow")
     public record Row(

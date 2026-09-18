@@ -452,14 +452,39 @@ public class SaleReportService {
      * 유가(공급가액≠0)/무가(=0) 분리, 합계=공급가액+세액.
      */
     @Transactional(readOnly = true)
+    /** 거래명세서 발행 대상 학교 목록(거래처 × 기간). 한 장에 한 학교다. */
+    public List<SaleRepository.StatementSchool> statementSchools(Long partnerId, LocalDate from,
+                                                                 LocalDate to, SalesCategory category) {
+        java.util.Collection<SalesCategory> cats = (category != null)
+                ? List.of(category)
+                : List.of(SalesCategory.SALE, SalesCategory.FREE);
+        return saleRepository.statementSchools(partnerId, from, to, cats);
+    }
+
     public TransactionStatementResponse transactionStatement(Long partnerId, LocalDate from, LocalDate to,
                                                              SalesCategory category) {
+        return transactionStatement(partnerId, from, to, category, null);
+    }
+
+    /**
+     * 거래명세서. {@code schoolCode} 를 주면 <b>그 학교 건만</b> 싣는다.
+     *
+     * <p>★실물 양식의 「학교(원)」 칸은 값이 <b>하나</b>다 — 명세서는 (거래처 × 학교) 단위로
+     * 발행된다. 학교를 안 주면 기간의 모든 학교가 한 장에 섞이고 이름은 첫 학교만 찍힌다.
+     * 발행 대상은 {@code /sales/transaction-statement/schools} 로 먼저 뽑는다.
+     */
+    public TransactionStatementResponse transactionStatement(Long partnerId, LocalDate from, LocalDate to,
+                                                             SalesCategory category, String schoolCode) {
         Partner partner = partnerRepository.findById(partnerId)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "거래처가 없습니다. id=" + partnerId));
         java.util.Collection<SalesCategory> cats = (category != null)
                 ? List.of(category)
                 : List.of(SalesCategory.SALE, SalesCategory.FREE);
         List<Sale> sales = saleRepository.statementLines(partnerId, from, to, cats);
+        if (schoolCode != null && !schoolCode.isBlank()) {
+            String want = schoolCode.trim();
+            sales = sales.stream().filter(x -> want.equals(x.getSchoolCode())).toList();
+        }
 
         List<TransactionStatementResponse.Line> priced = new ArrayList<>();
         List<TransactionStatementResponse.Line> free = new ArrayList<>();

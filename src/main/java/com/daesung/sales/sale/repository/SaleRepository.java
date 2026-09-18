@@ -25,6 +25,34 @@ import org.springframework.data.repository.query.Param;
 public interface SaleRepository extends JpaRepository<Sale, Long> {
 
     /**
+     * 거래명세서 발행 대상 <b>학교 목록</b>. 실물 양식의 「학교(원)」 칸은 <b>값이 하나</b>라
+     * 명세서는 (거래처 × 학교) 단위로 발행된다 — 기간에 학교가 여럿이면 여러 장이다.
+     *
+     * <p>이 목록이 없으면 화면은 학교가 섞인 한 장을 만들고 <b>첫 학교 이름만</b> 찍는다.
+     * 그러면 나머지 학교 물량이 남의 명세서에 실린다.
+     */
+    @Query("""
+            select distinct s.schoolCode as schoolCode, s.schoolName as schoolName
+              from Sale s
+             where s.partner.id = :partnerId and s.canceled = false
+               and s.salesDate between :from and :to
+               and s.salesCategory in :categories
+             order by s.schoolName
+            """)
+    List<StatementSchool> statementSchools(@Param("partnerId") Long partnerId,
+                                           @Param("from") LocalDate from,
+                                           @Param("to") LocalDate to,
+                                           @Param("categories") Collection<SalesCategory> categories);
+
+    /** 거래명세서 발행 대상 학교 한 줄. */
+    interface StatementSchool {
+        String getSchoolCode();
+
+        String getSchoolName();
+    }
+
+
+    /**
      * 주문번호별 매출번호. 주문 목록이 "이 주문이 무슨 매출이 됐나"를 붙일 때 쓴다.
      *
      * <p>한 주문이 여러 매출로 갈릴 수 있다(품목·학교별로 나뉘는 경우) — 그래서 목록이다.
