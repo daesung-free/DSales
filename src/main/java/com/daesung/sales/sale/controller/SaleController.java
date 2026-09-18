@@ -89,6 +89,9 @@ public class SaleController {
             java.util.Map.entry("schoolCode", "schoolCode"),
             java.util.Map.entry("schoolName", "schoolName"),
             java.util.Map.entry("bookRound", "bookRound"),
+            // 프론트가 정렬을 껐던 둘 — 표에 없어 400이었다(2026-09-18 지적).
+            java.util.Map.entry("canceled", "canceled"),
+            java.util.Map.entry("memo", "memo"),
             // ↓ 연관 엔티티 — 화면 이름과 경로가 다른 것들
             java.util.Map.entry("partnerCode", "partner.code"),
             java.util.Map.entry("partnerName", "partner.name"),
