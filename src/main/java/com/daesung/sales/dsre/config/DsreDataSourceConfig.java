@@ -14,6 +14,25 @@ import org.springframework.jdbc.core.JdbcTemplate;
 @ConditionalOnProperty(name = "daesung.dsre.enabled", havingValue = "true")
 public class DsreDataSourceConfig {
 
+    /**
+     * DSRE2 전용 트랜잭션 경계.
+     *
+     * <p>★<b>왜 필요한가</b> — 여기 {@code DataSource}는 스프링 빈이 아니라(아래 주석 참고)
+     * 기본 트랜잭션 매니저가 관리하지 않는다. 그래서 서비스에 {@code @Transactional}을 붙여도
+     * <b>DSRE2 쪽은 묶이지 않는다</b>. 주문 등록처럼 <b>테이블 셋을 한 번에</b> 넣어야 하는
+     * 작업이 중간에 실패하면, 헤더만 들어가고 반·수량이 빠진 <b>반쪽 주문</b>이 남는다.
+     *
+     * <p>{@code TransactionTemplate}만 노출하고 DataSource는 계속 감춘다 —
+     * 빈으로 내놓으면 기본 JPA 자동설정이 그걸 주 DataSource로 집어갈 수 있다.
+     */
+    @Bean
+    public org.springframework.transaction.support.TransactionTemplate dsreTransactionTemplate(
+            JdbcTemplate dsreJdbcTemplate) {
+        var tm = new org.springframework.jdbc.datasource.DataSourceTransactionManager(
+                java.util.Objects.requireNonNull(dsreJdbcTemplate.getDataSource()));
+        return new org.springframework.transaction.support.TransactionTemplate(tm);
+    }
+
     @Bean
     public JdbcTemplate dsreJdbcTemplate(DsreProperties props) {
         HikariDataSource ds = new HikariDataSource();

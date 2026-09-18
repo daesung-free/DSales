@@ -4,6 +4,9 @@ import com.daesung.sales.audit.entity.StatusEntityType;
 import com.daesung.sales.audit.service.StatusHistoryService;
 import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
+import com.daesung.sales.dsre.gateway.NewOrder;
+import com.daesung.sales.order.dto.OrderCreateRequest;
+import com.daesung.sales.order.dto.OrderCreateResponse;
 import com.daesung.sales.dsre.gateway.DsreGateway;
 import com.daesung.sales.dsre.gateway.DsreOrderRow;
 import com.daesung.sales.dsre.gateway.OrderState;
@@ -33,6 +36,7 @@ public class OrderService {
 
     private final DsreGateway dsreGateway;
     private final StatusHistoryService statusHistoryService;
+    private final com.daesung.sales.common.audit.CurrentAuditor currentAuditor;
 
     /**
      * 거래명세서 발급 처리 → 발송준비중(W).
@@ -166,4 +170,81 @@ public class OrderService {
     /** 일괄 전환 결과. {@code skipped}가 0이 아니면 건별 사유를 확인해야 한다. */
     public record BulkStateResult(int requested, int changed, int skipped, List<ItemResult> results) {
     }
+
+    /**
+     * 신규 주문 등록. 근거: 레거시 특약점 사이트 {@code Application_SQL.xml:266~299}를 그대로 옮겼다.
+     *
+     * <p>★<b>등록 직후 상태는 항상 A(접수완료)</b>다. 레거시도 STATE를 넣지 않고 DB 기본값에 맡긴다 —
+     * 우리가 임의로 다른 상태로 만들면 그 뒤 전이(G→S→W→D)를 밟는 DSRE2 데스크톱과 어긋난다.
+     *
+     * <p>★<b>신청방식은 우리가 고르지 않는다.</b> 간편신청을 받는지는 시행 마스터의
+     * {@code EASY_GN}에 이미 정해져 있다. 여기서는 <b>들어온 값이 앞뒤가 맞는지만</b> 본다 —
+     * 간편인데 인원이 하나도 없거나, 과목신청인데 수량이 없으면 거부한다.
+     * 조용히 통과시키면 물류가 무엇을 몇 개 보낼지 알 수 없는 주문이 선다.
+     */
+    @Transactional
+    public OrderCreateResponse create(OrderCreateRequest req) {
+        List<NewOrder.ClassLine> classes = new ArrayList<>();
+        int subjectLines = 0;
+        long totalQty = 0;
+
+        for (int i = 0; i < req.classes().size(); i++) {
+            OrderCreateRequest.ClassLine c = req.classes().get(i);
+            boolean hasSubjects = c.subjects() != null && !c.subjects().isEmpty();
+            // 미지정이면 과목 수량 유무로 정한다(레거시 신청 화면과 같은 판정).
+            String applyType = (c.applyType() != null) ? c.applyType() : (hasSubjects ? "N" : "S");
+
+            long headCount = nz(c.humanities()) + nz(c.science()) + nz(c.combined());
+            if ("S".equals(applyType)) {
+                if (headCount <= 0) {
+                    throw new BusinessException(ErrorCode.INVALID_INPUT,
+                            (i + 1) + "번째 반(" + c.className() + "): 간편신청인데 인원이 없습니다. "
+                                    + "인문·자연·통합 중 하나는 1명 이상이어야 합니다.");
+                }
+                totalQty += headCount;
+            } else {
+                if (!hasSubjects) {
+                    throw new BusinessException(ErrorCode.INVALID_INPUT,
+                            (i + 1) + "번째 반(" + c.className() + "): 과목신청인데 과목 수량이 없습니다.");
+                }
+                for (OrderCreateRequest.SubjectQty q : c.subjects()) {
+                    totalQty += q.qty();
+                }
+                subjectLines += c.subjects().size();
+            }
+
+            List<NewOrder.SubjectQty> subjects = new ArrayList<>();
+            if (hasSubjects) {
+                c.subjects().forEach(q -> subjects.add(new NewOrder.SubjectQty(q.resCd(), q.qty())));
+            }
+            classes.add(new NewOrder.ClassLine(c.className(), applyType,
+                    c.humanities(), c.science(), c.combined(), subjects));
+        }
+
+        NewOrder order = new NewOrder(req.dtlCd(), req.custCode(), req.schoolCode(),
+                orDefault(req.procYn(), "N"), orDefault(req.procYn2(), "N"), req.procDate(),
+                req.teacher(), req.tel(), req.email(), req.zipCode(), req.address(), req.memo(),
+                orDefault(req.deliveryGubun(), "H"), classes);
+
+        int reqCd = dsreGateway.createOrder(order, currentAuditor.username());
+
+        // ‼️DSRE2엔 상태 이력 테이블이 없다(제자리 UPDATE라 이전 값이 사라진다).
+        //   우리가 만든 주문만이라도 "누가 언제 넣었나"를 남긴다 — 상태전이 기록과 같은 자리다.
+        statusHistoryService.record(StatusEntityType.DSRE_ORDER, (long) reqCd, "state",
+                null, OrderState.RECEIVED.code(),
+                "주문 등록(시행 " + req.dtlCd() + " · 거래처 " + req.custCode()
+                        + " · 반 " + classes.size() + "개 · 수량 " + totalQty + ")");
+
+        return new OrderCreateResponse(reqCd, OrderState.RECEIVED.code(), OrderState.RECEIVED.label(),
+                classes.size(), subjectLines, totalQty);
+    }
+
+    private static long nz(Integer v) {
+        return (v == null) ? 0 : v;
+    }
+
+    private static String orDefault(String v, String fallback) {
+        return (v == null || v.isBlank()) ? fallback : v;
+    }
+
 }

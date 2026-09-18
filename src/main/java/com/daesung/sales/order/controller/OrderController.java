@@ -2,6 +2,10 @@ package com.daesung.sales.order.controller;
 
 import com.daesung.sales.common.excel.ExcelExportUtil;
 import com.daesung.sales.common.excel.ExcelExportUtil.Col;
+import com.daesung.sales.dsre.gateway.ExamRow;
+import com.daesung.sales.dsre.gateway.SubjectRow;
+import com.daesung.sales.order.dto.OrderCreateRequest;
+import com.daesung.sales.order.dto.OrderCreateResponse;
 import com.daesung.sales.common.response.ApiResponse;
 import com.daesung.sales.dsre.gateway.DsreGateway;
 import com.daesung.sales.dsre.gateway.DsreOrderRow;
@@ -19,12 +23,14 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
@@ -54,6 +60,55 @@ public class OrderController {
     private final DsreGateway dsreGateway;
     private final OrderService orderService;
     private final ExcelExportUtil excel;
+
+    @Operation(summary = "신청 가능 시행 목록",
+            description = """
+                    주문 등록 1단계 — **무엇을 신청할지** 고른다. 원천은 DSRE2 상품상세(시행)다.
+
+                    · **판매중인 것만** 내려준다(사용·판매 여부 Y + 판매종료일이 오늘 이후).
+                      끝난 시행으로는 신청할 수 없다.
+                    · `easyYn`이 **간편신청 가능 여부**다. 시행마다 정해져 있으니
+                      화면은 이 값을 보고 입력칸(인원 3칸 / 과목별 수량)을 고른다.
+                    · `dtlCd`는 물류단가가 키로 쓰는 그 **시행코드**와 같은 값이다.""")
+    @GetMapping("/exams")
+    public ApiResponse<List<ExamRow>> exams(
+            @Parameter(description = "시행명·상품명 부분일치. 미지정=전체")
+            @RequestParam(required = false) String keyword) {
+        return ApiResponse.success(dsreGateway.listExams(keyword));
+    }
+
+    @Operation(summary = "시행별 과목 목록",
+            description = """
+                    주문 등록 2단계(과목신청일 때만) — 그 시행에 **어떤 과목이 있는지**.
+
+                    신청 시 계산처리 대상(`DISP_GN='Y'`)만 내려준다 — 레거시 신청 화면과 같은 조건이다.
+                    간편신청(`easyYn='Y'`)으로 넣을 거라면 부를 필요가 없다.""")
+    @GetMapping("/exams/{dtlCd}/subjects")
+    public ApiResponse<List<SubjectRow>> subjects(
+            @Parameter(description = "시행코드(DTL_CD)", required = true) @PathVariable int dtlCd) {
+        return ApiResponse.success(dsreGateway.listSubjects(dtlCd));
+    }
+
+    @Operation(summary = "신규 주문 등록",
+            description = """
+                    주문을 새로 만든다. 구조는 **주문 → 반 → 과목수량 3단**이고,
+                    레거시 특약점 사이트의 신청과 같은 모양이다.
+
+                    · **테이블 셋을 한 트랜잭션으로** 넣는다. 중간에 실패하면 반·수량이 빠진
+                      반쪽 주문이 남아, 물류가 무엇을 보낼지 알 수 없게 된다.
+                    · **등록 직후 상태는 항상 `A`(접수완료)**다. 이후 전이(상품검수→발송완료)는
+                      기존 상태변경 경로를 탄다.
+                    · 반마다 **간편신청(인원 3칸)** 또는 **과목신청(과목별 수량)** 중 하나로 채운다.
+                      `applyType`을 안 주면 과목 수량 유무로 판정한다.
+                    · ‼️간편인데 인원이 0이거나 과목신청인데 수량이 없으면 **400**이다.
+                      조용히 통과시키면 물류가 무엇을 몇 개 보낼지 모르는 주문이 선다.
+
+                    ⚠️이 등록은 **발주처 DB(DSRE2)에 직접 기록**된다.""")
+    @PostMapping
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResponse<OrderCreateResponse> create(@Valid @RequestBody OrderCreateRequest req) {
+        return ApiResponse.success(orderService.create(req));
+    }
 
     @Operation(summary = "거래명세서 발급 처리 → 발송준비중 전환",
             description = """

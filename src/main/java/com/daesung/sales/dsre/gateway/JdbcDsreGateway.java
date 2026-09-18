@@ -6,6 +6,7 @@ import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.jdbc.core.RowMapper;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
@@ -19,6 +20,7 @@ import org.springframework.stereotype.Component;
 public class JdbcDsreGateway implements DsreGateway {
 
     private final JdbcTemplate dsreJdbcTemplate;
+    private final org.springframework.transaction.support.TransactionTemplate dsreTransactionTemplate;
 
     @Override
     public Integer reqInwon(int reqCd) {
@@ -682,4 +684,120 @@ public class JdbcDsreGateway implements DsreGateway {
     private static String trim(String s) {
         return (s == null) ? null : s.trim();
     }
+
+    // ── 신규 주문 등록(레거시 특약점 사이트 Application_SQL.xml:266~299 와 같은 3단) ──────────
+
+    /**
+     * 신청 가능 시행. 판매중 판정은 레거시와 같다 — {@code SALE_YN='Y'} + 판매종료일이 오늘 이후.
+     * ‼️SQL은 완성된 상수 둘 중 하나를 고른다(조각을 붙이지 않는다 — 게이트규칙 파라미터 바인딩).
+     */
+    private static final String SQL_EXAMS = """
+            SELECT d.DTL_CD, d.DTL_NM, d.PROD_CD, p.PROD_NM, d.GRADE, d.PROC_YN,
+                   d.SALE_DT, d.EASY_GN
+              FROM tbl_product_dtl d
+              JOIN tbl_product_info p ON p.PROD_CD = d.PROD_CD
+             WHERE d.USE_YN = 'Y' AND d.SALE_YN = 'Y'
+               AND d.SALE_DT >= DATE_FORMAT(NOW(), '%Y%m%d')
+             ORDER BY d.SALE_DT DESC, d.DTL_CD DESC
+             LIMIT 500
+            """;
+
+    private static final String SQL_EXAMS_KEYWORD = """
+            SELECT d.DTL_CD, d.DTL_NM, d.PROD_CD, p.PROD_NM, d.GRADE, d.PROC_YN,
+                   d.SALE_DT, d.EASY_GN
+              FROM tbl_product_dtl d
+              JOIN tbl_product_info p ON p.PROD_CD = d.PROD_CD
+             WHERE d.USE_YN = 'Y' AND d.SALE_YN = 'Y'
+               AND d.SALE_DT >= DATE_FORMAT(NOW(), '%Y%m%d')
+               AND (d.DTL_NM LIKE ? OR p.PROD_NM LIKE ?)
+             ORDER BY d.SALE_DT DESC, d.DTL_CD DESC
+             LIMIT 500
+            """;
+
+    @Override
+    public List<ExamRow> listExams(String keyword) {
+        RowMapper<ExamRow> mapper = (rs, i) -> new ExamRow(
+                rs.getInt("DTL_CD"), rs.getString("DTL_NM"),
+                rs.getString("PROD_CD"), rs.getString("PROD_NM"),
+                rs.getString("GRADE"), rs.getString("PROC_YN"),
+                rs.getString("SALE_DT"), rs.getString("EASY_GN"));
+        if (keyword == null || keyword.isBlank()) {
+            return dsreJdbcTemplate.query(SQL_EXAMS, mapper);
+        }
+        String like = "%" + keyword.trim() + "%";
+        return dsreJdbcTemplate.query(SQL_EXAMS_KEYWORD, mapper, like, like);
+    }
+
+    private static final String SQL_SUBJECTS = """
+            SELECT RES_CD, RES_NM, GYOSI, GEYUL, SORTKEY
+              FROM tbl_resource_info
+             WHERE DTL_CD = ? AND DISP_GN = 'Y'
+             ORDER BY SORTKEY
+            """;
+
+    @Override
+    public List<SubjectRow> listSubjects(int dtlCd) {
+        return dsreJdbcTemplate.query(SQL_SUBJECTS, (rs, i) -> new SubjectRow(
+                rs.getInt("RES_CD"), rs.getString("RES_NM"),
+                rs.getString("GYOSI"), rs.getString("GEYUL"), rs.getInt("SORTKEY")), dtlCd);
+    }
+
+    /** ‼️STATE를 넣지 않는다 — DB 기본값 'A'(접수완료)에 맡긴다. 레거시 신청도 같다. */
+    private static final String SQL_INSERT_ORDER = """
+            INSERT INTO tbl_request_info
+                (DTL_CD, CUST_CD, MGR_CD, REQ_DATE, PROC_YN, PROC_YN2, PROC_DT,
+                 TEACHER, TEL, EMAIL, ZIP_CD, ADDRESS, BIGO, LGS_GN, REG_DATE, REG_USER)
+            VALUES (?, ?, ?, DATE_FORMAT(NOW(), '%Y%m%d'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)
+            """;
+
+    private static final String SQL_INSERT_CLASS = """
+            INSERT INTO tbl_request_dtl
+                (REQ_CD, SEQ, CLS_NM, REQ_GN, GEYUL1, GEYUL2, GEYULT, REG_DATE, REG_USER)
+            VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), ?)
+            """;
+
+    private static final String SQL_LAST_ID = "SELECT LAST_INSERT_ID()";
+
+    private static final String SQL_INSERT_QTY = """
+            INSERT INTO tbl_request_cnt (REQ_CD, SEQ, RES_CD, CNT) VALUES (?, ?, ?, ?)
+            """;
+
+    @Override
+    public int createOrder(NewOrder o, String actor) {
+        // ★한 트랜잭션. 중간에 실패하면 반·수량이 빠진 반쪽 주문이 남는다 —
+        //   물류는 그걸 보고 무엇을 보낼지 알 수 없다.
+        Integer reqCd = dsreTransactionTemplate.execute(status -> {
+            dsreJdbcTemplate.update(SQL_INSERT_ORDER,
+                    o.dtlCd(), o.custCode(), o.schoolCode(),
+                    o.procYn(), o.procYn2(), o.procDate(),
+                    o.teacher(), o.tel(), o.email(),
+                    o.zipCode(), o.address(), o.memo(), o.deliveryGubun(), actor);
+
+            // ★채번은 레거시와 같은 방식(Application_SQL.xml 의 selectKey = LAST_INSERT_ID()).
+            //   ‼️LAST_INSERT_ID()는 **커넥션 단위**라 동시에 다른 주문이 들어와도 섞이지 않는다.
+            //     같은 커넥션을 쓰는 것은 위 TransactionTemplate 이 보장한다.
+            //   (PreparedStatementCreator + GeneratedKeyHolder 도 되지만, 그 관용구는
+            //    정적분석이 Statement 미정리로 잡는다 — 스프링이 닫아 주는데도 그렇다.)
+            Integer newKey = dsreJdbcTemplate.queryForObject(SQL_LAST_ID, Integer.class);
+            if (newKey == null || newKey <= 0) {
+                throw new IllegalStateException("REQ_CD 채번에 실패했습니다.");
+            }
+            int newReqCd = newKey;
+
+            int seq = 0;
+            for (NewOrder.ClassLine c : o.classes()) {
+                dsreJdbcTemplate.update(SQL_INSERT_CLASS, newReqCd, seq, c.className(), c.applyType(),
+                        c.humanities(), c.science(), c.combined(), actor);
+                if (c.subjects() != null) {
+                    for (NewOrder.SubjectQty q : c.subjects()) {
+                        dsreJdbcTemplate.update(SQL_INSERT_QTY, newReqCd, seq, q.resCd(), q.qty());
+                    }
+                }
+                seq++;
+            }
+            return newReqCd;
+        });
+        return (reqCd == null) ? 0 : reqCd;
+    }
+
 }

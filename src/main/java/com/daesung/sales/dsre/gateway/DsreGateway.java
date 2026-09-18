@@ -116,4 +116,28 @@ public interface DsreGateway {
      * @return 실제로 바뀐 행 수(0 또는 1)
      */
     int changeState(int reqCd, String fromCode, String toCode);
+
+    /**
+     * 신청 가능한 시행 목록(주문 등록 1단계). 판매중인 것만 — 종료된 시행으로는 신청할 수 없다.
+     *
+     * @param keyword 시행명·상품명 부분일치. null이면 전체
+     */
+    java.util.List<ExamRow> listExams(String keyword);
+
+    /**
+     * 시행의 과목 목록(과목신청용). {@code DISP_GN='Y'}만 —
+     * 레거시 신청 화면과 같은 조건이다({@code Application_SQL.xml}).
+     */
+    java.util.List<SubjectRow> listSubjects(int dtlCd);
+
+    /**
+     * 신규 주문 등록. 근거: 레거시 특약점 사이트 {@code Application_SQL.xml:266~299}.
+     *
+     * <p>★<b>테이블 셋을 한 트랜잭션으로</b> 넣는다 —
+     * {@code tbl_request_info}(주문) → {@code tbl_request_dtl}(반) → {@code tbl_request_cnt}(과목수량).
+     * 중간에 실패하면 반·수량이 빠진 <b>반쪽 주문</b>이 남아, 물류가 무엇을 보낼지 알 수 없게 된다.
+     *
+     * @return 채번된 REQ_CD
+     */
+    int createOrder(NewOrder order, String actor);
 }
