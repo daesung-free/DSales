@@ -158,6 +158,7 @@ public class ShipmentService {
         int updated = 0;
         int failed = 0;
 
+        com.daesung.sales.common.excel.ExcelSheetReader.assertReadable(file);
         try (Workbook wb = WorkbookFactory.create(file.getInputStream())) {
             Sheet sheet = wb.getSheetAt(0);
             for (int r = 1; r <= sheet.getLastRowNum(); r++) {   // 0행=헤더

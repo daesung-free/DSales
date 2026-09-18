@@ -61,6 +61,7 @@ public final class ExcelSheetReader {
      *                 같은 오류를 보고서야 양식이 틀렸다는 걸 알게 된다.
      */
     public static ExcelSheetReader read(MultipartFile file, List<Header> required) {
+        assertReadable(file);
         try (Workbook wb = WorkbookFactory.create(file.getInputStream())) {
             Sheet sheet = wb.getSheetAt(0);
             Row headerRow = sheet.getRow(sheet.getFirstRowNum());
@@ -95,6 +96,26 @@ public final class ExcelSheetReader {
             return new ExcelSheetReader(out);
         } catch (IOException e) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "엑셀 파일을 읽을 수 없습니다: " + e.getMessage());
+        } catch (BusinessException e) {
+            throw e;                      // 위에서 던진 우리 오류(빈 파일·필수컬럼)는 그대로 올린다
+        } catch (RuntimeException e) {
+            // ‼️POI 는 빈 파일·엑셀이 아닌 파일·시트 없는 파일을 **RuntimeException** 으로 던진다
+            //   (EmptyFileException·NotOfficeXmlFileException 전부 IllegalArgumentException 계열).
+            //   IOException 만 잡고 있어서 그대로 500 으로 나갔다(2026-09-18 지적).
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "엑셀 파일이 아니거나 열 수 없습니다. 목록 다운로드 파일을 받아 값만 고쳐 올려 주세요.");
+        }
+    }
+
+    /**
+     * 읽기 전 최소 확인. <b>0바이트 파일이 가장 흔하다</b> —
+     * 화면에서 파일을 안 고르고 업로드를 누르거나, 저장이 덜 된 파일을 올리는 경우다.
+     * 여기서 걸러야 "서버 오류"가 아니라 "빈 파일"이라고 말해 줄 수 있다.
+     */
+    public static void assertReadable(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "빈 파일입니다. 내용이 있는 엑셀 파일을 올려 주세요.");
         }
     }
 
