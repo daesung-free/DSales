@@ -222,7 +222,10 @@ public class OrderService {
         }
 
         NewOrder order = new NewOrder(req.dtlCd(), req.custCode(), req.schoolCode(),
-                orDefault(req.procYn(), "N"), orDefault(req.procYn2(), "N"), req.procDate(),
+                // ★procYn 은 **비운 채로 넘긴다** — 미지정이면 시행 기본값을 쓰는 게 스펙이고,
+                //   그 기본값은 DSRE2 시행 마스터에 있다(게이트웨이 SQL 의 COALESCE).
+                //   여기서 'N'으로 박았더니 성적처리(Y) 시행이 비처리로 저장됐다(2026-09-18 지적).
+                req.procYn(), orDefault(req.procYn2(), "N"), req.procDate(),
                 req.teacher(), req.tel(), req.email(), req.zipCode(), req.address(), req.memo(),
                 orDefault(req.deliveryGubun(), "H"), classes);
 

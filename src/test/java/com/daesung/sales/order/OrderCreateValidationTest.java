@@ -123,14 +123,17 @@ class OrderCreateValidationTest {
     }
 
     @Test
-    @DisplayName("기본값 — 성적처리 N · 배송 H(화물)")
+    @DisplayName("★기본값 — procYn 은 비워 넘기고(시행 기본값) · 배송은 H(화물)")
     void 기본값() {
         service.create(req(easy("1반", 10, 0, 0)));
 
         ArgumentCaptor<NewOrder> sent = ArgumentCaptor.forClass(NewOrder.class);
         org.mockito.Mockito.verify(gateway).createOrder(sent.capture(), anyString());
         NewOrder o = sent.getValue();
-        assertThat(o.procYn()).isEqualTo("N");
+        // ★procYn 은 비워서 넘긴다 — 미지정이면 **시행 기본값**을 쓰는 게 스펙이고,
+        //   그 값은 DSRE2 시행 마스터에 있다(게이트웨이 SQL 의 COALESCE).
+        //   여기서 'N'으로 박았더니 성적처리(Y) 시행이 비처리로 저장됐다(2026-09-18 지적).
+        assertThat(o.procYn()).as("서버가 임의로 채우지 않는다").isNull();
         assertThat(o.procYn2()).isEqualTo("N");
         assertThat(o.deliveryGubun()).as("미지정이면 화물").isEqualTo("H");
     }

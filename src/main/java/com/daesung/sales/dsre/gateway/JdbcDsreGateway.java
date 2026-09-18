@@ -558,7 +558,8 @@ public class JdbcDsreGateway implements DsreGateway {
                    req.TEL                                      tel,
                    req.ADDRESS                                  address,
                    req.BIGO                                     bigo,
-                   COALESCE(cnt.TOTAL_QTY, 0)                   total_qty,
+                   -- 과목신청 수량 + 간편신청 인원. 한 주문은 둘 중 하나로만 채워진다.
+                   COALESCE(cnt.TOTAL_QTY, 0) + COALESCE(cls.EASY_QTY, 0)  total_qty,
                    COALESCE(cnt.ITEM_CNT, 0)                    item_cnt,
                    -- ★예상금액 = 단가 × 인원. 단가는 (시행 × 과목수 구간 × 처리여부)로 정해진다.
                    --   더프가 인원 종량제라 과목을 몇 개 신청했느냐로 단가가 달라진다
@@ -578,7 +579,11 @@ public class JdbcDsreGateway implements DsreGateway {
               LEFT JOIN tbl_city_info    city ON city.CITY_CD = cust.CITY_CD
               LEFT JOIN tbl_school_info  sch  ON sch.MGR_CD  = req.MGR_CD
               LEFT JOIN tbl_hakwon_info  hak  ON hak.MGR_CD  = req.MGR_CD
-              LEFT JOIN (SELECT REQ_CD, COUNT(CLS_NM) CLS_CNT
+              -- 반 수 + **간편신청 인원**. 간편신청은 과목별 수량(tbl_request_cnt)이 없고
+              -- 반별 인문·자연·통합 인원만 있다 — 그게 곧 수량이다.
+              -- ‼️이걸 안 더하면 간편신청 주문이 목록에서 총수량 0으로 보인다(2026-09-18 지적).
+              LEFT JOIN (SELECT REQ_CD, COUNT(CLS_NM) CLS_CNT,
+                                SUM(COALESCE(GEYUL1,0) + COALESCE(GEYUL2,0) + COALESCE(GEYULT,0)) EASY_QTY
                            FROM tbl_request_dtl GROUP BY REQ_CD) cls ON cls.REQ_CD = req.REQ_CD
               -- ★총수량·품목건수. 화면이 "신청 자료에 총수량·품목건수가 없다"며 주문조회 연결을
               --   미뤄 두고 있었다(2026-09-16). tbl_request_cnt 에 과목별 신청갯수가 있다.
@@ -747,7 +752,12 @@ public class JdbcDsreGateway implements DsreGateway {
             INSERT INTO tbl_request_info
                 (DTL_CD, CUST_CD, MGR_CD, REQ_DATE, PROC_YN, PROC_YN2, PROC_DT,
                  TEACHER, TEL, EMAIL, ZIP_CD, ADDRESS, BIGO, LGS_GN, REG_DATE, REG_USER)
-            VALUES (?, ?, ?, DATE_FORMAT(NOW(), '%Y%m%d'), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)
+            VALUES (?, ?, ?, DATE_FORMAT(NOW(), '%Y%m%d'),
+                    -- ★미지정이면 **시행 기본값**을 쓴다. 예전엔 무조건 'N'으로 박아,
+                    --   성적처리(Y) 시행에 비처리로 저장됐다(2026-09-18 지적).
+                    --   스펙 문구가 "미지정 시 시행 기본값"이었으므로 문서가 아니라 코드를 맞춘다.
+                    COALESCE(?, (SELECT d.PROC_YN FROM tbl_product_dtl d WHERE d.DTL_CD = ?), 'N'),
+                    ?, ?, ?, ?, ?, ?, ?, ?, ?, NOW(), ?)
             """;
 
     private static final String SQL_INSERT_CLASS = """
@@ -769,7 +779,9 @@ public class JdbcDsreGateway implements DsreGateway {
         Integer reqCd = dsreTransactionTemplate.execute(status -> {
             dsreJdbcTemplate.update(SQL_INSERT_ORDER,
                     o.dtlCd(), o.custCode(), o.schoolCode(),
-                    o.procYn(), o.procYn2(), o.procDate(),
+                    // procYn 자리는 COALESCE(?, 시행기본값, 'N') 라 파라미터가 둘이다.
+                    o.procYn(), o.dtlCd(),
+                    o.procYn2(), o.procDate(),
                     o.teacher(), o.tel(), o.email(),
                     o.zipCode(), o.address(), o.memo(), o.deliveryGubun(), actor);
 
