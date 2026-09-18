@@ -87,9 +87,6 @@ public interface DsreGateway {
      * @param state 진행상태 필터(null=전체). 취소분은 {@code C}로만 조회되며 지사 취소는 행이 없다.
      * @param custCode 거래처코드 필터(null=전체)
      * @param mode 구분 필터 ALL/NORMAL(APPLY_GN='S')/ACCIDENT(APPLY_GN='A')
-     */
-    java.util.List<DsreOrderRow> findOrders(java.time.LocalDate from, java.time.LocalDate to,
-                                            OrderState state, String custCode, LogisMode mode);
 
     /** 주문 1건 조회(없으면 empty). 상태 전환 전 현재값 확인용. */
     java.util.Optional<DsreOrderRow> findOrder(int reqCd);
@@ -154,4 +151,19 @@ public interface DsreGateway {
 
     /** 주문 상세(반 → 과목수량). 등록은 3단인데 조회가 마스터만 있었다. */
     java.util.List<OrderDetailRow> findOrderDetail(int reqCd);
+
+    /**
+     * 주문 목록 <b>한 페이지</b>. 예전엔 전량을 받아 메모리에서 잘라, 페이지 크기와 무관하게
+     * 매번 2초가 걸렸다(실측 2026-09-18) — 행마다 저장함수로 인원을 계산하기 때문이다.
+     *
+     * <p>‼️예전 주석은 "LIMIT을 걸면 페이지마다 인원·합계가 달라진다"였는데 <b>사실이 아니다</b>.
+     * 인원·예상금액은 <b>행별</b> 값이고 누계가 없다. 잘라도 남은 행의 값은 그대로다.
+     */
+    java.util.List<DsreOrderRow> findOrders(java.time.LocalDate from, java.time.LocalDate to,
+                                            OrderState state, String custCode, LogisMode mode,
+                                            int offset, int limit);
+
+    /** 같은 조건의 전체 건수(페이징용). 저장함수를 부르지 않아 목록보다 훨씬 싸다. */
+    int countOrders(java.time.LocalDate from, java.time.LocalDate to,
+                    OrderState state, String custCode, LogisMode mode);
 }

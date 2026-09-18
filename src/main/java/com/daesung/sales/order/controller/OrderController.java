@@ -257,10 +257,15 @@ public class OrderController {
         //   다른 조회 API는 이미 기간을 생략하면 올해로 잡는다 — /orders만 예외였다.
         LocalDate from = (fromDate != null) ? fromDate : LocalDate.now().withDayOfYear(1);
         LocalDate to = (toDate != null) ? toDate : LocalDate.now();
-        // ★DSRE2 조회는 저장함수로 인원을 계산하며 한 번에 결과를 만든다.
-        //   SQL에 LIMIT을 걸면 페이지마다 인원·합계가 달라지므로, 전량을 받아 여기서 자른다.
-        return ApiResponse.success(com.daesung.sales.common.response.PageResponse.ofList(
-                dsreGateway.findOrders(from, to, state, custCode, mode), page, size));
+        // ★페이징을 SQL로 내린다. 예전엔 전량을 받아 여기서 잘라, 페이지 크기와 무관하게
+        //   매번 2초가 걸렸다(실측 2026-09-18) — 행마다 저장함수로 인원을 계산하기 때문이다.
+        //   ‼️예전 주석은 "LIMIT을 걸면 페이지마다 인원·합계가 달라진다"였는데 사실이 아니다.
+        //     인원·예상금액은 **행별** 값이고 누계가 없다. 잘라도 남은 행의 값은 그대로다.
+        int p = Math.max(0, page);
+        int sz = Math.min(Math.max(1, size), 500);
+        return ApiResponse.success(com.daesung.sales.common.response.PageResponse.of(
+                dsreGateway.findOrders(from, to, state, custCode, mode, p * sz, sz),
+                p, sz, dsreGateway.countOrders(from, to, state, custCode, mode)));
     }
 
     @Operation(summary = "주문·진행상태 엑셀 다운로드")
@@ -284,7 +289,7 @@ public class OrderController {
                 new Col("성적처리", "procYn"), new Col("담당선생님", "teacher"),
                 new Col("연락처", "tel"), new Col("주소", "address"), new Col("비고", "memo"));
         byte[] xlsx = excel.toXlsx("주문진행상태", cols,
-                dsreGateway.findOrders(fromDate, toDate, state, custCode, mode));
+                dsreGateway.findOrders(fromDate, toDate, state, custCode, mode, 0, Integer.MAX_VALUE));
         return excel.asDownload(xlsx, "주문_진행상태.xlsx");
     }
 }

@@ -43,6 +43,19 @@ public class PageResponse<T> {
                 all.size(), totalPages, to >= all.size());
     }
 
+    /**
+     * 이미 <b>DB에서 잘라 온</b> 한 페이지 + 전체 건수로 조립한다.
+     * {@link #ofList}는 전량을 받아 메모리에서 자르는 것이라, 원천이 비싼 조회에는 쓰면 안 된다
+     * (주문 조회가 그래서 페이지 크기와 무관하게 2초였다).
+     */
+    public static <T> PageResponse<T> of(List<T> content, int page, int size, long totalElements) {
+        int safeSize = (size <= 0) ? 20 : size;
+        int safePage = Math.max(page, 0);
+        int totalPages = (int) Math.ceil((double) totalElements / safeSize);
+        return new PageResponse<>(content, safePage, safeSize, totalElements, totalPages,
+                (long) (safePage + 1) * safeSize >= totalElements);
+    }
+
     public static <T> PageResponse<T> of(Page<T> page) {
         return new PageResponse<>(
                 page.getContent(),

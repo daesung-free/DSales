@@ -633,16 +633,42 @@ public class JdbcDsreGateway implements DsreGateway {
                 (Long) rs.getObject("est_amt"));   // 단가 없는 시행은 null 그대로
     };
 
+    private static final String ORDER_PAGE_SQL = ORDER_LIST_SQL + " LIMIT ? OFFSET ?";
+
+    /** 같은 WHERE 로 건수만. 저장함수·파생테이블을 안 타 목록보다 훨씬 싸다. */
+    private static final String ORDER_COUNT_SQL = """
+            SELECT COUNT(*)
+              FROM tbl_request_info req
+             WHERE req.REQ_DATE BETWEEN ? AND ?
+               AND (? IS NULL OR req.STATE = ?)
+               AND (? IS NULL OR req.CUST_CD = ?)
+               AND (? IS NULL OR req.APPLY_GN = ?)
+            """;
+
     @Override
-    public List<DsreOrderRow> findOrders(LocalDate from, LocalDate to,
-                                         OrderState state, String custCode, LogisMode mode) {
+    public List<DsreOrderRow> findOrders(LocalDate from, LocalDate to, OrderState state,
+                                         String custCode, LogisMode mode, int offset, int limit) {
         String stateCode = (state == null) ? null : state.code();
         String cust = (custCode == null || custCode.isBlank()) ? null : custCode.trim();
         String applyGn = (mode == null) ? null : mode.applyGnValue();
 
-        return dsreJdbcTemplate.query(ORDER_LIST_SQL, ORDER_MAPPER,
+        return dsreJdbcTemplate.query(ORDER_PAGE_SQL, ORDER_MAPPER,
+                from.format(YYYYMMDD), to.format(YYYYMMDD),
+                stateCode, stateCode, cust, cust, applyGn, applyGn,
+                Math.max(1, limit), Math.max(0, offset));
+    }
+
+    @Override
+    public int countOrders(LocalDate from, LocalDate to, OrderState state,
+                           String custCode, LogisMode mode) {
+        String stateCode = (state == null) ? null : state.code();
+        String cust = (custCode == null || custCode.isBlank()) ? null : custCode.trim();
+        String applyGn = (mode == null) ? null : mode.applyGnValue();
+
+        Integer n = dsreJdbcTemplate.queryForObject(ORDER_COUNT_SQL, Integer.class,
                 from.format(YYYYMMDD), to.format(YYYYMMDD),
                 stateCode, stateCode, cust, cust, applyGn, applyGn);
+        return (n == null) ? 0 : n;
     }
 
     @Override
