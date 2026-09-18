@@ -41,13 +41,14 @@ public class LogisCostDetailService {
     private final CurrentAuditor currentAuditor;
 
     public LogisCostDetailResponse outboundDetail(LocalDate from, LocalDate to, LogisMode mode,
+                                                  java.util.Collection<Integer> dtlCds,
                                                   boolean includeCancel, Grain grain) {
         Grain g = (grain == null) ? Grain.PARTNER : grain;   // 레거시 기본은 '상세보기' 꺼짐
 
         // 원천: 마감월이면 굳혀 둔 값, 아니면 실시간 계산.
         // 필터·접기는 그 뒤로 <b>완전히 같은 코드</b>를 탄다 — 두 경로가 갈리면
         // 마감 전후로 같은 달 숫자가 달라진다.
-        List<LogisCostDetailRow> raw = loadRows(from, to);
+        List<LogisCostDetailRow> raw = loadRows(from, to, dtlCds);
         List<LogisCostDetailRow> src = raw.stream().filter(r -> r.matches(mode, includeCancel)).toList();
 
         // 1) 요청한 축으로 접는다. 신청 축이면 원본 그대로, 거래처 축이면 신청을 합친다.
@@ -115,7 +116,8 @@ public class LogisCostDetailService {
      * <p>기간이 여러 달에 걸치면 달마다 갈린다. 굳은 달은 저장분, 열린 달은 실시간으로 섞어 낸다 —
      * 그래야 "6월은 확정, 7월은 아직"인 기간 조회가 맞는 숫자를 낸다.
      */
-    private List<LogisCostDetailRow> loadRows(LocalDate from, LocalDate to) {
+    private List<LogisCostDetailRow> loadRows(LocalDate from, LocalDate to,
+                                              java.util.Collection<Integer> dtlCds) {
         List<LogisCostDetailRow> out = new ArrayList<>();
         java.time.YearMonth cur = java.time.YearMonth.from(from);
         java.time.YearMonth end = java.time.YearMonth.from(to);
@@ -128,9 +130,15 @@ public class LogisCostDetailService {
                 // 조회 기간의 양끝은 달 전체가 아닐 수 있어 요청 범위로 잘라 준다.
                 LocalDate mf = maxDate(cur.atDay(1), from);
                 LocalDate mt = minDate(cur.atEndOfMonth(), to);
-                out.addAll(dsreGateway.outboundDetail(mf, mt));
+                out.addAll(dsreGateway.outboundDetail(mf, mt, dtlCds));
             }
             cur = cur.plusMonths(1);
+        }
+        // ★마감된 달은 스냅샷에서 오므로 DSRE 쿼리 조건이 안 걸린다.
+        //   여기서 한 번 더 거른다 — 안 그러면 **열린 달만 필터가 먹고 마감된 달은 다 나오는**
+        //   화면이 된다(같은 조건인데 달마다 결과가 다른 것이 가장 나쁜 종류다).
+        if (dtlCds != null && !dtlCds.isEmpty()) {
+            out.removeIf(r -> !dtlCds.contains(r.dtlCd()));
         }
         // 수기 등록분(28p 에디팅)을 합친다. 자동계산분과 같은 타입이라 이후 필터·접기·소계가
         // 그대로 잡힌다 — 합산 코드를 따로 두지 않는다("소계/누계/합계/총계 정상 반영" 요구).

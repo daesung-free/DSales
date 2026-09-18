@@ -251,6 +251,10 @@ public class OrderController {
             @Parameter(description = "페이지 크기") @RequestParam(defaultValue = "100") int size,
             @Parameter(description = "진행상태(미지정=전체)") @RequestParam(required = false) OrderState state,
             @Parameter(description = "거래처코드(미지정=전체)") @RequestParam(required = false) String custCode,
+            @Parameter(description = """
+                    거래처코드 **다중 선택**(좌측 트리). 쉼표로 여러 개.
+                    단건 `custCode` 와 함께 주면 **교집합**이다.""")
+            @RequestParam(required = false) java.util.List<String> custCodes,
             @Parameter(description = "구분 ALL/NORMAL(정상)/ACCIDENT(사고). 미지정=전체")
             @RequestParam(required = false, defaultValue = "ALL") LogisMode mode) {
         // ★날짜를 필수로 두었더니 화면이 못 불렀다(파라미터를 안 실어 400).
@@ -264,8 +268,8 @@ public class OrderController {
         int p = Math.max(0, page);
         int sz = Math.min(Math.max(1, size), 500);
         return ApiResponse.success(com.daesung.sales.common.response.PageResponse.of(
-                dsreGateway.findOrders(from, to, state, custCode, mode, p * sz, sz),
-                p, sz, dsreGateway.countOrders(from, to, state, custCode, mode)));
+                dsreGateway.findOrders(from, to, state, custCode, custCodes, mode, p * sz, sz),
+                p, sz, dsreGateway.countOrders(from, to, state, custCode, custCodes, mode)));
     }
 
     @Operation(summary = "주문·진행상태 엑셀 다운로드")
@@ -275,6 +279,7 @@ public class OrderController {
             @RequestParam(name = "toDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @RequestParam(required = false) OrderState state,
             @RequestParam(required = false) String custCode,
+            @RequestParam(required = false) java.util.List<String> custCodes,
             @RequestParam(required = false, defaultValue = "ALL") LogisMode mode) {
         List<Col> cols = List.of(
                 new Col("신청번호", "reqCd"), new Col("신청일", "reqDate"),
@@ -289,7 +294,7 @@ public class OrderController {
                 new Col("성적처리", "procYn"), new Col("담당선생님", "teacher"),
                 new Col("연락처", "tel"), new Col("주소", "address"), new Col("비고", "memo"));
         byte[] xlsx = excel.toXlsx("주문진행상태", cols,
-                dsreGateway.findOrders(fromDate, toDate, state, custCode, mode, 0, Integer.MAX_VALUE));
+                dsreGateway.findOrders(fromDate, toDate, state, custCode, custCodes, mode, 0, Integer.MAX_VALUE));
         return excel.asDownload(xlsx, "주문_진행상태.xlsx");
     }
 }

@@ -98,12 +98,14 @@ public class LogisticsController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @Parameter(description = "구분(전체/일반/사고)", example = "ALL")
             @RequestParam(required = false, defaultValue = "ALL") LogisMode mode,
+            @Parameter(description = "시행코드(DTL_CD) 다중 선택. 미지정=전체 — 좌측 연도·시행 트리가 쓴다")
+            @RequestParam(required = false) java.util.List<Integer> dtlCds,
             @Parameter(description = "발송 후 취소 포함 여부")
             @RequestParam(required = false, defaultValue = "false") boolean includeCancel,
             @Parameter(description = "묶는 축 REQUEST(신청)/PARTNER(거래처, 기본)")
             @RequestParam(required = false) LogisCostDetailResponse.Grain grain) {
         return ApiResponse.success(
-                logisCostDetailService.outboundDetail(fromDate, toDate, mode, includeCancel, grain));
+                logisCostDetailService.outboundDetail(fromDate, toDate, mode, dtlCds, includeCancel, grain));
     }
 
     @Operation(summary = "출고 물류비 명세 엑셀 다운로드")
@@ -112,6 +114,8 @@ public class LogisticsController {
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
             @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @RequestParam(required = false, defaultValue = "ALL") LogisMode mode,
+            @Parameter(description = "시행코드(DTL_CD) 다중 선택. 미지정=전체 — 좌측 연도·시행 트리가 쓴다")
+            @RequestParam(required = false) java.util.List<Integer> dtlCds,
             @RequestParam(required = false, defaultValue = "false") boolean includeCancel,
             @RequestParam(required = false) LogisCostDetailResponse.Grain grain) {
         var cols = java.util.List.of(
@@ -141,7 +145,7 @@ public class LogisticsController {
                 new com.daesung.sales.common.excel.ExcelExportUtil.Col("출고비", "tradeAmount"),
                 new com.daesung.sales.common.excel.ExcelExportUtil.Col("금액합계", "totalAmount"));
         byte[] xlsx = excel.toXlsx("물류작업비", cols,
-                logisCostDetailService.outboundDetail(fromDate, toDate, mode, includeCancel, grain).rows());
+                logisCostDetailService.outboundDetail(fromDate, toDate, mode, dtlCds, includeCancel, grain).rows());
         return excel.asDownload(xlsx, "물류작업비_" + fromDate + "_" + toDate + ".xlsx");
     }
 

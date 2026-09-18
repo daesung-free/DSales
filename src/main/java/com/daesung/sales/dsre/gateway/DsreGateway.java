@@ -31,6 +31,13 @@ public interface DsreGateway {
     java.util.List<LogisCostDetailRow> outboundDetail(java.time.LocalDate from, java.time.LocalDate to);
 
     /**
+     * 출고 작업비 상세 — <b>시행 다중 필터</b>. 좌측 연도·시행 트리가 여러 시행을 한 번에 건다(T-4).
+     * {@code dtlCds} 가 비면 전체다.
+     */
+    java.util.List<LogisCostDetailRow> outboundDetail(java.time.LocalDate from, java.time.LocalDate to,
+                                                      java.util.Collection<Integer> dtlCds);
+
+    /**
      * 기간 회수 물류비 집계(총계, 자재금액만). 근거: 물류비계산2.vb InData.
      * @param mode ALL(전체)/NORMAL(반품 tbl_wol_dtl_b)/ACCIDENT(사고 tbl_wol_dtl)
      */
@@ -160,10 +167,12 @@ public interface DsreGateway {
      * 인원·예상금액은 <b>행별</b> 값이고 누계가 없다. 잘라도 남은 행의 값은 그대로다.
      */
     java.util.List<DsreOrderRow> findOrders(java.time.LocalDate from, java.time.LocalDate to,
-                                            OrderState state, String custCode, LogisMode mode,
-                                            int offset, int limit);
+                                            OrderState state, String custCode,
+                                            java.util.Collection<String> custCodes,
+                                            LogisMode mode, int offset, int limit);
 
     /** 같은 조건의 전체 건수(페이징용). 저장함수를 부르지 않아 목록보다 훨씬 싸다. */
     int countOrders(java.time.LocalDate from, java.time.LocalDate to,
-                    OrderState state, String custCode, LogisMode mode);
+                    OrderState state, String custCode,
+                    java.util.Collection<String> custCodes, LogisMode mode);
 }

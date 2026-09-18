@@ -94,6 +94,10 @@ public class JdbcDsreGateway implements DsreGateway {
               JOIN tbl_request_info req ON lc.REQ_CD=req.REQ_CD
               JOIN tbl_logis_cost cost ON cost.DTL_CD=req.DTL_CD
             WHERE lc.RES_GN='R' AND req.REQ_DATE BETWEEN ? AND ?
+              -- ★시행 다중 필터. 좌측 연도·시행 트리가 여러 시행을 한 번에 건다(T-4).
+              --   ‼️IN 절을 문자열로 조립하지 않는다(게이트규칙) — 쉼표로 이은 값 하나를
+              --     바인딩해 FIND_IN_SET 으로 푼다. 값이 없으면 조건 자체가 참이다.
+              AND (? IS NULL OR FIND_IN_SET(req.DTL_CD, ?) > 0)
               AND (? IS NULL OR req.APPLY_GN = ?)
               AND (? = 1 OR req.STATE != 'C')
             """;
@@ -180,7 +184,14 @@ public class JdbcDsreGateway implements DsreGateway {
 
     @Override
     public List<LogisCostDetailRow> outboundDetail(LocalDate from, LocalDate to) {
+        return outboundDetail(from, to, null);
+    }
+
+    @Override
+    public List<LogisCostDetailRow> outboundDetail(LocalDate from, LocalDate to,
+                                                   java.util.Collection<Integer> dtlCds) {
         String f = from.format(YYYYMMDD), t = to.format(YYYYMMDD);
+        String dtlList = csv(dtlCds);
         return dsreJdbcTemplate.query(OUT_DETAIL_SQL, (rs, i) -> {
             int inwon = rs.getInt("inwon");
             long basicAmt = (long) inwon * rs.getInt("basic");
@@ -198,7 +209,7 @@ public class JdbcDsreGateway implements DsreGateway {
                     rs.getLong("etc_qty"), rs.getLong("etc_amt"),
                     inwon, basicAmt, tradeAmt, matAmt + basicAmt + tradeAmt,
                     rs.getString("apply_gn"), rs.getBoolean("canceled"), false);
-        }, f, t);
+        }, f, t, dtlList, dtlList);
     }
 
     /** DSRE2 날짜는 yyyyMMdd 문자열이다(varchar). 형식이 어긋나면 null — 행을 버리지는 않는다. */
@@ -599,6 +610,9 @@ public class JdbcDsreGateway implements DsreGateway {
              WHERE req.REQ_DATE BETWEEN ? AND ?
                AND (? IS NULL OR req.STATE = ?)
                AND (? IS NULL OR req.CUST_CD = ?)
+               -- ★거래처 다중 선택(좌측 트리 T-1). 단건 필터와 **함께** 걸리면 교집합이다.
+               --   IN 절 조립 대신 쉼표 문자열 하나를 바인딩한다(게이트규칙).
+               AND (? IS NULL OR FIND_IN_SET(req.CUST_CD, ?) > 0)
                AND (? IS NULL OR req.APPLY_GN = ?)
              ORDER BY req.REQ_DATE DESC, req.REQ_CD DESC
             """;
@@ -642,32 +656,36 @@ public class JdbcDsreGateway implements DsreGateway {
              WHERE req.REQ_DATE BETWEEN ? AND ?
                AND (? IS NULL OR req.STATE = ?)
                AND (? IS NULL OR req.CUST_CD = ?)
+               AND (? IS NULL OR FIND_IN_SET(req.CUST_CD, ?) > 0)
                AND (? IS NULL OR req.APPLY_GN = ?)
             """;
 
     @Override
     public List<DsreOrderRow> findOrders(LocalDate from, LocalDate to, OrderState state,
-                                         String custCode, LogisMode mode, int offset, int limit) {
+                                         String custCode, java.util.Collection<String> custCodes,
+                                         LogisMode mode, int offset, int limit) {
         String stateCode = (state == null) ? null : state.code();
         String cust = (custCode == null || custCode.isBlank()) ? null : custCode.trim();
+        String custList = csv(custCodes);
         String applyGn = (mode == null) ? null : mode.applyGnValue();
 
         return dsreJdbcTemplate.query(ORDER_PAGE_SQL, ORDER_MAPPER,
                 from.format(YYYYMMDD), to.format(YYYYMMDD),
-                stateCode, stateCode, cust, cust, applyGn, applyGn,
+                stateCode, stateCode, cust, cust, custList, custList, applyGn, applyGn,
                 Math.max(1, limit), Math.max(0, offset));
     }
 
     @Override
     public int countOrders(LocalDate from, LocalDate to, OrderState state,
-                           String custCode, LogisMode mode) {
+                           String custCode, java.util.Collection<String> custCodes, LogisMode mode) {
         String stateCode = (state == null) ? null : state.code();
         String cust = (custCode == null || custCode.isBlank()) ? null : custCode.trim();
+        String custList = csv(custCodes);
         String applyGn = (mode == null) ? null : mode.applyGnValue();
 
         Integer n = dsreJdbcTemplate.queryForObject(ORDER_COUNT_SQL, Integer.class,
                 from.format(YYYYMMDD), to.format(YYYYMMDD),
-                stateCode, stateCode, cust, cust, applyGn, applyGn);
+                stateCode, stateCode, cust, cust, custList, custList, applyGn, applyGn);
         return (n == null) ? 0 : n;
     }
 
@@ -926,6 +944,22 @@ public class JdbcDsreGateway implements DsreGateway {
                     (Integer) h[2], (Integer) h[3], (Integer) h[4], qty, subs));
         });
         return out;
+    }
+
+    /**
+     * 다중 선택 값을 <b>바인딩 한 개</b>로 만든다(쉼표 이음). 비면 null —
+     * SQL 에서 {@code ? IS NULL} 로 조건 자체를 끈다.
+     *
+     * <p>‼️IN 절을 문자열로 조립하지 않기 위한 방식이다(게이트규칙 "파라미터 바인딩 전수 적용").
+     * 값에 쉼표가 들어가면 쪼개지므로, 쉼표가 있을 수 없는 코드 값에만 쓴다.
+     */
+    private static String csv(java.util.Collection<?> values) {
+        if (values == null || values.isEmpty()) {
+            return null;
+        }
+        return values.stream().filter(java.util.Objects::nonNull)
+                .map(Object::toString).map(String::trim).filter(v -> !v.isEmpty())
+                .reduce((a, b) -> a + "," + b).orElse(null);
     }
 
     private static long nz(Integer v) {
