@@ -94,10 +94,6 @@ public class JdbcDsreGateway implements DsreGateway {
               JOIN tbl_request_info req ON lc.REQ_CD=req.REQ_CD
               JOIN tbl_logis_cost cost ON cost.DTL_CD=req.DTL_CD
             WHERE lc.RES_GN='R' AND req.REQ_DATE BETWEEN ? AND ?
-              -- ★시행 다중 필터. 좌측 연도·시행 트리가 여러 시행을 한 번에 건다(T-4).
-              --   ‼️IN 절을 문자열로 조립하지 않는다(게이트규칙) — 쉼표로 이은 값 하나를
-              --     바인딩해 FIND_IN_SET 으로 푼다. 값이 없으면 조건 자체가 참이다.
-              AND (? IS NULL OR FIND_IN_SET(req.DTL_CD, ?) > 0)
               AND (? IS NULL OR req.APPLY_GN = ?)
               AND (? = 1 OR req.STATE != 'C')
             """;
@@ -176,6 +172,10 @@ public class JdbcDsreGateway implements DsreGateway {
                          UNION ALL
                          SELECT MGR_CD, HAK_NM FROM tbl_hakwon_info) sch ON sch.MGR_CD=req.MGR_CD
             WHERE lc.RES_GN='R' AND req.REQ_DATE BETWEEN ? AND ?
+              -- ★시행 다중 필터. 좌측 연도·시행 트리가 여러 시행을 한 번에 건다(T-4).
+              --   ‼️IN 절을 문자열로 조립하지 않는다(게이트규칙) — 쉼표로 이은 값 하나를
+              --     바인딩해 FIND_IN_SET 으로 푼다. 값이 없으면 조건 자체가 참이다.
+              AND (? IS NULL OR FIND_IN_SET(req.DTL_CD, ?) > 0)
             GROUP BY req.REQ_DATE, req.REQ_CD, pi.PROD_CD, pi.PROD_NM,
                      pd.GRADE, req.DTL_CD, pd.DTL_NM, req.CUST_CD, cu.CUST_FNM,
                      cu.CITY_NM, city.CITY_NM, sch.SCH_NM
