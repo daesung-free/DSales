@@ -127,8 +127,21 @@ public class DuffSalesImportService {
                 continue;
             }
             if (partner == null || product == null) {
+                // ‼️예전엔 둘을 합쳐 "UNMAPPED" 하나로만 알려줬다. 그래서 화면은 전부
+                //   "거래처 매핑 실패"로 읽었고, 실제 원인(상품 미등록)을 아무도 몰랐다
+                //   — 2026-09-18 에 "매핑 키를 machulCode 로 바꿔 달라"는 요청이 온 것이
+                //   그 오해다(우리는 이미 machulCode 로 찾고 있었다).
+                //   무엇이 없는지 갈라서 알려준다. 담당자가 채울 마스터가 달라진다.
                 unmapped++;
-                lines.add(line(shown, charge, unit, total, "UNMAPPED", null));
+                String why = (partner == null && product == null)
+                        ? "거래처(매출코드 " + row.machulCode() + ")와 상품(과목코드 "
+                                + row.dtlCode() + ")이 모두 마스터에 없습니다"
+                        : (partner == null)
+                                ? "거래처가 마스터에 없습니다 — 매출코드 " + row.machulCode()
+                                : "상품이 마스터에 없습니다 — 과목코드 " + row.dtlCode();
+                String code = (partner == null && product == null) ? "UNMAPPED"
+                        : (partner == null) ? "UNMAPPED_PARTNER" : "UNMAPPED_PRODUCT";
+                lines.add(line(shown, charge, unit, total, code, why, null));
                 continue;
             }
             // 폴백까지 쓰고도 금액이 0이면 등록하지 않는다. 단가가 어디에도 없다는 뜻이라
@@ -222,6 +235,11 @@ public class DuffSalesImportService {
 
     private static DuffImportResponse.Line line(DuffSalesRow r, Charge c, long unit, long total,
                                                 String result, String salesNo) {
+        return line(r, c, unit, total, result, null, salesNo);
+    }
+
+    private static DuffImportResponse.Line line(DuffSalesRow r, Charge c, long unit, long total,
+                                                String result, String reason, String salesNo) {
         return new DuffImportResponse.Line(
                 r.reqCd(), r.reqDate(), r.machulCode(), r.custCode(), r.custName(),
                 r.schoolCode(), r.schoolName(), r.grade(),
@@ -229,6 +247,6 @@ public class DuffSalesImportService {
                 r.procType(), r.chargeType(),
                 r.reqInwon(), r.procInwon(), r.unprocInwon(), r.regInwon(),
                 c.inwon(), c.basis(),
-                r.price(), r.supplyRate(), r.discount(), unit, total, result, salesNo);
+                r.price(), r.supplyRate(), r.discount(), unit, total, result, reason, salesNo);
     }
 }

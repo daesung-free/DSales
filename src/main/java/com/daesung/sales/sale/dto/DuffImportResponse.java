@@ -18,7 +18,11 @@ public record DuffImportResponse(
         @Schema(description = "처리구분 모드(ALL/PROCESSED/UNPROCESSED)") String mode,
         @Schema(description = "생성된 매출 라인 수") int importedCount,
         @Schema(description = "이미 등록되어 스킵된 라인 수(멱등)") int skippedCount,
-        @Schema(description = "거래처/상품 매핑 실패로 제외된 라인 수") int unmappedCount,
+        @Schema(description = """
+                매핑 실패로 제외된 라인 수(거래처·상품 합계).
+                ★어느 쪽이 없는지는 라인의 `result`(UNMAPPED_PARTNER / UNMAPPED_PRODUCT)와
+                `reason`을 봐야 한다 — 합계만 보면 "거래처가 안 맞는다"로 읽힌다.""")
+        int unmappedCount,
         @Schema(description = "청구인원 0 이하로 제외된 라인 수") int zeroInwonCount,
         @Schema(description = "단가가 없어 금액 0으로 제외된 라인 수(DSRE·도서 마스터 양쪽 다 비어 있음)")
         int zeroAmountCount,
@@ -55,8 +59,18 @@ public record DuffImportResponse(
             @Schema(description = "할인액(권당). 0보다 크면 공급률 대신 이 값으로 단가가 정해진다") int discount,
             @Schema(description = "단가(할인액>0이면 정가−할인액, 아니면 정가×공급률/100)") long unitAmount,
             @Schema(description = "총금액(단가×청구인원)") long totalAmount,
-            @Schema(description = "처리 결과(IMPORTED/SKIPPED/UNMAPPED/ZERO_INWON/ZERO_AMOUNT/PREVIEW)")
+            @Schema(description = """
+                    처리 결과 — IMPORTED / SKIPPED / **UNMAPPED_PARTNER** / **UNMAPPED_PRODUCT** /
+                    UNMAPPED(둘 다 없음) / ZERO_INWON / ZERO_AMOUNT / PREVIEW.
+
+                    ★거래처·상품을 **갈라서** 알려준다. 예전엔 UNMAPPED 하나로 합쳐 두어
+                    화면이 전부 "거래처 매핑 실패"로 읽었고, 실제 원인(상품 미등록)이 묻혔다.
+                    채워야 할 마스터가 달라지므로 구분이 필요하다.""")
             String result,
+
+            @Schema(description = "왜 그 결과가 나왔는지. UNMAPPED 계열에서 무엇이 없는지 알려준다")
+            String reason,
+
             @Schema(description = "생성 매출번호(등록 시)") String salesNo
     ) {
     }
