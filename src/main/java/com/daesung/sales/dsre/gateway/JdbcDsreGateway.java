@@ -264,6 +264,28 @@ public class JdbcDsreGateway implements DsreGateway {
     private static final String WOL_ACCIDENT = "SELECT MAT_CD, CNT, REPLACE(REG_DATE,'-','') SDATE FROM tbl_wol_dtl";
     private static final String WOL_NORMAL = "SELECT MAT_CD, CNT, REPLACE(REG_DATE,'-','') SDATE FROM tbl_wol_dtl_b";
 
+    /** 회수 명세 — 위 총계와 <b>같은 단가 규칙</b>이다. 다르면 행 합이 총계와 안 맞는다. */
+    private static final String RETURN_DETAIL_TEMPLATE = """
+            SELECT t.SDATE, t.MAT_CD, m.MAT_NM, c.NAME mat_gn, t.MODE_GN, t.CNT,
+                   CASE WHEN c.NAME = 'OMR' THEN cost.OMR
+                        WHEN c.NAME IN ('단행본','책자') THEN cost.ETC
+                        WHEN c.NAME = '라벨' THEN cost.LABEL
+                        ELSE cost.PAPER END unit_cost
+              FROM ( %s ) t
+              JOIN tbl_materials_info m ON t.MAT_CD = m.MAT_CD
+              JOIN tbl_comon_info c ON m.MAT_GN = c.CMD_CD
+              JOIN (SELECT PAPER,OMR,ETC,LABEL FROM tbl_logis_cost
+                     WHERE DTL_CD=0 ORDER BY idx DESC LIMIT 1) cost
+             WHERE t.SDATE BETWEEN ? AND ?
+             ORDER BY t.SDATE, m.MAT_NM
+            """;
+
+    // 명세는 사고/반품을 구분해 보여줘야 해서 구분값을 실어 UNION 한다(총계는 안 쓰던 컬럼).
+    private static final String WOL_ACCIDENT_D =
+            "SELECT MAT_CD, CNT, REPLACE(REG_DATE,'-','') SDATE, 'ACCIDENT' MODE_GN FROM tbl_wol_dtl";
+    private static final String WOL_NORMAL_D =
+            "SELECT MAT_CD, CNT, REPLACE(REG_DATE,'-','') SDATE, 'NORMAL' MODE_GN FROM tbl_wol_dtl_b";
+
     // ── 물류단가 관리(DSRE2 tbl_logis_cost write-back) ─────────────────────────────
     // 상품명·시행명을 함께 뽑는다(정본 10.물류비용등록 목록 컬럼).
     // LEFT JOIN인 이유: dtl_cd=0(회수단가 특수행)은 시행이 없어 INNER면 행이 사라진다.
@@ -346,6 +368,25 @@ public class JdbcDsreGateway implements DsreGateway {
         return PeriodLogisCost.ret(mode, from, to,
                 num(r.get("paper_amt")), num(r.get("omr_amt")),
                 num(r.get("etc_amt")), num(r.get("label_amt")));
+    }
+
+    @Override
+    public List<ReturnCostDetailRow> returnDetail(LocalDate from, LocalDate to, LogisMode mode) {
+        String source = switch (mode) {
+            case ACCIDENT -> WOL_ACCIDENT_D;
+            case NORMAL -> WOL_NORMAL_D;
+            case ALL -> WOL_ACCIDENT_D + " UNION ALL " + WOL_NORMAL_D;
+        };
+        // ‼️%s 자리에 들어가는 것은 **우리가 쓴 상수 셋 중 하나**다(사용자 입력이 아니다).
+        //   총계 쿼리(calcReturnPeriod)가 쓰는 방식과 같다 — 기간은 바인딩으로 넘긴다.
+        return dsreJdbcTemplate.query(String.format(RETURN_DETAIL_TEMPLATE, source), (rs, i) -> {
+            int qty = rs.getInt("CNT");
+            int unit = rs.getInt("unit_cost");
+            return new ReturnCostDetailRow(
+                    LocalDate.parse(rs.getString("SDATE"), YYYYMMDD),
+                    rs.getInt("MAT_CD"), rs.getString("MAT_NM"), rs.getString("mat_gn"),
+                    rs.getString("MODE_GN"), qty, unit, (long) qty * unit);
+        }, from.format(YYYYMMDD), to.format(YYYYMMDD));
     }
 
     private static final DateTimeFormatter YYYYMMDD = DateTimeFormatter.BASIC_ISO_DATE;

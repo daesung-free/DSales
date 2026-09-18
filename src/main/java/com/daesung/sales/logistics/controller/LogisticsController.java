@@ -3,6 +3,7 @@ package com.daesung.sales.logistics.controller;
 import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.common.response.ApiResponse;
+import com.daesung.sales.logistics.dto.ReturnCostDetailResponse;
 import com.daesung.sales.dsre.gateway.DsreGateway;
 import com.daesung.sales.dsre.gateway.LogisCostRate;
 import com.daesung.sales.logistics.dto.LogisCostBulkRequest;
@@ -164,7 +165,31 @@ public class LogisticsController {
         return ApiResponse.success(dsreGateway.calcReturnPeriod(from, to, mode));
     }
 
+    @Operation(summary = "회수 물류비 명세(행 + 소계)",
+            description = """
+                    회수 작업비를 **행 단위**로 본다. 출고는 상세가 있는데 회수는 기간 총계뿐이었다(B-4).
+
+                    · 행마다 회수일자·자재·구분(사고/반품)·수량·적용단가·금액이 나온다.
+                    · **총계와 같은 단가 규칙**이다 — 자재구분으로 단가를 고르고(OMR→OMR /
+                      단행본·책자→단행본 / 라벨→라벨 / 그 외→시험지), 회수단가는
+                      `tbl_logis_cost` 특수행(DTL_CD=0)의 최신값을 쓴다.
+                      그래서 **행 합 = `GET /logistics-costs/return` 총계**가 성립한다.
+                      (따로 계산하면 두 화면 숫자가 갈리고, 그때 담당자는 둘 다 안 믿는다.)
+                    · 소계는 응답의 `byType`(자재구분별)·`byMode`(사고/반품별)로 함께 준다.""")
+    @GetMapping("/return/detail")
+    public ApiResponse<ReturnCostDetailResponse> returnDetail(
+            @Parameter(description = "시작일", required = true)
+            @RequestParam(name = "fromDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
+            @Parameter(description = "종료일", required = true)
+            @RequestParam(name = "toDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
+            @Parameter(description = "구분(전체/반품/사고)", example = "ALL")
+            @RequestParam(defaultValue = "ALL") LogisMode mode) {
+        return ApiResponse.success(
+                ReturnCostDetailResponse.of(from, to, mode, dsreGateway.returnDetail(from, to, mode)));
+    }
+
     // ── 물류단가 관리(기초관리 · DSRE2 tbl_logis_cost write-back) — 근거: 레거시 물류비용등록.vb ──
+
 
     @Operation(summary = "물류단가 목록",
             description = """

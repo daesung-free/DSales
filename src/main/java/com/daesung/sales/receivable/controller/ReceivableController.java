@@ -356,9 +356,16 @@ public class ReceivableController {
             @Parameter(description = "종료일(yyyy-MM-dd, 미지정 시 오늘)") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @Parameter(description = "키워드 — 거래처명으로 좁힌다(부분일치)")
-            @RequestParam(required = false) String keyword) {
+            @RequestParam(required = false) String keyword,
+            @Parameter(description = """
+                    **신고대상만** — 기간 내 거래(매출·반품·수금)가 있는 거래처만 내려준다.
+
+                    레거시에서 '신고대상'은 조회 필터가 아니라 **일괄 메일·PDF 대상을 추리는 스위치**였다
+                    (화면 안내: "신고대상 체크시 설정된 기간내 신고내역이 있는 거래처에 내역서 일괄 메일 전송").
+                    여기서 걸러 주면 **거래가 없는 곳에 0원짜리 명세서가 나가는 사고**를 막는다.""")
+            @RequestParam(required = false, defaultValue = "false") boolean onlyReportable) {
         return ApiResponse.success(Keywords.filter(
-                receivableService.arLedgerAll(fromDate, toDate), keyword,
+                receivableService.arLedgerAll(fromDate, toDate, onlyReportable), keyword,
                 x -> new Object[]{x.partnerName()}));
     }
 

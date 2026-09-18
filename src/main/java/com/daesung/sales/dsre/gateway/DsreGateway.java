@@ -43,6 +43,13 @@ public interface DsreGateway {
      */
     PeriodLogisCost calcReturnPeriod(java.time.LocalDate from, java.time.LocalDate to, LogisMode mode);
 
+    /**
+     * 회수 작업비 <b>행 명세</b>. 출고는 상세가 있는데 회수는 기간 총계뿐이었다(2026-09-18 지적).
+     * 총계와 <b>같은 단가 규칙</b>을 쓴다 — 다르면 행 합이 총계와 안 맞는다.
+     */
+    java.util.List<ReturnCostDetailRow> returnDetail(java.time.LocalDate from, java.time.LocalDate to,
+                                                     LogisMode mode);
+
     // ── 물류단가 관리(DSRE2 tbl_logis_cost write-back) — 근거: 레거시 물류비용등록.vb ──
 
     /** 물류단가 전체 목록(DTL_CD 오름차순). */

@@ -448,12 +448,35 @@ public class ReceivableService {
      */
     @Transactional(readOnly = true)
     public List<ArLedgerResponse> arLedgerAll(LocalDate fromDate, LocalDate toDate) {
+        return arLedgerAll(fromDate, toDate, false);
+    }
+
+    /**
+     * 외상매출장 전체 거래처. {@code onlyReportable=true} 면 <b>기간 내 신고내역이 있는 거래처만</b>.
+     *
+     * <p>근거: 레거시 외상매출장조회 화면 안내 —
+     * "[메일일괄전송]·[PDF일괄저장] … <b>신고대상 체크시 설정된 기간내 신고내역이 있는 거래처에</b>
+     * 내역서 일괄 메일 전송". 레거시에서 '신고대상'은 조회 필터가 아니라
+     * <b>일괄 전송 대상을 추리는 스위치</b>였다(체크박스가 버튼 활성화만 제어한다).
+     *
+     * <p>여기서 미리 걸러 주면 화면이 빈 내역서를 만들고 보내는 일이 없다 —
+     * 거래가 없는 거래처에 0원짜리 명세서가 메일로 나가면 그건 사고다.
+     */
+    @Transactional(readOnly = true)
+    public List<ArLedgerResponse> arLedgerAll(LocalDate fromDate, LocalDate toDate,
+                                              boolean onlyReportable) {
         List<ArLedgerResponse> out = new ArrayList<>();
         for (ArStatusResponse.Row r : arStatus(fromDate, toDate, null).rows()) {
             if (r.partnerId() == null) {
                 continue;   // 합계행
             }
-            out.add(arLedger(r.partnerId(), fromDate, toDate));
+            ArLedgerResponse led = arLedger(r.partnerId(), fromDate, toDate);
+            // '신고내역이 있는' = 그 기간에 매출·반품·수금 중 하나라도 움직인 거래처.
+            // 이월만 있고 기간 거래가 없는 곳은 보낼 내역서가 없다.
+            if (onlyReportable && led.lines().isEmpty()) {
+                continue;
+            }
+            out.add(led);
         }
         return out;
     }
