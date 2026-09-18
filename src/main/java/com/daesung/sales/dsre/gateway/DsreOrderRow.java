@@ -56,5 +56,22 @@ public record DsreOrderRow(
                 0으로 채우지 않는다 — 0원짜리 주문으로 읽히면 그게 더 나쁘다.""",
                 example = "1470000")
         Long estimatedAmount
-) {
+,
+
+        @Schema(description = """
+                이 주문이 만들어진 **매출번호 목록**. DSRE2가 아니라 우리 매출 원장에서 붙인다
+                (서로 다른 DB라 한 쿼리로 못 잇는다).
+
+                ★<b>출고번호와 같은 값</b>이다 — 정상출고는 별도 전표를 두지 않고
+                매출번호(I-)로 흡수한다. 화면의 '출고번호·매출번호' 두 칸에 같은 값을 쓰면 된다.
+                ‼️주문번호 칸이 생기기 전(2026-09-18 이전) 매출은 비어 있다. 소급하지 않았다.""")
+        java.util.List<String> salesNos) {
+
+    /** 매출번호를 붙인 사본. 게이트웨이는 null 로 두고 서비스가 채운다. */
+    public DsreOrderRow withSalesNos(java.util.List<String> nos) {
+        return new DsreOrderRow(reqCd, reqDate, stateCode, stateName, custCode, custName,
+                custFullName, cityName, mgrCode, mgrName, productName, detailName, grade,
+                inwon, classCount, procYn, teacher, tel, address, memo,
+                totalQty, itemCount, estimatedAmount, nos);
+    }
 }

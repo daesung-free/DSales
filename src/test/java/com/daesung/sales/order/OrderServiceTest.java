@@ -42,7 +42,7 @@ class OrderServiceTest {
     private static DsreOrderRow order(String stateCode) {
         return new DsreOrderRow(78331, "20260720", stateCode, "", "00001", "거래처", "거래처(주)", "서울",
                 "00001", "학교", "상품", "1회", "3", 100, 4, "처리", null, null, null, null,
-                1200L, 4, null);
+                1200L, 4, null, null);
     }
 
     @Test

@@ -25,6 +25,28 @@ import org.springframework.data.repository.query.Param;
 public interface SaleRepository extends JpaRepository<Sale, Long> {
 
     /**
+     * 주문번호별 매출번호. 주문 목록이 "이 주문이 무슨 매출이 됐나"를 붙일 때 쓴다.
+     *
+     * <p>한 주문이 여러 매출로 갈릴 수 있다(품목·학교별로 나뉘는 경우) — 그래서 목록이다.
+     * 취소·삭제분은 뺀다. 되돌린 매출까지 붙이면 화면이 "이미 처리됨"으로 읽는다.
+     */
+    @Query("""
+            select s.reqCd as reqCd, s.salesNo as salesNo
+              from Sale s
+             where s.reqCd in :reqCds and s.canceled = false
+             order by s.salesNo
+            """)
+    List<ReqSalesNo> salesNosByReqCds(@Param("reqCds") Collection<Integer> reqCds);
+
+    /** 주문번호 ↔ 매출번호 한 줄. */
+    interface ReqSalesNo {
+        Integer getReqCd();
+
+        String getSalesNo();
+    }
+
+
+    /**
      * 매출액명세서 도서 단위 집계(취소 제외, 기간·회계구분 필터). 근거: 레거시 매출액명세서.vb.
      * 금액=Σ공급가, 세액=Σ세액. 합계(금액+세액)와 대분류·소계·총계 rollup은 서비스에서 조립.
      *

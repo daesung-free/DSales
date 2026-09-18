@@ -124,6 +124,15 @@ public class Sale extends com.daesung.sales.common.entity.SoftDeletableEntity {
     @Column(length = 1000)
     private String memo;
 
+    /**
+     * DSRE2 주문번호(REQ_CD). 주문에서 생성된 매출만 채운다 — 일반 매출은 null.
+     *
+     * <p>★{@link #bulkImportKey} 에도 주문번호가 들어 있지만 <b>문자열 안에 섞여 있어</b>
+     * 조인도 색인도 못 한다(형식도 두 가지다). 그건 멱등 dedup 용이고, 이건 조회 축이다.
+     */
+    @Column(name = "req_cd")
+    private Integer reqCd;
+
     /** DSRE 매출일괄등록 소스키(req_cd:lst_cd:dtl_cd:req_gn). 멱등 dedup용. 일반 매출은 null. */
     @Column(name = "bulk_import_key", length = 60)
     private String bulkImportKey;
@@ -244,6 +253,11 @@ public class Sale extends com.daesung.sales.common.entity.SoftDeletableEntity {
 
     public void applyPackType(PackType packType) {
         this.packType = packType;
+    }
+
+    /** 주문에서 생성된 매출임을 표시한다(일괄등록·더프). */
+    public void linkOrder(Integer reqCd) {
+        this.reqCd = reqCd;
     }
 
     public void applyUploadDetail(String schoolCode, String schoolName, Integer bookRound) {

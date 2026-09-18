@@ -171,6 +171,7 @@ public class DuffSalesImportService {
                     price, rate, charge.inwon(),
                     total, tax, total + tax, row.memo(), sourceKey);
             sale.applyUploadDetail(row.schoolCode(), row.schoolName(), null);
+            sale.linkOrder(row.reqCd());   // 주문 목록이 "무슨 매출이 됐나"를 역참조한다
             sale.applyDiscount(discountOrNull(row));
             saleRepository.save(sale);
 

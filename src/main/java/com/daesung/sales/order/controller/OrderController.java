@@ -268,7 +268,8 @@ public class OrderController {
         int p = Math.max(0, page);
         int sz = Math.min(Math.max(1, size), 500);
         return ApiResponse.success(com.daesung.sales.common.response.PageResponse.of(
-                dsreGateway.findOrders(from, to, state, custCode, custCodes, mode, p * sz, sz),
+                orderService.withSalesNos(
+                        dsreGateway.findOrders(from, to, state, custCode, custCodes, mode, p * sz, sz)),
                 p, sz, dsreGateway.countOrders(from, to, state, custCode, custCodes, mode)));
     }
 
@@ -294,7 +295,8 @@ public class OrderController {
                 new Col("성적처리", "procYn"), new Col("담당선생님", "teacher"),
                 new Col("연락처", "tel"), new Col("주소", "address"), new Col("비고", "memo"));
         byte[] xlsx = excel.toXlsx("주문진행상태", cols,
-                dsreGateway.findOrders(fromDate, toDate, state, custCode, custCodes, mode, 0, Integer.MAX_VALUE));
+                orderService.withSalesNos(
+                        dsreGateway.findOrders(fromDate, toDate, state, custCode, custCodes, mode, 0, Integer.MAX_VALUE)));
         return excel.asDownload(xlsx, "주문_진행상태.xlsx");
     }
 }

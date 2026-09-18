@@ -10,6 +10,7 @@ import com.daesung.sales.order.dto.OrderCreateResponse;
 import com.daesung.sales.dsre.gateway.DsreGateway;
 import com.daesung.sales.dsre.gateway.DsreOrderRow;
 import com.daesung.sales.dsre.gateway.OrderState;
+import java.util.HashMap;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -37,6 +38,7 @@ public class OrderService {
     private final DsreGateway dsreGateway;
     private final StatusHistoryService statusHistoryService;
     private final com.daesung.sales.common.audit.CurrentAuditor currentAuditor;
+    private final com.daesung.sales.sale.repository.SaleRepository saleRepository;
 
     /**
      * 거래명세서 발급 처리 → 발송준비중(W).
@@ -292,6 +294,33 @@ public class OrderService {
         return new ItemResult(reqCd, true,
                 OrderState.RECEIVED.code(), OrderState.RECEIVED.label(),
                 OrderState.CANCELED.code(), OrderState.CANCELED.label(), null);
+    }
+
+
+    /**
+     * 주문 행에 <b>매출번호</b>를 붙인다. DSRE2와 우리 원장은 서로 다른 DB라 한 쿼리로 못 잇는다.
+     *
+     * <p>페이지에 실린 주문번호만 모아 <b>한 번에</b> 조회한다 — 행마다 조회하면 N+1이다.
+     * 취소·삭제분은 빠진다(되돌린 매출까지 붙이면 화면이 "이미 처리됨"으로 읽는다).
+     *
+     * <p>‼️주문번호 칸이 생기기 전 매출은 비어 있다. 소급하지 않기로 확인받았다.
+     */
+    public List<DsreOrderRow> withSalesNos(List<DsreOrderRow> rows) {
+        if (rows.isEmpty()) {
+            return rows;
+        }
+        Set<Integer> reqCds = new LinkedHashSet<>();
+        rows.forEach(r -> reqCds.add(r.reqCd()));
+
+        Map<Integer, List<String>> byReq = new HashMap<>();
+        saleRepository.salesNosByReqCds(reqCds).forEach(x ->
+                byReq.computeIfAbsent(x.getReqCd(), k -> new ArrayList<>()).add(x.getSalesNo()));
+
+        List<DsreOrderRow> out = new ArrayList<>(rows.size());
+        for (DsreOrderRow r : rows) {
+            out.add(r.withSalesNos(byReq.getOrDefault(r.reqCd(), List.of())));
+        }
+        return out;
     }
 
 }

@@ -644,7 +644,8 @@ public class JdbcDsreGateway implements DsreGateway {
                 rs.getString("bigo"),
                 rs.getLong("total_qty"),
                 rs.getInt("item_cnt"),
-                (Long) rs.getObject("est_amt"));   // 단가 없는 시행은 null 그대로
+                (Long) rs.getObject("est_amt"),   // 단가 없는 시행은 null 그대로
+                null);                            // 매출번호는 우리 DB라 서비스가 채운다
     };
 
     private static final String ORDER_PAGE_SQL = ORDER_LIST_SQL + " LIMIT ? OFFSET ?";
