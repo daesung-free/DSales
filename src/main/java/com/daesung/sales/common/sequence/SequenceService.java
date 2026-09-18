@@ -25,6 +25,12 @@ public class SequenceService {
     /** IN: 입고번호. ‼️예전엔 입고에 전표번호가 없어 "무엇을 되돌릴지" 특정할 수 없었다(취소 신설 시 추가). */
     public static final String SEQ_INBOUND = "seq_inbound_no";
 
+    /** 이고 전표(TR-). 없으면 이고를 되돌릴 수 없다 — 취소·삭제가 전표번호로 대상을 찾는다. */
+    public static final String SEQ_TRANSFER = "seq_transfer_no";
+
+    /** 세트 조립·해체 전표(BW-). 이고와 같은 이유. */
+    public static final String SEQ_BOMWORK = "seq_bomwork_no";
+
     private final SequenceRepository repository;
 
     /** 다음 순번(원자적). */

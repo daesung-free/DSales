@@ -12,6 +12,7 @@ import com.daesung.sales.school.dto.SchoolUpdateRequest;
 import com.daesung.sales.school.service.SchoolService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.Parameter;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import java.util.List;
@@ -38,12 +39,22 @@ public class SchoolController {
     private final SchoolService schoolService;
     private final ExcelExportUtil excel;
 
-    @Operation(summary = "학교 목록 조회", description = "keyword(학교코드/명 부분일치)로 검색, 페이징·정렬 지원")
+    @Operation(summary = "학교 목록 조회",
+            description = """
+                    키워드·학교/학원 구분으로 검색. 페이징·정렬 지원.
+
+                    · **키워드는 학교코드·학교명에 더해 거래처코드·거래처명까지** 훑는다.
+                      예전엔 학교 쪽만 봐서, 엑셀엔 거래처코드 컬럼을 내려주면서
+                      그 값으로 검색하면 0건이었다.
+                    · `schoolType`으로 학교/학원을 가른다. 미지정이면 전체다.""")
     @GetMapping
     public ApiResponse<PageResponse<SchoolResponse>> list(
-            @Parameter(description = "검색어(학교코드 또는 학교명 부분일치)") @RequestParam(required = false) String keyword,
+            @Parameter(description = "검색어 — 학교코드·학교명·거래처코드·거래처명 부분일치")
+            @RequestParam(required = false) String keyword,
+            @Parameter(description = "학교/학원 구분 SCHOOL/HAKWON. 미지정=전체")
+            @RequestParam(required = false) com.daesung.sales.school.entity.SchoolType schoolType,
             @ParameterObject PageRequestDto pageReq) {
-        return ApiResponse.success(schoolService.findAll(keyword, pageReq.toPageable()));
+        return ApiResponse.success(schoolService.findAll(keyword, schoolType, pageReq.toPageable()));
     }
 
     @Operation(summary = "학교 목록 엑셀 다운로드", description = "35p 컬럼(거래처코드·도시·지역·거래처명·학교코드·학교명·학교Y/N·구분·메모).")

@@ -4,6 +4,7 @@ import com.daesung.sales.school.entity.School;
 import com.daesung.sales.school.entity.SchoolSource;
 import java.util.List;
 import java.util.Optional;
+import com.daesung.sales.school.entity.SchoolType;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.jpa.repository.JpaRepository;
@@ -12,6 +13,9 @@ import org.springframework.data.repository.query.Param;
 
 public interface SchoolRepository extends JpaRepository<School, Long> {
     Optional<School> findBySchoolCode(String schoolCode);
+
+    /** 매출 목록이 학교/학원 구분을 붙일 때 쓴다 — 코드를 모아 한 번에(N+1 방지). */
+    List<School> findBySchoolCodeIn(java.util.Collection<String> schoolCodes);
 
     /**
      * 학교/학원검색(29p). 근거: 레거시 {@code 학교검색.vb} 조회 SQL을 그대로 옮겼다.
@@ -46,6 +50,26 @@ public interface SchoolRepository extends JpaRepository<School, Long> {
 
     /** 출처별 조회. 동기화는 DSRE 행만 대상으로 하고 MANUAL 행은 손대지 않는다. */
     java.util.List<School> findBySource(SchoolSource source);
+
+    /**
+     * 목록 조회 — 키워드 + 학교/학원 구분.
+     *
+     * <p>★키워드가 <b>거래처코드·거래처명까지</b> 훑는다. 예전엔 학교코드·학교명만 봐서
+     * 화면의 거래처코드 컬럼으로 검색하면 0건이었다(실측 2026-09-18: `00001` → 0건).
+     * 엑셀엔 그 컬럼을 내려주면서 검색은 안 되는 건 앞뒤가 안 맞는다.
+     *
+     * <p>{@code schoolType} 은 미지정이면 전체다.
+     */
+    @Query("""
+            select s from School s
+             where (:kw is null
+                    or lower(s.schoolCode) like :kw or lower(s.schoolName) like :kw
+                    or lower(s.custCode) like :kw or lower(s.custName) like :kw)
+               and (:schoolType is null or s.schoolType = :schoolType)
+            """)
+    Page<School> search(@Param("kw") String kw,
+                        @Param("schoolType") SchoolType schoolType,
+                        Pageable pageable);
 
     Page<School> findBySchoolCodeContainingIgnoreCaseOrSchoolNameContainingIgnoreCase(
             String schoolCode, String schoolName, Pageable pageable);

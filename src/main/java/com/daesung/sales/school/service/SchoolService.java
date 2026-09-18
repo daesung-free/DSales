@@ -12,6 +12,7 @@ import com.daesung.sales.school.dto.SchoolResponse;
 import com.daesung.sales.school.dto.SchoolSyncResult;
 import com.daesung.sales.school.dto.SchoolUpdateRequest;
 import com.daesung.sales.school.entity.School;
+import com.daesung.sales.school.entity.SchoolType;
 import com.daesung.sales.school.entity.SchoolSource;
 import com.daesung.sales.school.repository.SchoolRepository;
 import java.util.HashSet;
@@ -46,10 +47,19 @@ public class SchoolService {
     private final ObjectProvider<DsreGateway> dsreGateway;
 
     public PageResponse<SchoolResponse> findAll(String keyword, Pageable pageable) {
-        Page<School> page = (keyword == null || keyword.isBlank())
-                ? schoolRepository.findAll(pageable)
-                : schoolRepository.findBySchoolCodeContainingIgnoreCaseOrSchoolNameContainingIgnoreCase(
-                        keyword, keyword, pageable);
+        return findAll(keyword, null, pageable);
+    }
+
+    /**
+     * 목록 — 키워드 + 학교/학원 구분.
+     *
+     * <p>키워드는 학교코드·학교명에 더해 <b>거래처코드·거래처명까지</b> 훑는다.
+     * 엑셀엔 거래처코드 컬럼을 내려주면서 그 값으로는 검색이 안 되던 것을 맞춘 것이다.
+     */
+    public PageResponse<SchoolResponse> findAll(String keyword, SchoolType schoolType, Pageable pageable) {
+        String kw = com.daesung.sales.common.query.Keywords.norm(keyword);
+        Page<School> page = schoolRepository.search(
+                (kw == null) ? null : "%" + kw + "%", schoolType, pageable);
         return PageResponse.of(page.map(SchoolResponse::from));
     }
 

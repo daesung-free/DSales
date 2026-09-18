@@ -55,7 +55,16 @@ public record ReturnableResponse(Long partnerId, List<Row> rows) {
             @Schema(description = "정가(원)") Integer unitPrice,
             @Schema(description = "공급률(%)") Integer supplyRate,
             @Schema(description = "이 조건으로 확정매출된 수량") long saleQty,
-            @Schema(description = "이 조건으로 반품된 수량") long returnedQty
+            @Schema(description = "이 조건으로 반품된 수량") long returnedQty,
+
+            @Schema(description = """
+                    이 조건으로 나간 **원출고 매출번호 목록**.
+
+                    ★반품 등록(`POST /sales/return-inbound`)이 `sourceOutNo`를 받는데
+                    정작 이 조회가 안 내려줘서 담당자가 채울 값이 없었다(2026-09-18 지적).
+                    한 조건에 출고가 여럿일 수 있어 목록이다 — 같은 도서를 같은 공급률로
+                    여러 번 내보내면 전부 같은 줄로 묶이기 때문이다. 화면은 여기서 고르게 한다.""")
+            List<String> sourceSalesNos
     ) {
     }
 }

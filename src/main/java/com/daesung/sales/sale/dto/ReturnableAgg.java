@@ -19,4 +19,15 @@ public interface ReturnableAgg {
     long getSaleQty();
 
     long getReturnQty();
+
+    /**
+     * 이 조건(정가·공급률)으로 나간 <b>출고 매출번호들</b>. 쉼표로 이어 붙인 문자열이다.
+     *
+     * <p>★반품 등록({@code POST /sales/return-inbound})이 {@code sourceOutNo}를 요구하는데
+     * 정작 이 조회가 안 내려줘서 담당자가 채울 값이 없었다(프론트 실측 2026-09-18).
+     *
+     * <p>한 조건에 출고가 여럿일 수 있어 목록이다 — 같은 도서를 같은 공급률로 여러 번 내보내면
+     * 전부 같은 줄로 묶이기 때문이다. 화면은 이 중에서 고르게 한다.
+     */
+    String getSourceSalesNos();
 }

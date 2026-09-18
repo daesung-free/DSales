@@ -6,6 +6,7 @@ import java.util.List;
 
 /** BOM 작업 결과. 완제품/구성품별 증감(delta)과 작업 후 잔량(balance). */
 public record BomWorkResponse(
+        @Schema(description = "전표번호(BW-). 되돌릴 때 이 번호로 가리킨다") String workNo,
         @Schema(description = "작업 창고 id") Long warehouseId,
         @Schema(description = "작업 창고명") String warehouseName,
         @Schema(description = "방향") BomDirection direction,

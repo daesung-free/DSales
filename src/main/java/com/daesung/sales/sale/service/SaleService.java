@@ -67,6 +67,7 @@ public class SaleService {
     private final com.daesung.sales.common.audit.CurrentAuditor currentAuditor;
     private final SequenceService sequenceService;
     private final com.daesung.sales.logistics.service.ShipmentService shipmentService;
+    private final com.daesung.sales.school.repository.SchoolRepository schoolRepository;
 
     /**
      * 수기 매출 등록(일반 매출) + 재고 반영을 한 트랜잭션으로. 품목마다 금액 산출 → 매출번호(I) 채번 →
@@ -369,7 +370,8 @@ public class SaleService {
             }
             conditions.computeIfAbsent(a.getProductId(), k -> new ArrayList<>())
                     .add(new ReturnableResponse.Condition(
-                            a.getUnitPrice(), a.getSupplyRate(), a.getSaleQty(), a.getReturnQty()));
+                            a.getUnitPrice(), a.getSupplyRate(), a.getSaleQty(), a.getReturnQty(),
+                            splitSalesNos(a.getSourceSalesNos())));
             byProduct.put(a.getProductId(), new ReturnableResponse.Row(
                     a.getProductId(), a.getProductCode(), a.getProductName(),
                     unitPrice, supplyRate, saleQty, returned, saleQty - returned,
@@ -428,7 +430,7 @@ public class SaleService {
      * 원출고 이벤트가 없으면(위탁정산 매출 등) 재고는 건드리지 않음.
      */
     @Transactional
-    public SaleResponse cancel(Long id) {
+    public SaleResponse cancel(Long id, String reason) {
         Sale sale = saleRepository.findById(id)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "매출이 없습니다. id=" + id));
         if (sale.isCanceled()) {
@@ -437,8 +439,10 @@ public class SaleService {
         periodLockService.assertNotLocked(sale.getSalesDate());
         boolean before = sale.isCanceled();   // ★바꾸기 전에 읽는다
         sale.cancel();
+        String note = "매출 취소(" + sale.getSalesNo() + ")"
+                + ((reason == null || reason.isBlank()) ? "" : " — 사유: " + reason.trim());
         statusHistoryService.record(StatusEntityType.SALE, sale.getId(), "canceled",
-                before, true, "매출 취소(" + sale.getSalesNo() + ")");
+                before, true, note);
 
         // 위탁정산 매출 취소면 미결원장 복원(settled↔remaining 역산). 감사 결함 수정:
         // 이 처리가 없으면 settled_qty가 좌초되어 재정산 불가·재무/물류 desync.
@@ -503,6 +507,19 @@ public class SaleService {
         saleRepository.flush();
 
         inventoryService.softDeleteByRefNo(sale.getSalesNo(), currentAuditor.username());
+    }
+
+    /**
+     * {@code group_concat} 결과를 목록으로 푼다. 값이 없으면 <b>빈 목록</b>이다 —
+     * null 을 내리면 전역 {@code NON_NULL} 설정 때문에 키 자체가 사라져,
+     * 화면이 "필드가 없다"로 읽는다(이 프로젝트에서 세 번 겪었다).
+     */
+    private static List<String> splitSalesNos(String concatenated) {
+        if (concatenated == null || concatenated.isBlank()) {
+            return List.of();
+        }
+        return java.util.Arrays.stream(concatenated.split(","))
+                .map(String::trim).filter(x -> !x.isEmpty()).distinct().sorted().toList();
     }
 
     /** 삭제 이력에 남길 요약 — 나중에 "무엇을 지웠나"에 답할 수 있어야 한다. */
@@ -577,8 +594,33 @@ public class SaleService {
                 MultiSelect.isAny(warehouseIds),
                 MultiSelect.orPlaceholder(warehouseIds, 0L),
                 kw, includeCanceled, pageable);
-        return PageResponse.of(
-                page.map(s -> SaleResponse.from(s, divisions.get(s.getProduct().getSalesDivision()))));
+        // ★학교/학원 구분은 매출 원장에 없다 — 학교 마스터에서 붙인다.
+        //   페이지 안의 학교코드만 모아 **한 번에** 조회한다(행마다 조회하면 N+1이다).
+        //   ‼️마스터에 없는 코드는 그냥 null 로 둔다. 거기서 막으면 과거 매출이 조회에서 사라진다.
+        Map<String, com.daesung.sales.school.entity.SchoolType> schoolTypes = schoolTypesOf(page);
+        return PageResponse.of(page.map(s -> SaleResponse.from(
+                s, divisions.get(s.getProduct().getSalesDivision()),
+                // ‼️학교코드가 없는 매출이 흔하다(학교 없이 거래처로만 나가는 건).
+                //   Map.of() 는 **null 키 조회에서 NPE**를 던진다 — 빈 맵이어도 그렇다.
+                //   조회 전에 걸러야 한다(실제로 GET /sales 가 통째로 500이었다).
+                (s.getSchoolCode() == null) ? null : schoolTypes.get(s.getSchoolCode()))));
+    }
+
+    /** 페이지에 실린 학교코드의 학교/학원 구분을 한 번에 가져온다(N+1 방지). */
+    private Map<String, com.daesung.sales.school.entity.SchoolType> schoolTypesOf(Page<Sale> page) {
+        java.util.Set<String> codes = new java.util.HashSet<>();
+        page.forEach(s -> {
+            if (s.getSchoolCode() != null && !s.getSchoolCode().isBlank()) {
+                codes.add(s.getSchoolCode());
+            }
+        });
+        if (codes.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, com.daesung.sales.school.entity.SchoolType> out = new HashMap<>();
+        schoolRepository.findBySchoolCodeIn(codes)
+                .forEach(sc -> out.put(sc.getSchoolCode(), sc.getSchoolType()));
+        return out;
     }
 
     /** 단건 응답용 세부구분 조회. 미지정이면 null → 대분류가 '미분류'로 나간다. */

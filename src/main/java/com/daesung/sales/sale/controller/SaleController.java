@@ -62,6 +62,43 @@ import org.springframework.web.multipart.MultipartFile;
 @RequestMapping("/sales")
 public class SaleController {
 
+    /**
+     * 매출 목록 정렬 별칭 — <b>화면 컬럼명 → 엔티티 속성 경로</b>.
+     *
+     * <p>★화면이 보이는 이름으로 정렬을 건다. '학년'은 화면에선 {@code grade}지만
+     * {@code Sale}엔 그 속성이 없고 {@code product.grade}에 있다. 별칭이 없으면
+     * {@code GET /sales?sort=grade,asc} 가 <b>500</b>이었다(실측 2026-09-18).
+     *
+     * <p>‼️여기 없는 항목은 <b>400</b>이다. 무엇으로 정렬할 수 있는지 화면은 알 수 없으므로
+     * 오류 메시지가 목록을 함께 준다. 늘릴 때는 이 표에만 추가하면 된다.
+     */
+    private static final java.util.Map<String, String> SALE_SORTS = java.util.Map.ofEntries(
+            java.util.Map.entry("id", "id"),
+            java.util.Map.entry("salesNo", "salesNo"),
+            java.util.Map.entry("salesDate", "salesDate"),
+            java.util.Map.entry("salesType", "salesType"),
+            java.util.Map.entry("shipmentType", "shipmentType"),
+            java.util.Map.entry("salesCategory", "salesCategory"),
+            java.util.Map.entry("unitPrice", "unitPrice"),
+            java.util.Map.entry("supplyRate", "supplyRate"),
+            java.util.Map.entry("qty", "qty"),
+            java.util.Map.entry("supplyAmount", "supplyAmount"),
+            java.util.Map.entry("tax", "tax"),
+            java.util.Map.entry("totalAmount", "totalAmount"),
+            java.util.Map.entry("discountAmount", "discountAmount"),
+            java.util.Map.entry("schoolCode", "schoolCode"),
+            java.util.Map.entry("schoolName", "schoolName"),
+            java.util.Map.entry("bookRound", "bookRound"),
+            // ↓ 연관 엔티티 — 화면 이름과 경로가 다른 것들
+            java.util.Map.entry("partnerCode", "partner.code"),
+            java.util.Map.entry("partnerName", "partner.name"),
+            java.util.Map.entry("productCode", "product.code"),
+            java.util.Map.entry("productName", "product.name"),
+            java.util.Map.entry("catCode", "product.catCode"),
+            java.util.Map.entry("catName", "product.catName"),
+            java.util.Map.entry("grade", "product.grade"),
+            java.util.Map.entry("warehouseName", "warehouse.name"));
+
     private final SaleService saleService;
     private final SaleReportService saleReportService;
     private final com.daesung.sales.sale.service.AttendanceService attendanceService;
@@ -145,7 +182,7 @@ public class SaleController {
                 MultiSelect.merge(partnerId, partnerIds),
                 MultiSelect.merge(warehouseId, warehouseIds),
                 keyword,
-                includeCanceled, pageReq.toPageable()));
+                includeCanceled, pageReq.toPageable(SALE_SORTS)));
     }
 
     @Operation(summary = "통합 매출 조회 엑셀 다운로드(12p)",
@@ -308,8 +345,14 @@ public class SaleController {
             description = "원 매출을 삭제하지 않고 취소 표시 + 원출고 재고 역분개(복구). 이미 취소된 건은 400. "
                     + "위탁정산 매출은 연결 재고이벤트가 없어 재고 불변.")
     @PostMapping("/{id}/cancel")
-    public ApiResponse<SaleResponse> cancel(@PathVariable Long id) {
-        return ApiResponse.success(saleService.cancel(id));
+    public ApiResponse<SaleResponse> cancel(
+            @PathVariable Long id,
+            @Parameter(description = """
+                    취소 사유(선택). 상태변경 이력에 남는다.
+                    ‼️입고·폐기 취소와 **같은 자리·같은 이름**이다 — 예전엔 매출만 받지 않아
+                    화면이 이 동작에서만 사유칸을 못 띄웠다.""")
+            @RequestParam(required = false) String reason) {
+        return ApiResponse.success(saleService.cancel(id, reason));
     }
 
     @Operation(summary = "매출액정리 엑셀 다운로드",

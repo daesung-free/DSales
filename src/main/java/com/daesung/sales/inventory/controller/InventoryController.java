@@ -328,6 +328,44 @@ public class InventoryController {
                 Heading.period("세트 조립·해체 현황", fromDate, toDate));
         return excel.asDownload(xlsx, "세트_조립해체현황.xlsx");
     }
+    @Operation(summary = "재고 전표 취소(전표 종류 무관)",
+            description = """
+                    입고·**이고·세트작업**·폐기 어느 전표든 전표번호로 취소한다(역분개).
+
+                    ★예전엔 `/stock/inbound/{refNo}/cancel` 하나뿐이고 설명이 "입고 전표"라,
+                    화면이 입고 행에만 되돌리기 버튼을 열고 있었다(추측으로 쏘지 않기 위해).
+                    이고(TR-)·세트작업(BW-)에는 애초에 **전표번호가 안 붙어** 가리킬 수도 없었다.
+                    번호를 붙였고, 이 경로가 종류를 가리지 않는다.
+
+                    · 취소는 **반대 이벤트를 새로 남긴다** — "되돌렸다"가 장부에 남는 방식이다.
+                      오입력을 없던 일로 만들려면 삭제(`DELETE`)를 쓴다.
+                    · 마감된 달은 400(PERIOD_LOCKED). 이미 취소된 전표도 400.
+                    · ⚠️번호가 붙기 전(2026-09-18 이전)에 만들어진 이고·세트작업 전표는
+                      `refNo`가 비어 있어 되돌릴 수 없다. 소급 부여는 하지 않았다 —
+                      어떤 행들이 한 전표였는지 되살릴 근거가 없어, 묶는 순간
+                      되돌리기가 남의 작업까지 끌고 간다.""")
+    @PostMapping("/vouchers/{refNo}/cancel")
+    public ApiResponse<com.daesung.sales.inventory.dto.VoucherCancelResponse> cancelAnyVoucher(
+            @Parameter(description = "전표번호(IN-·TR-·BW-·P-)", required = true)
+            @PathVariable String refNo,
+            @Parameter(description = "취소 사유") @RequestParam(required = false) String reason) {
+        return ApiResponse.success(inventoryService.cancelVoucher(refNo, reason));
+    }
+
+    @Operation(summary = "재고 전표 삭제(마감 前, 전표 종류 무관)",
+            description = """
+                    잘못 입력한 전표를 **없던 것으로** 만든다. 입고·이고·세트작업·폐기 공통이다.
+
+                    취소와 다른 축이다 — 취소는 되돌린 기록을 장부에 남기고,
+                    삭제는 원 이벤트를 무효화한다. **사유 필수**이고 지운 내용은 이력에 남는다.""")
+    @DeleteMapping("/vouchers/{refNo}")
+    public ApiResponse<Void> deleteAnyVoucher(
+            @Parameter(description = "전표번호", required = true) @PathVariable String refNo,
+            @Valid @RequestBody com.daesung.sales.logistics.dto.RevertRequest req) {
+        inventoryService.deleteVoucher(refNo, req.reason(), currentAuditor.username());
+        return ApiResponse.success(null);
+    }
+
     @Operation(summary = "입고 취소(역분개)",
             description = """
                     입고 전표를 통째로 되돌린다. **물리 삭제가 아니다** —

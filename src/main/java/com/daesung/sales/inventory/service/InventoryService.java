@@ -112,17 +112,22 @@ public class InventoryService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                         "도착 창고가 없습니다. id=" + req.toWarehouseId()));
 
+        // ★전표번호(TR-)를 붙인다. 없으면 이고를 되돌릴 방법이 없다 —
+        //   취소·삭제가 전부 전표번호로 대상을 찾는다(예전엔 NULL 이라 가리킬 수가 없었다).
+        String transferNo = "TR-" + req.processedDate().format(YYYYMMDD) + "-"
+                + sequenceService.next(SequenceService.SEQ_TRANSFER);
+
         List<TransferResponse.Line> lines = new ArrayList<>();
         for (TransferRequest.Item item : req.items()) {
             Product product = productRepository.findById(item.productId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                             "상품이 없습니다. id=" + item.productId()));
-            moveStock(product, from, to, item.qty(), req.processedDate(), item.reason());
+            moveStock(product, from, to, item.qty(), req.processedDate(), transferNo, item.reason());
             lines.add(new TransferResponse.Line(product.getId(), product.getCode(), item.qty(),
                     balanceOf(product.getId(), from.getId()), balanceOf(product.getId(), to.getId())));
         }
-        return new TransferResponse(from.getId(), from.getName(), to.getId(), to.getName(), lines,
-                stockWarningCollector.drain());
+        return new TransferResponse(transferNo, from.getId(), from.getName(),
+                to.getId(), to.getName(), lines, stockWarningCollector.drain());
     }
 
     /**
@@ -131,12 +136,23 @@ public class InventoryService {
      */
     public InventoryTxn moveStock(Product product, Warehouse from, Warehouse to, int qty,
                                   LocalDate tradeDate, String reason) {
+        return moveStock(product, from, to, qty, tradeDate, null, reason);
+    }
+
+    /**
+     * 전표번호를 붙여 이동한다. {@code refNo}가 있어야 나중에 <b>되돌릴 수 있다</b> —
+     * 취소·삭제는 전부 refNo 로 대상을 찾는다.
+     *
+     * <p>위탁 자동이고는 원본 출고번호(OUT-)를 그대로 넘겨 매출 쪽과 한 전표로 묶인다.
+     */
+    public InventoryTxn moveStock(Product product, Warehouse from, Warehouse to, int qty,
+                                  LocalDate tradeDate, String refNo, String reason) {
         applyDelta(product, from, -qty);
         InventoryTxn outLeg = inventoryTxnRepository.save(
-                InventoryTxn.transfer(product, from, -qty, tradeDate, null, reason));
+                InventoryTxn.transfer(product, from, -qty, tradeDate, null, refNo, reason));
         applyDelta(product, to, qty);
         inventoryTxnRepository.save(
-                InventoryTxn.transfer(product, to, qty, tradeDate, outLeg, reason));
+                InventoryTxn.transfer(product, to, qty, tradeDate, outLeg, refNo, reason));
         return outLeg;
     }
 
@@ -193,9 +209,9 @@ public class InventoryService {
         // 원 전표의 거래일 기준으로 마감을 본다 — 되돌리는 대상이 그 달의 숫자다.
         periodLockService.assertNotLocked(origins.get(0).getTradeDate());
 
-        String kind = origins.get(0).getTxnType() == TxnType.INBOUND ? "INBOUND" : "DISPOSE";
+        String kind = voucherKind(origins.get(0).getTxnType());
         int n = reverseByRefNo(refNo, LocalDate.now(),
-                (kind.equals("INBOUND") ? "입고취소" : "폐기취소") + " 역분개: " + refNo);
+                voucherKindLabel(kind) + " 취소 역분개: " + refNo);
         voucherCancelRepository.save(VoucherCancel.of(refNo, kind, reason, n));
         return new com.daesung.sales.inventory.dto.VoucherCancelResponse(
                 refNo, kind, n, stockWarningCollector.drain());
@@ -273,8 +289,11 @@ public class InventoryService {
         // 완제품: 조립 +, 해체 −
         int parentDelta = assemble ? req.workQty() : -req.workQty();
         int parentBal = applyDelta(parent, warehouse, parentDelta);
+        // ★전표번호를 붙인다(BW-). 없으면 이 작업을 되돌릴 방법이 없다 — 취소·삭제가 refNo 로 찾는다.
+        String bomNo = "BW-" + req.processedDate().format(YYYYMMDD) + "-"
+                + sequenceService.next(SequenceService.SEQ_BOMWORK);
         InventoryTxn parentTxn = InventoryTxn.bom(
-                parent, warehouse, parentDelta, txnType, req.processedDate(), req.memo());
+                parent, warehouse, parentDelta, txnType, req.processedDate(), bomNo, req.memo());
         inventoryTxnRepository.save(parentTxn);
         // 완제품 행: 비율·자재구분은 구성품에만 있는 값이라 비운다.
         BomWorkResponse.Line parentLine = new BomWorkResponse.Line(
@@ -287,14 +306,15 @@ public class InventoryService {
             Product child = b.getChild();
             int compDelta = (assemble ? -1 : 1) * b.getRatio() * req.workQty();
             int compBal = applyDelta(child, warehouse, compDelta);
-            inventoryTxnRepository.save(InventoryTxn.bom(child, warehouse, compDelta, txnType, req.processedDate(), req.memo()));
+            inventoryTxnRepository.save(InventoryTxn.bom(
+                    child, warehouse, compDelta, txnType, req.processedDate(), bomNo, req.memo()));
             compLines.add(new BomWorkResponse.Line(child.getId(), child.getCode(), child.getName(),
                     b.getRatio(),
                     (b.getMaterialType() == null) ? null : b.getMaterialType().name(),
                     compDelta, compBal));
         }
 
-        return new BomWorkResponse(warehouse.getId(), warehouse.getName(), req.direction(),
+        return new BomWorkResponse(bomNo, warehouse.getId(), warehouse.getName(), req.direction(),
                 parentLine, req.workQty(), compLines, stockWarningCollector.drain());
     }
 
@@ -737,6 +757,29 @@ public class InventoryService {
             applyDelta(d.product(), d.warehouse(), -d.qty());
         }
         return txns.size();
+    }
+
+    /**
+     * 전표 종류 판정. 예전엔 {@code INBOUND ? "INBOUND" : "DISPOSE"} 둘뿐이라
+     * 이고·세트작업 전표를 취소하면 <b>폐기로 기록</b>됐다(번호가 없어 실제로 닿진 않았지만,
+     * 번호를 붙인 지금은 닿는다).
+     */
+    private static String voucherKind(TxnType txnType) {
+        return switch (txnType) {
+            case INBOUND -> "INBOUND";
+            case TRANSFER -> "TRANSFER";
+            case BOM_ASSEMBLE, BOM_DISASSEMBLE -> "BOM_WORK";
+            default -> "DISPOSE";
+        };
+    }
+
+    private static String voucherKindLabel(String kind) {
+        return switch (kind) {
+            case "INBOUND" -> "입고";
+            case "TRANSFER" -> "이고";
+            case "BOM_WORK" -> "세트작업";
+            default -> "폐기";
+        };
     }
 
     private int applyDelta(Product product, Warehouse warehouse, int delta) {

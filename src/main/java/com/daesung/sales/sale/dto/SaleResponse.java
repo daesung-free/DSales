@@ -24,6 +24,14 @@ public record SaleResponse(
         String clientCategory,    // 거래처구분(12p)
         String schoolCode,        // 학교코드(12p 학교구분명)
         String schoolName,        // 학교/학원명
+
+        @Schema(description = """
+                학교/학원 구분(SCHOOL·HAKWON). **학교 마스터에서 붙인다** —
+                매출 원장엔 코드·이름만 있고 구분이 없었다(2026-09-18 지적).
+                ‼️마스터에 없는 학교코드면 null 이다. 조인을 느슨하게 둬 매출이 사라지지 않게 한다.""")
+        String schoolType,
+        @Schema(description = "학교/학원 구분명(학교·학원)") String schoolTypeName,
+
         String grade,             // 학년(12p, 상품 마스터 속성)
         String catCode,           // 분류코드(12p). ‼️대분류와 다른 축이다 — 아래 majorCategory 참고
         String catName,           // 분류명
@@ -73,13 +81,24 @@ public record SaleResponse(
      *                 매출에 대분류를 복사해두지 않는 이유는 매핑이 바뀌면 과거 조회가 어긋나기 때문이다.
      */
     public static SaleResponse from(Sale s, SalesDivision division) {
+        return from(s, division, null);
+    }
+
+    /**
+     * @param schoolType 학교 마스터에서 찾은 구분(없으면 null). 매출 원장엔 없는 값이라 밖에서 넣는다.
+     */
+    public static SaleResponse from(Sale s, SalesDivision division,
+                                    com.daesung.sales.school.entity.SchoolType schoolType) {
         MajorCategory major = (division == null) ? null : division.getMajorCategory();
         return new SaleResponse(
                 s.getId(), s.getSalesNo(), s.getSalesDate(),
                 s.getPartner().getId(), s.getPartner().getCode(), s.getPartner().getName(),
                 s.getPartner().getCityName(), s.getPartner().getName1(),
                 s.getPartner().getRegion(), s.getPartner().getClientCategory(),
-                s.getSchoolCode(), s.getSchoolName(), s.getProduct().getGrade(),
+                s.getSchoolCode(), s.getSchoolName(),
+                (schoolType == null) ? null : schoolType.name(),
+                (schoolType == null) ? null : schoolType.label(),
+                s.getProduct().getGrade(),
                 s.getProduct().getCatCode(), s.getProduct().getCatName(),
                 s.getProduct().getSalesDivision(),
                 (division == null) ? null : division.getName(),

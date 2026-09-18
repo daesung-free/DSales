@@ -107,9 +107,15 @@ public class InventoryTxn extends com.daesung.sales.common.entity.SoftDeletableE
         return t;
     }
 
-    /** 이고(창고 이동) 한 다리. 출발=−qty(sourceTxn=null), 도착=+qty(sourceTxn=출발 이벤트). */
+    /**
+     * 이고(창고 이동) 한 다리. 출발=−qty(sourceTxn=null), 도착=+qty(sourceTxn=출발 이벤트).
+     *
+     * <p>★{@code refNo}(전표번호)를 반드시 받는다. 예전엔 안 붙여서 NULL 로 남았고,
+     * 취소·삭제가 전부 refNo 로 대상을 찾으므로 <b>이고는 되돌릴 방법이 아예 없었다</b>.
+     */
     public static InventoryTxn transfer(Product product, Warehouse warehouse, int qty,
-                                        LocalDate tradeDate, InventoryTxn sourceTxn, String memo) {
+                                        LocalDate tradeDate, InventoryTxn sourceTxn,
+                                        String refNo, String memo) {
         InventoryTxn t = new InventoryTxn();
         t.product = product;
         t.warehouse = warehouse;
@@ -117,6 +123,7 @@ public class InventoryTxn extends com.daesung.sales.common.entity.SoftDeletableE
         t.qty = qty;
         t.tradeDate = tradeDate;
         t.sourceTxn = sourceTxn;
+        t.refNo = refNo;
         t.memo = memo;
         return t;
     }
@@ -132,14 +139,17 @@ public class InventoryTxn extends com.daesung.sales.common.entity.SoftDeletableE
     }
 
 
+    /** 세트 조립·해체 한 줄. 이고와 같은 이유로 {@code refNo}를 받는다. */
     public static InventoryTxn bom(Product product, Warehouse warehouse, int qty,
-                                   TxnType txnType, LocalDate tradeDate, String memo) {
+                                   TxnType txnType, LocalDate tradeDate,
+                                   String refNo, String memo) {
         InventoryTxn t = new InventoryTxn();
         t.product = product;
         t.warehouse = warehouse;
         t.txnType = txnType;
         t.qty = qty;
         t.tradeDate = tradeDate;
+        t.refNo = refNo;
         t.memo = memo;
         return t;
     }

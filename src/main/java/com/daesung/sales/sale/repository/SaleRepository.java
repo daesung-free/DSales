@@ -123,7 +123,10 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     @Query("select p.id as productId, p.code as productCode, p.name as productName, "
             + "s.unitPrice as unitPrice, s.supplyRate as supplyRate, "
             + "sum(case when s.salesCategory = com.daesung.sales.salestype.entity.SalesCategory.SALE then s.qty else 0 end) as saleQty, "
-            + "sum(case when s.salesCategory = com.daesung.sales.salestype.entity.SalesCategory.RETURN then s.qty else 0 end) as returnQty "
+            + "sum(case when s.salesCategory = com.daesung.sales.salestype.entity.SalesCategory.RETURN then s.qty else 0 end) as returnQty, "
+            // ★원출고 매출번호 — 반품 등록이 sourceOutNo 로 요구하는 값이다.
+            //   판매출고(SALE)만 모은다. 반품 줄의 번호를 섞으면 "무엇을 되돌리는지"가 뒤집힌다.
+            + "function('group_concat', case when s.salesCategory = com.daesung.sales.salestype.entity.SalesCategory.SALE then s.salesNo else null end) as sourceSalesNos "
             + "from Sale s join s.product p "
             + "where s.partner.id = :partnerId and s.canceled = false "
             + "and (:productId is null or p.id = :productId) "

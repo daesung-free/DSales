@@ -5,6 +5,10 @@ import java.util.List;
 
 /** 이고 결과. 품목별 이동 후 출발/도착 잔량. */
 public record TransferResponse(
+        @Schema(description = """
+                전표번호(TR-). **되돌릴 때 이 번호로 가리킨다** —
+                예전엔 이고에 번호가 없어 취소·삭제 대상을 특정할 수 없었다.""")
+        String transferNo,
         @Schema(description = "출발 창고 id") Long fromWarehouseId,
         @Schema(description = "출발 창고명") String fromWarehouseName,
         @Schema(description = "도착 창고 id") Long toWarehouseId,
