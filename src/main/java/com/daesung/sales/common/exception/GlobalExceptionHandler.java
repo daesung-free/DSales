@@ -98,9 +98,56 @@ public class GlobalExceptionHandler {
                 ? "파라미터 '" + me.getName() + "' 값이 올바르지 않습니다."
                 : (e instanceof org.springframework.web.bind.MissingServletRequestParameterException mp)
                         ? "필수 파라미터 누락: " + mp.getParameterName()
-                        : "요청 본문을 해석할 수 없습니다.";
+                        : bodyDetail(e);
         return ResponseEntity.status(ErrorCode.INVALID_INPUT.getStatus())
                 .body(ApiResponse.fail(ErrorResponse.of(ErrorCode.INVALID_INPUT, detail)));
+    }
+
+    /**
+     * 본문 해석 실패의 <b>진짜 이유</b>를 꺼낸다.
+     *
+     * <p>★예전엔 무조건 "요청 본문을 해석할 수 없습니다"였다. 그래서 enum 에 모르는 값을 보내도
+     * <b>어느 필드가 무엇 때문인지</b> 알 수 없었다 — 우리 {@code @JsonCreator} 들이
+     * "알 수 없는 대분류입니다: X (모의고사/교재/…)" 처럼 친절히 던지는데 그게 통째로 덮였다.
+     * (2026-09-17 세부구분 추가 400·자재 등록 400 이 둘 다 이 문구만 보고 원인을 못 찾은 건이다.)
+     *
+     * <p>Jackson 은 우리 예외를 몇 겹 감싸므로 원인 사슬을 따라가 우리가 쓴 메시지를 찾는다.
+     * 못 찾으면 <b>어느 필드</b>인지라도 알려 준다.
+     */
+    private static String bodyDetail(Exception e) {
+        for (Throwable t = e.getCause(); t != null && t != t.getCause(); t = t.getCause()) {
+            // 우리가 던진 메시지(한글 안내)를 만나면 그대로 쓴다.
+            if (t instanceof IllegalArgumentException && t.getMessage() != null
+                    && !t.getMessage().isBlank()) {
+                return t.getMessage();
+            }
+            if (t instanceof com.fasterxml.jackson.databind.exc.InvalidFormatException ife) {
+                String field = fieldOf(ife.getPath());
+                return "값을 해석할 수 없습니다" + (field.isEmpty() ? "" : " — " + field)
+                        + ": " + ife.getValue();
+            }
+        }
+        if (e instanceof org.springframework.http.converter.HttpMessageNotReadableException
+                && e.getCause() instanceof com.fasterxml.jackson.core.JsonProcessingException) {
+            return "JSON 형식이 올바르지 않습니다.";
+        }
+        return "요청 본문을 해석할 수 없습니다.";
+    }
+
+    /** {@code items[0].shipmentType} 처럼 어느 필드에서 터졌는지. */
+    private static String fieldOf(java.util.List<com.fasterxml.jackson.databind.JsonMappingException.Reference> path) {
+        StringBuilder sb = new StringBuilder();
+        for (var r : path) {
+            if (r.getFieldName() != null) {
+                if (sb.length() > 0) {
+                    sb.append('.');
+                }
+                sb.append(r.getFieldName());
+            } else if (r.getIndex() >= 0) {
+                sb.append('[').append(r.getIndex()).append(']');
+            }
+        }
+        return sb.toString();
     }
 
     /** 메서드 보안(@PreAuthorize) 권한 부족 → 403. (경로 규칙 거부는 SecurityConfig에서 처리) */

@@ -32,4 +32,27 @@ public enum CollectionType {
     public String label() {
         return label;
     }
+
+    /**
+     * 코드명·한글 <b>둘 다</b> 받는다.
+     *
+     * <p>★화면은 목록에서 고른 <b>한글</b>을 그대로 되보낸다. 응답이 한글을 주는데 요청만
+     * enum 이름을 요구하면 화면이 변환표를 따로 들어야 하고, 그 표가 언젠가 갈린다.
+     * 이 프로젝트에서 이미 여러 번 같은 400을 냈다(대분류·거래분류·권한키).
+     *
+     * <p>‼️모르는 값은 그대로 400이다 — 아무 문자열이나 받으면 오타가 조용히 통과한다.
+     */
+    @com.fasterxml.jackson.annotation.JsonCreator
+    public static CollectionType from(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return null;
+        }
+        String v = raw.trim();
+        for (CollectionType c : values()) {
+            if (c.name().equals(v) || c.label.equals(v)) {
+                return c;
+            }
+        }
+        throw new IllegalArgumentException("알 수 없는 값입니다: " + raw + " (현금/어음/선수금/대체)");
+    }
 }
