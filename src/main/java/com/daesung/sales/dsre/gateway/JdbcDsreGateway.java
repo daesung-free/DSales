@@ -2,6 +2,8 @@ package com.daesung.sales.dsre.gateway;
 
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import lombok.RequiredArgsConstructor;
@@ -810,6 +812,98 @@ public class JdbcDsreGateway implements DsreGateway {
             return newReqCd;
         });
         return (reqCd == null) ? 0 : reqCd;
+    }
+
+
+    // ── 주문 등록 보조 조회(지사·지사별 학교·상세) ─────────────────────────────
+
+    private static final String SQL_BRANCHES = """
+            SELECT CUST_CD, CUST_NM, CUST_FNM, CITY_NM, MACHUL_CD
+              FROM tbl_cust_info
+             ORDER BY CITY_NM, CUST_NM
+            """;
+
+    private static final String SQL_BRANCHES_KEYWORD = """
+            SELECT CUST_CD, CUST_NM, CUST_FNM, CITY_NM, MACHUL_CD
+              FROM tbl_cust_info
+             WHERE CUST_NM LIKE ? OR CUST_FNM LIKE ? OR MACHUL_CD LIKE ? OR CUST_CD LIKE ?
+             ORDER BY CITY_NM, CUST_NM
+            """;
+
+    @Override
+    public List<BranchRow> listBranches(String keyword) {
+        RowMapper<BranchRow> mapper = (rs, i) -> new BranchRow(
+                trim(rs.getString("CUST_CD")), rs.getString("CUST_NM"),
+                rs.getString("CUST_FNM"), rs.getString("CITY_NM"),
+                trim(rs.getString("MACHUL_CD")));
+        if (keyword == null || keyword.isBlank()) {
+            return dsreJdbcTemplate.query(SQL_BRANCHES, mapper);
+        }
+        String like = "%" + keyword.trim() + "%";
+        return dsreJdbcTemplate.query(SQL_BRANCHES_KEYWORD, mapper, like, like, like, like);
+    }
+
+    /** ‼️학교·학원이 별도 테이블이라 MGR_GN 으로 갈라 조인한다(레거시 readSchoolRefs 와 같은 방식). */
+    private static final String SQL_BRANCH_SCHOOLS = """
+            SELECT r.MGR_CD, r.MGR_GN, COALESCE(s.SCH_NM, h.HAK_NM) NM
+              FROM tbl_cust_ref r
+              LEFT JOIN tbl_school_info s ON r.MGR_GN = 'S' AND s.MGR_CD = r.MGR_CD
+              LEFT JOIN tbl_hakwon_info h ON r.MGR_GN = 'A' AND h.MGR_CD = r.MGR_CD
+             WHERE r.CUST_CD = ?
+             ORDER BY NM
+            """;
+
+    @Override
+    public List<BranchSchoolRow> listBranchSchools(String custCode) {
+        return dsreJdbcTemplate.query(SQL_BRANCH_SCHOOLS, (rs, i) -> new BranchSchoolRow(
+                trim(rs.getString("MGR_CD")), rs.getString("NM"),
+                !"A".equalsIgnoreCase(trim(rs.getString("MGR_GN")))), custCode);
+    }
+
+    private static final String SQL_ORDER_DETAIL = """
+            SELECT d.SEQ, d.CLS_NM, d.REQ_GN, d.GEYUL1, d.GEYUL2, d.GEYULT,
+                   c.RES_CD, r.RES_NM, c.CNT
+              FROM tbl_request_dtl d
+              LEFT JOIN tbl_request_cnt  c ON c.REQ_CD = d.REQ_CD AND c.SEQ = d.SEQ
+              LEFT JOIN tbl_resource_info r ON r.RES_CD = c.RES_CD
+             WHERE d.REQ_CD = ?
+             ORDER BY d.SEQ, r.SORTKEY
+            """;
+
+    @Override
+    public List<OrderDetailRow> findOrderDetail(int reqCd) {
+        // 반 하나에 과목이 여럿이라 조인 결과가 반별로 여러 줄이다 — SEQ로 다시 묶는다.
+        Map<Integer, List<OrderDetailRow.SubjectQtyRow>> subjects = new LinkedHashMap<>();
+        Map<Integer, Object[]> heads = new LinkedHashMap<>();
+        dsreJdbcTemplate.query(SQL_ORDER_DETAIL, rs -> {
+            int seq = rs.getInt("SEQ");
+            heads.putIfAbsent(seq, new Object[]{
+                    rs.getString("CLS_NM"), trim(rs.getString("REQ_GN")),
+                    (Integer) rs.getObject("GEYUL1"), (Integer) rs.getObject("GEYUL2"),
+                    (Integer) rs.getObject("GEYULT")});
+            Integer resCd = (Integer) rs.getObject("RES_CD");
+            if (resCd != null) {
+                subjects.computeIfAbsent(seq, k -> new ArrayList<>())
+                        .add(new OrderDetailRow.SubjectQtyRow(resCd, rs.getString("RES_NM"),
+                                rs.getInt("CNT")));
+            }
+        }, reqCd);
+
+        List<OrderDetailRow> out = new ArrayList<>();
+        heads.forEach((seq, h) -> {
+            List<OrderDetailRow.SubjectQtyRow> subs = subjects.getOrDefault(seq, List.of());
+            // ★목록의 총수량과 **같은 방식**으로 센다 — 두 화면 숫자가 갈리면 아무도 안 믿는다.
+            long qty = subs.isEmpty()
+                    ? nz((Integer) h[2]) + nz((Integer) h[3]) + nz((Integer) h[4])
+                    : subs.stream().mapToLong(OrderDetailRow.SubjectQtyRow::qty).sum();
+            out.add(new OrderDetailRow(seq, (String) h[0], (String) h[1],
+                    (Integer) h[2], (Integer) h[3], (Integer) h[4], qty, subs));
+        });
+        return out;
+    }
+
+    private static long nz(Integer v) {
+        return (v == null) ? 0 : v;
     }
 
 }

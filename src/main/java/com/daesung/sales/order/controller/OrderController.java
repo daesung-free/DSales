@@ -2,6 +2,9 @@ package com.daesung.sales.order.controller;
 
 import com.daesung.sales.common.excel.ExcelExportUtil;
 import com.daesung.sales.common.excel.ExcelExportUtil.Col;
+import com.daesung.sales.dsre.gateway.BranchRow;
+import com.daesung.sales.dsre.gateway.BranchSchoolRow;
+import com.daesung.sales.dsre.gateway.OrderDetailRow;
 import com.daesung.sales.dsre.gateway.ExamRow;
 import com.daesung.sales.dsre.gateway.SubjectRow;
 import com.daesung.sales.order.dto.OrderCreateRequest;
@@ -61,6 +64,48 @@ public class OrderController {
     private final DsreGateway dsreGateway;
     private final OrderService orderService;
     private final ExcelExportUtil excel;
+
+    @Operation(summary = "지사 목록",
+            description = """
+                    주문 등록에서 고를 **지사**. 원천은 DSRE2 거래처 정보다.
+
+                    ★**우리 거래처 마스터로 대신할 수 없습니다.** 우리 `partners.code` 는
+                    **매출코드**(예: `A26D153`)이고, 주문이 요구하는 것은 DSRE2 **지사코드**
+                    (예: `70501`)입니다. 같은 거래처를 가리키지만 값이 다릅니다 —
+                    더프 매핑에서도 같은 혼동이 있었습니다.
+                    그래서 `machulCode` 를 함께 내려, 우리 마스터와 이어 볼 수 있게 했습니다.
+
+                    · 예전엔 이 경로가 없어 화면이 주문 목록을 전부 훑어 지사를 모았습니다(수십 초).""")
+    @GetMapping("/branches")
+    public ApiResponse<List<BranchRow>> branches(
+            @Parameter(description = "지사명·풀네임·매출코드·지사코드 부분일치. 미지정=전체")
+            @RequestParam(required = false) String keyword) {
+        return ApiResponse.success(dsreGateway.listBranches(keyword));
+    }
+
+    @Operation(summary = "지사별 학교/학원 목록",
+            description = """
+                    그 지사가 담당하는 학교·학원만. 주문 등록의 학교코드(MGR_CD) 후보입니다.
+                    전국 학교 2,400여 곳을 다 보여주면 담당자가 고를 수 없습니다.""")
+    @GetMapping("/branches/{custCode}/schools")
+    public ApiResponse<List<BranchSchoolRow>> branchSchools(
+            @Parameter(description = "지사코드(CUST_CD)", required = true) @PathVariable String custCode) {
+        return ApiResponse.success(dsreGateway.listBranchSchools(custCode));
+    }
+
+    @Operation(summary = "주문 상세(반 · 과목수량)",
+            description = """
+                    주문 하나의 **반과 과목 수량**. 등록은 3단인데 조회가 마스터만 있어
+                    화면이 상세 칸을 비워 두고 있었습니다.
+
+                    · 간편신청 반은 인문·자연·통합 인원이 차고 `subjects` 가 비어 있습니다.
+                    · 반별 `totalQty` 는 **목록의 총수량과 같은 방식**으로 셉니다
+                      (두 화면 숫자가 갈리면 아무도 안 믿습니다).""")
+    @GetMapping("/{reqCd}/detail")
+    public ApiResponse<List<OrderDetailRow>> detail(
+            @Parameter(description = "신청번호(REQ_CD)", required = true) @PathVariable int reqCd) {
+        return ApiResponse.success(dsreGateway.findOrderDetail(reqCd));
+    }
 
     @Operation(summary = "주문 삭제(접수완료 건만)",
             description = """

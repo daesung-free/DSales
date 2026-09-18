@@ -140,4 +140,18 @@ public interface DsreGateway {
      * @return 채번된 REQ_CD
      */
     int createOrder(NewOrder order, String actor);
+
+    /**
+     * 지사 목록(주문 등록의 CUST_CD 후보). 화면이 지사를 고르려면 필요하다 —
+     * 예전엔 전용 경로가 없어 주문 목록을 전부 훑어 지사를 모으고 있었다(수십 초).
+     *
+     * @param keyword 지사명·풀네임·매출코드 부분일치. null이면 전체
+     */
+    java.util.List<BranchRow> listBranches(String keyword);
+
+    /** 그 지사가 담당하는 학교/학원. 전국 목록을 다 보여주면 고를 수 없다. */
+    java.util.List<BranchSchoolRow> listBranchSchools(String custCode);
+
+    /** 주문 상세(반 → 과목수량). 등록은 3단인데 조회가 마스터만 있었다. */
+    java.util.List<OrderDetailRow> findOrderDetail(int reqCd);
 }
