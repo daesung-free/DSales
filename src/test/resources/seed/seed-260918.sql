@@ -7,6 +7,8 @@
 --   · 자재 마스터 0건       → 회차별 자재 등록·수불부 자재상세가 빈 표
 --   · 상품별 목표 전 월 0   → 대시보드 「제품별 목표 달성」 카드가 빔
 --   · 응시현황(기간별) 0행  → 표 구조만 확인 가능
+--   · 더프원장(외상매출장 '더프모만') → 모의고사 매출이 없어 빈 표. ‼️이 화면은 DSRE가 아니라
+--     우리 매출을 읽는다 — 아래 매출·세트구성만 있으면 채워진다.
 -- 덧붙여 학교코드·회차가 들어간 매출을 넣어 통합매출조회의 그 두 칸도 검증 가능하게 한다.
 --
 -- ★★ 실사용 전에 반드시 지울 것. 맨 아래 「되돌리기」 블록 하나만 돌리면 된다.
@@ -45,6 +47,7 @@ SELECT VERSION() AS 서버버전, DATABASE() AS 접속DB;
 -- ── 1) 안전장치 — 이미 넣었으면 먼저 지우고 시작 ──────────────────
 DELETE FROM sales          WHERE memo LIKE '[SEED]%';
 DELETE FROM sales_target   WHERE product_id IN (SELECT id FROM products WHERE code LIKE 'SEED-%');
+DELETE FROM bom_items      WHERE parent_product_id IN (SELECT id FROM products WHERE code LIKE 'SEED-%');
 DELETE FROM material_bom   WHERE material_id IN (SELECT id FROM materials WHERE code LIKE 'SEED-%');
 DELETE FROM materials      WHERE code LIKE 'SEED-%';
 DELETE FROM products       WHERE code LIKE 'SEED-%';
@@ -104,6 +107,20 @@ SELECT p.id, NULL, m.id, 2, TRUE, NOW(), 'seed'
  WHERE p.code = 'SEED-B01' AND m.code = 'SEED-M03';
 
 
+-- ── 5-1) 세트 구성(BOM) — 더프원장의 '시행월' 칸 ──────────────────
+-- ‼️외상매출장 '더프모만'(더프원장)의 시행월은 도서명을 자르지 않고
+--   이 BOM 행의 시행예정일(exam_date)에서 온다. 없으면 그 칸만 빈다.
+--   회차(round)가 매출의 회차와 맞아야 짝이 지어진다.
+INSERT INTO bom_items (parent_product_id, child_product_id, ratio, round, exam_date,
+                       separate_pack, created_at, created_by)
+SELECT p.id, p.id, 1, t.rnd, t.dt, FALSE, NOW(), 'seed'
+  FROM products p
+  JOIN (SELECT 'SEED-B01' c, 1 rnd, DATE(CONCAT(YEAR(CURDATE()),'-03-15')) dt UNION ALL
+        SELECT 'SEED-B02',    2,     DATE(CONCAT(YEAR(CURDATE()),'-05-17')) UNION ALL
+        SELECT 'SEED-B03', NULL,     NULL) t ON p.code = t.c
+ WHERE t.rnd IS NOT NULL;
+
+
 -- ── 6) 상품별 목표 (당해 1~12월) ─────────────────────────────────
 INSERT INTO sales_target (fiscal_year, month, product_id, target_amount, scope, scope_key, entry_type,
                           created_at, created_by)
@@ -148,6 +165,7 @@ SELECT '자재'   구분, COUNT(*) 건수 FROM materials    WHERE code LIKE 'SEE
 UNION ALL SELECT '자재매칭', COUNT(*) FROM material_bom WHERE material_id IN (SELECT id FROM materials WHERE code LIKE 'SEED-%')
 UNION ALL SELECT '상품',     COUNT(*) FROM products     WHERE code LIKE 'SEED-%'
 UNION ALL SELECT '목표',     COUNT(*) FROM sales_target WHERE product_id IN (SELECT id FROM products WHERE code LIKE 'SEED-%')
+UNION ALL SELECT '세트구성', COUNT(*) FROM bom_items    WHERE parent_product_id IN (SELECT id FROM products WHERE code LIKE 'SEED-%')
 UNION ALL SELECT '매출',     COUNT(*) FROM sales        WHERE memo LIKE '[SEED]%';
 
 
@@ -156,6 +174,7 @@ UNION ALL SELECT '매출',     COUNT(*) FROM sales        WHERE memo LIKE '[SEED
 -- ════════════════════════════════════════════════════════════════
 -- DELETE FROM sales          WHERE memo LIKE '[SEED]%';
 -- DELETE FROM sales_target   WHERE product_id IN (SELECT id FROM products WHERE code LIKE 'SEED-%');
+-- DELETE FROM bom_items      WHERE parent_product_id IN (SELECT id FROM products WHERE code LIKE 'SEED-%');
 -- DELETE FROM material_bom   WHERE material_id IN (SELECT id FROM materials WHERE code LIKE 'SEED-%');
 -- DELETE FROM materials      WHERE code LIKE 'SEED-%';
 -- DELETE FROM products       WHERE code LIKE 'SEED-%';
