@@ -20,11 +20,29 @@
 --   "입고 없이 팔린 것"으로 보인다(재고 음수). 발주처 사양상 정상 표시이고,
 --   되돌리기로 함께 사라진다.
 --
--- 실행 순서대로 그냥 위에서 아래로 돌리면 된다(DBeaver: 스크립트 전체 실행).
+-- ════════════════════════════════════════════════════════════════
+-- ‼️‼️ 돌리기 전에 두 가지 ‼️‼️  (둘 다 실제로 사고가 난 자리다)
+-- ════════════════════════════════════════════════════════════════
+--
+-- ① 어느 DB에 붙어 있는지 먼저 볼 것 — 아래 0번 쿼리 한 줄.
+--    기대값은 MySQL 8.x / sales 다.
+--    ‼️"MariaDB"가 나오면 **DSRE2** 다. 거긴 매출프로그램 테이블이 아예 없고
+--      애초에 우리가 DELETE 를 날릴 DB 가 아니다 — 즉시 멈추고 연결을 바꿀 것.
+--      (DBeaver 연결 이름을 sales / dsre2 로 구분해 두면 이 실수가 안 난다.)
+--
+-- ② 「스크립트 실행」으로 돌릴 것 — DBeaver 단축키 <Alt+X> (Mac ⌥X).
+--    <Ctrl+Enter>(문장 실행)로 전체를 선택해 누르면 이 파일이 통째로 한 문장으로
+--    전송돼 두 번째 DELETE 에서 1064 로 튕긴다.
+--    → 그 경우 **아무것도 실행되지 않으니** DB 는 그대로다. Alt+X 로 다시 돌리면 된다.
 -- ════════════════════════════════════════════════════════════════
 
 
--- ── 0) 안전장치 — 이미 넣었으면 먼저 지우고 시작 ──────────────────
+-- ── 0) 접속 확인 — 여기부터 보고 시작한다 ────────────────────────
+-- 기대: 서버버전 8.x  ·  접속DB sales
+SELECT VERSION() AS 서버버전, DATABASE() AS 접속DB;
+
+
+-- ── 1) 안전장치 — 이미 넣었으면 먼저 지우고 시작 ──────────────────
 DELETE FROM sales          WHERE memo LIKE '[SEED]%';
 DELETE FROM sales_target   WHERE product_id IN (SELECT id FROM products WHERE code LIKE 'SEED-%');
 DELETE FROM material_bom   WHERE material_id IN (SELECT id FROM materials WHERE code LIKE 'SEED-%');
@@ -34,7 +52,7 @@ DELETE FROM schools        WHERE school_code LIKE 'SEED-%';
 DELETE FROM partners       WHERE code LIKE 'SEED-%';
 
 
--- ── 1) 자재 마스터 (자재구분 6종 전부) ───────────────────────────
+-- ── 2) 자재 마스터 (자재구분 6종 전부) ───────────────────────────
 INSERT INTO materials (code, name, material_type, use_yn, memo, created_at, created_by)
 VALUES
  ('SEED-M01', '2026 D.ARCHIVE 국어 시즌1_01회 시험지', 'EXAM_PAPER',   TRUE, '[SEED] 시험용', NOW(), 'seed'),
@@ -45,7 +63,7 @@ VALUES
  ('SEED-M06', '포장 부자재',                            'ETC',          TRUE, '[SEED] 시험용', NOW(), 'seed');
 
 
--- ── 2) 거래처 · 학교 (매출이 붙을 곳) ────────────────────────────
+-- ── 3) 거래처 · 학교 (매출이 붙을 곳) ────────────────────────────
 -- ‼️region 을 채운다 — 응시현황 조회구분 '지역별'이 partners.region 으로 묶는다.
 --   비우면 지역별을 골라도 한 덩어리로만 나와 구분이 도는지 확인이 안 된다.
 INSERT INTO partners (code, name, region, city_name, type, created_at, created_by)
@@ -60,7 +78,7 @@ VALUES
   FALSE, 'HAKWON', 'MANUAL', TRUE, NOW(), 'seed');
 
 
--- ── 3) 상품 ──────────────────────────────────────────────────────
+-- ── 4) 상품 ──────────────────────────────────────────────────────
 -- ‼️두 가지를 맞춰야 응시현황에 뜬다. 하나라도 어긋나면 빈 표가 그대로다.
 --   ① 분류코드가 M + A/B/C 계열 — 더프 판별 규칙(레거시 `고사별처리인원.vb`).
 --   ② sales_division 이 sales_divisions 에 있는 코드 — 집계가 그 표와 INNER JOIN 한다.
@@ -73,7 +91,7 @@ VALUES
  ('SEED-B03', '[SEED] 2026 국어 기본서',       'SELF', 18000, 75, 'H2026A01', '[SEED]교재',     '교재',     '고2', FALSE, TRUE, NOW(), 'seed');
 
 
--- ── 4) 세트 자재 매칭 (수불부 자재상세용) ────────────────────────
+-- ── 5) 세트 자재 매칭 (수불부 자재상세용) ────────────────────────
 -- 1회 상품에 회차 전용 자재 2종 + 공통 자재 1종.
 INSERT INTO material_bom (set_product_id, round_product_id, material_id, qty_per_set, per_round, created_at, created_by)
 SELECT p.id, p.id, m.id, 1, FALSE, NOW(), 'seed'
@@ -86,7 +104,7 @@ SELECT p.id, NULL, m.id, 2, TRUE, NOW(), 'seed'
  WHERE p.code = 'SEED-B01' AND m.code = 'SEED-M03';
 
 
--- ── 5) 상품별 목표 (당해 1~12월) ─────────────────────────────────
+-- ── 6) 상품별 목표 (당해 1~12월) ─────────────────────────────────
 INSERT INTO sales_target (fiscal_year, month, product_id, target_amount, scope, scope_key, entry_type,
                           created_at, created_by)
 SELECT YEAR(CURDATE()), mm.m, p.id,
@@ -98,7 +116,7 @@ SELECT YEAR(CURDATE()), mm.m, p.id,
  WHERE p.code LIKE 'SEED-B%';
 
 
--- ── 6) 매출 — 응시현황 + 통합매출조회 학교·회차 칸 검증용 ────────
+-- ── 7) 매출 — 응시현황 + 통합매출조회 학교·회차 칸 검증용 ────────
 -- 학교코드·학교명·회차·성적처리구분을 모두 채운다(그 칸들이 비어 검증이 안 되던 부분).
 -- 월을 흩어 넣어 응시현황 월별 칸이 여러 개 차게 한다.
 INSERT INTO sales (sales_no, sales_date, partner_id, product_id, sales_type, shipment_type,

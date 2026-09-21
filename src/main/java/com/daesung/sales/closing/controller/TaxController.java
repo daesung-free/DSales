@@ -49,7 +49,9 @@ public class TaxController {
             @RequestParam(required = false) String keyword) {
         RevenueReportResponse r = taxService.revenueReport(fromDate, toDate, taxType);
         return ApiResponse.success(new RevenueReportResponse(r.fromDate(), r.toDate(), r.taxType(),
-                Keywords.filter(r.rows(), keyword, x -> new Object[]{x.partnerName()}),
+                // 코드·사업자번호·대표자도 검색 대상에 넣는다 — 표에 보이는 값으로 찾을 수 있어야 한다.
+                Keywords.filter(r.rows(), keyword, x -> new Object[]{
+                        x.partnerCode(), x.partnerName(), x.bizNo(), x.bossName()}),
                 r.total()));
     }
 
@@ -60,7 +62,9 @@ public class TaxController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @RequestParam(required = false) String taxType) {
         List<Col> cols = List.of(
-                new Col("거래처명", "partnerName"), new Col("총건수", "totalCount"),
+                new Col("거래처코드", "partnerCode"), new Col("거래처명", "partnerName"),
+                new Col("사업자번호", "bizNo"), new Col("대표자성명", "bossName"),
+                new Col("총건수", "totalCount"),
                 new Col("총순매출금액", "totalNetSupply"), new Col("총세액", "totalNetTax"));
         byte[] xlsx = excel.toXlsx("수익신고", cols, taxService.revenueReport(fromDate, toDate, taxType).rows(),
                 Heading.period("수익신고", fromDate, toDate));

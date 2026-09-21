@@ -41,28 +41,33 @@ public class TaxService {
         String filter = normalizeTaxType(taxType);
 
         Map<Long, List<RevenueReportResponse.MonthEntry>> monthsByPartner = new LinkedHashMap<>();
-        Map<Long, String> nameByPartner = new LinkedHashMap<>();
+        // 거래처 식별정보(코드·거래처명·사업자번호·대표자)를 한 묶음으로 들고 간다.
+        Map<Long, String[]> infoByPartner = new LinkedHashMap<>();
         Map<Long, long[]> subtotal = new LinkedHashMap<>(); // [count, supply, tax]
 
         for (Object[] r : saleRepository.revenueReport(from, to, filter)) {
             long pid = num(r[0]);
-            nameByPartner.putIfAbsent(pid, (String) r[1]);
+            infoByPartner.putIfAbsent(pid,
+                    new String[]{(String) r[1], (String) r[2], (String) r[3], (String) r[4]});
             monthsByPartner.computeIfAbsent(pid, k -> new ArrayList<>())
-                    .add(new RevenueReportResponse.MonthEntry((String) r[2], num(r[3]), num(r[4]), num(r[5])));
+                    .add(new RevenueReportResponse.MonthEntry((String) r[5], num(r[6]), num(r[7]), num(r[8])));
             long[] st = subtotal.computeIfAbsent(pid, k -> new long[3]);
-            st[0] += num(r[3]); st[1] += num(r[4]); st[2] += num(r[5]);
+            st[0] += num(r[6]); st[1] += num(r[7]); st[2] += num(r[8]);
         }
 
         List<RevenueReportResponse.PartnerRevenue> rows = new ArrayList<>();
         long tCnt = 0, tSupply = 0, tTax = 0;
-        for (Long pid : nameByPartner.keySet()) {
+        for (Long pid : infoByPartner.keySet()) {
             long[] st = subtotal.get(pid);
+            String[] info = infoByPartner.get(pid);
             rows.add(new RevenueReportResponse.PartnerRevenue(
-                    pid, nameByPartner.get(pid), st[0], st[1], st[2], monthsByPartner.get(pid)));
+                    pid, info[0], info[1], info[2], info[3],
+                    st[0], st[1], st[2], monthsByPartner.get(pid)));
             tCnt += st[0]; tSupply += st[1]; tTax += st[2];
         }
+        // 합계행은 특정 거래처가 아니라 식별정보를 비운다 — 채우면 그 거래처 신고분으로 읽힌다.
         RevenueReportResponse.PartnerRevenue total = new RevenueReportResponse.PartnerRevenue(
-                null, "합계", tCnt, tSupply, tTax, List.of());
+                null, null, "합계", null, null, tCnt, tSupply, tTax, List.of());
         return new RevenueReportResponse(from, to, filter, rows, total);
     }
 

@@ -508,10 +508,14 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     /**
      * 수익신고: 거래처×월 순매출/세액 집계. 취소 제외. 반품은 −(순매출·세액 감소).
      * taxFilter: 'ALL'=전체, 'FREE'=면세(tax=0), 'TAXABLE'=과세(tax≠0).
-     * 반환 Object[]: [partnerId, partnerName, yyyymm, count, netSupply, netTax].
+     * 반환 Object[]: [partnerId, partnerCode, partnerName, bizNo, bossName, yyyymm, count, netSupply, netTax].
+     *
+     * <p>거래처코드·사업자번호·대표자는 신고 표의 고정 컬럼이라 여기서 함께 읽는다
+     * (행마다 거래처를 다시 조회하면 N+1이 된다).
      */
     @Query(value = """
-            SELECT s.partner_id, pt.name, DATE_FORMAT(s.sales_date,'%Y%m') AS ym,
+            SELECT s.partner_id, pt.code, pt.name, pt.biz_no, pt.boss_name,
+              DATE_FORMAT(s.sales_date,'%Y%m') AS ym,
               COUNT(*) AS cnt,
               COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN -s.supply_amount ELSE s.supply_amount END),0) AS net_supply,
               COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN -s.tax ELSE s.tax END),0) AS net_tax
@@ -521,7 +525,8 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
               AND ( :taxFilter = 'ALL'
                     OR (:taxFilter = 'FREE' AND s.tax = 0)
                     OR (:taxFilter = 'TAXABLE' AND s.tax <> 0) )
-            GROUP BY s.partner_id, pt.name, DATE_FORMAT(s.sales_date,'%Y%m')
+            GROUP BY s.partner_id, pt.code, pt.name, pt.biz_no, pt.boss_name,
+                     DATE_FORMAT(s.sales_date,'%Y%m')
             ORDER BY pt.name, ym
             """, nativeQuery = true)
     List<Object[]> revenueReport(@Param("fromDate") LocalDate fromDate,
