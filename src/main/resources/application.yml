@@ -28,9 +28,21 @@ spring:
       mail:
         smtp:
           auth: true
-          # 레거시가 EnableSsl=True 로 465 포트를 썼다 — 그건 STARTTLS 가 아니라 SMTPS 다.
+          # ★465 포트지만 **STARTTLS** 다(2026-09-28 서버 실측).
+          #   레거시 .NET SmtpClient 는 EnableSsl=true 여도 암시적 SSL 을 못 해 STARTTLS 로 붙는데,
+          #   서버가 거기 맞춰져 있다. 암시적 SSL 로 붙으면 'wrong version number' 로 끊긴다.
+          #   → 운영값은 MAIL_SSL=false · MAIL_STARTTLS=true 다.
           ssl:
             enable: ${MAIL_SSL:true}
+            # ★인증서 체인이 불완전한 서버를 위한 우회. 호스트명을 넣으면 **그 호스트만** 통과시킨다.
+            #
+            #   mail.dshw.co.kr 은 자기 인증서 하나만 보내고 중간 CA 를 안 보낸다(2026-09-28 실측).
+            #   Windows(.NET)는 중간 인증서를 알아서 받아와 레거시는 문제가 없었지만,
+            #   Java 는 그 보완을 하지 않아 PKIX path building failed 로 막힌다.
+            #
+            #   ‼️정답은 **메일 서버가 중간 인증서를 함께 보내도록 고치는 것**이고, 그러면 이 값을 비운다.
+            #     넣으면 그 호스트에 한해 인증서 검증을 건너뛴다 — 기본은 비움이다.
+            trust: ${MAIL_SSL_TRUST:}
           starttls:
             enable: ${MAIL_STARTTLS:false}
           connectiontimeout: 5000

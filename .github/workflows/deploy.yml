@@ -76,7 +76,7 @@ jobs:
           #   step의 env: 에만 적으면 러너에서만 살아 있고 원격에서는 빈 값이 된다 —
           #   docker run -e VAR="" 로 들어가 앱은 기본값으로 조용히 뜬다(2026-09-08에 이걸로 한 번 헤맸다).
           #   env: 에 값을 추가하면 이 줄에도 반드시 같이 추가할 것.
-          envs: REGISTRY,ECR_PW,DB_HOST,DB_SECRET_ID,REDIS_HOST,JWT_SECRET,AWS_REGION,COOKIE_SECURE,COOKIE_SAME_SITE,DSRE_ENABLED,DSRE_URL,DSRE_USERNAME,DSRE_PASSWORD,MAIL_ENABLED,MAIL_HOST,MAIL_PORT,MAIL_USERNAME,MAIL_PASSWORD,MAIL_FROM,MAIL_SSL
+          envs: REGISTRY,ECR_PW,DB_HOST,DB_SECRET_ID,REDIS_HOST,JWT_SECRET,AWS_REGION,COOKIE_SECURE,COOKIE_SAME_SITE,DSRE_ENABLED,DSRE_URL,DSRE_USERNAME,DSRE_PASSWORD,MAIL_ENABLED,MAIL_HOST,MAIL_PORT,MAIL_USERNAME,MAIL_PASSWORD,MAIL_FROM,MAIL_SSL,MAIL_STARTTLS,MAIL_SSL_TRUST
           # ★DB 계정/비번을 -e 로 넣지 않는다. 넣으면 환경변수가 application-aws.yml 보다 우선순위가 높아
           #   Secrets Manager 조회를 무력화한다(=로테이션 장애 재발). DB_HOST/DB_SECRET_ID 만 전달.
           script: |
@@ -134,6 +134,8 @@ jobs:
               -e MAIL_PASSWORD="$MAIL_PASSWORD" \
               -e MAIL_FROM="$MAIL_FROM" \
               -e MAIL_SSL="$MAIL_SSL" \
+              -e MAIL_STARTTLS="$MAIL_STARTTLS" \
+              -e MAIL_SSL_TRUST="$MAIL_SSL_TRUST" \
               "$REGISTRY/dsales:latest"
             docker image prune -f
         env:
@@ -163,6 +165,14 @@ jobs:
           MAIL_HOST: ${{ vars.MAIL_HOST }}
           MAIL_PORT: ${{ vars.MAIL_PORT || '465' }}
           MAIL_SSL: ${{ vars.MAIL_SSL || 'true' }}
+          # ‼️레거시(.NET SmtpClient)는 465에 EnableSsl=true 를 줘도 실제로는 STARTTLS 로 붙는다
+          #   (.NET 은 암시적 SSL 을 지원하지 않는다). 우리 Java 설정은 465를 암시적 SSL 로 본다.
+          #   서버가 STARTTLS 만 받으면 'Unsupported or unrecognized SSL message' 가 난다 —
+          #   그때는 MAIL_SSL=false · MAIL_STARTTLS=true 두 변수만 바꾸면 된다(코드 수정 없음).
+          MAIL_STARTTLS: ${{ vars.MAIL_STARTTLS || 'false' }}
+          # 메일 서버가 중간 인증서를 안 보내 Java 가 체인을 못 만든다(2026-09-28 실측).
+          # 호스트명을 넣으면 그 호스트만 검증을 건너뛴다. 서버가 체인을 고치면 비운다.
+          MAIL_SSL_TRUST: ${{ vars.MAIL_SSL_TRUST }}
           MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
           MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
           MAIL_FROM: ${{ vars.MAIL_FROM }}
