@@ -16,6 +16,20 @@ FROM eclipse-temurin:21-jre
 #   로그 시각이 CloudWatch에서 9시간 어긋나 보이던 것도 같은 원인이다.
 ENV TZ=Asia/Seoul
 WORKDIR /app
+
+# ★메일 서버 TLS 를 위한 중간 CA 주입(2026-09-28).
+#   mail.dshw.co.kr 이 자기 인증서 하나만 보내고 중간 CA 를 안 보내서 Java 가 체인을 못 만든다
+#   (루트는 기본 신뢰저장소에 있다 — 빠진 건 그 사이 한 장뿐이다).
+#   Windows(.NET)는 이 조각을 알아서 받아와 레거시는 문제가 없었고 Java 만 막혔다.
+#
+#   ‼️AIA 옵션(-Dcom.sun.security.enableAIAcaIssuers=true)으로 해결하려 했으나
+#     실제로 돌려 보니 켜도 그대로 실패했다. 확인된 방법으로 간다. 자세한 경위는 config/certs/README.md.
+#   ‼️인증서 검증을 끄는 방법(mail.smtp.ssl.trust)은 쓰지 않는다 — 레거시보다 약해진다.
+COPY config/certs/sectigo-public-server-auth-ca-ov-r36.pem /tmp/mail-ca.pem
+RUN keytool -importcert -noprompt -alias sectigo-public-server-auth-ca-ov-r36 \
+        -file /tmp/mail-ca.pem -cacerts -storepass changeit \
+    && rm /tmp/mail-ca.pem
+
 COPY --from=build /app/build/libs/*.jar app.jar
 EXPOSE 8080
 # ‼️TZ 환경변수만으로는 OS의 tz 파일 유무에 기댄다. JVM 옵션으로 한 번 더 못박아

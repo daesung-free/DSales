@@ -170,8 +170,9 @@ jobs:
           #   서버가 STARTTLS 만 받으면 'Unsupported or unrecognized SSL message' 가 난다 —
           #   그때는 MAIL_SSL=false · MAIL_STARTTLS=true 두 변수만 바꾸면 된다(코드 수정 없음).
           MAIL_STARTTLS: ${{ vars.MAIL_STARTTLS || 'false' }}
-          # 메일 서버가 중간 인증서를 안 보내 Java 가 체인을 못 만든다(2026-09-28 실측).
-          # 호스트명을 넣으면 그 호스트만 검증을 건너뛴다. 서버가 체인을 고치면 비운다.
+          # ‼️평소에는 **넣지 않는다**(빈 값). 메일 서버가 중간 인증서를 안 보내는 문제는
+          #   이미지에 그 중간 CA 를 주입해 해결했다(Dockerfile · config/certs).
+          #   이 변수는 인증서 검증을 통째로 건너뛰는 마지막 수단이라, 켜면 레거시보다 약해진다.
           MAIL_SSL_TRUST: ${{ vars.MAIL_SSL_TRUST }}
           MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
           MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}

@@ -34,14 +34,14 @@ spring:
           #   → 운영값은 MAIL_SSL=false · MAIL_STARTTLS=true 다.
           ssl:
             enable: ${MAIL_SSL:true}
-            # ★인증서 체인이 불완전한 서버를 위한 우회. 호스트명을 넣으면 **그 호스트만** 통과시킨다.
+            # ‼️**평소에는 비워 둔다.** 값을 넣으면 그 호스트의 인증서를 아예 검증하지 않는다 —
+            #   중간자가 가짜 인증서를 내밀어도 통과하고, 레거시(.NET)보다 약해진다.
             #
-            #   mail.dshw.co.kr 은 자기 인증서 하나만 보내고 중간 CA 를 안 보낸다(2026-09-28 실측).
-            #   Windows(.NET)는 중간 인증서를 알아서 받아와 레거시는 문제가 없었지만,
-            #   Java 는 그 보완을 하지 않아 PKIX path building failed 로 막힌다.
+            #   메일 서버가 중간 CA 를 안 보내는 문제는 Dockerfile 의
+            #   -Dcom.sun.security.enableAIAcaIssuers=true 로 **검증을 유지한 채** 해결했다
+            #   (JVM 이 빠진 중간 인증서를 직접 받아온다 — Windows 가 하는 것과 같다).
             #
-            #   ‼️정답은 **메일 서버가 중간 인증서를 함께 보내도록 고치는 것**이고, 그러면 이 값을 비운다.
-            #     넣으면 그 호스트에 한해 인증서 검증을 건너뛴다 — 기본은 비움이다.
+            #   이 값은 그 경로마저 막히는 환경(외부 HTTP 차단 등)을 위한 **마지막 수단**으로만 남겨 둔다.
             trust: ${MAIL_SSL_TRUST:}
           starttls:
             enable: ${MAIL_STARTTLS:false}
