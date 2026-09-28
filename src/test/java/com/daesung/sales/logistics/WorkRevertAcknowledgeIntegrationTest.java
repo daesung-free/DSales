@@ -105,17 +105,28 @@ class WorkRevertAcknowledgeIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("★사유 없이는 되돌릴 수 없다 — 기록을 지우면서 이유가 없으면 소명이 안 된다")
-    void 사유_필수() {
+    @DisplayName("★사유 없이도 되돌릴 수 있다(9/27 A-3 — 작업요청서 사유칸 제거)")
+    void 사유는_선택() {
         Long id = shipmentId();
         post("/logistics/work-orders/" + id + "/print", null);
 
+        // 사유 칸이 빠진 화면은 빈 값이나 본문 없이 호출한다. 둘 다 통과해야 한다.
         JsonNode blank = post("/logistics/work-orders/" + id + "/print/revert", Map.of("reason", " "));
-        JsonNode missing = post("/logistics/work-orders/" + id + "/print/revert", Map.of());
+        assertThat(blank.path("success").asBoolean()).as("공백 사유: %s", blank).isTrue();
+        assertThat(row(id).path("printed").asBoolean()).as("되돌려졌다").isFalse();
 
-        assertThat(blank.path("success").asBoolean()).as("공백 사유: %s", blank).isFalse();
-        assertThat(missing.path("success").asBoolean()).as("사유 누락: %s", missing).isFalse();
-        assertThat(row(id).path("printed").asBoolean()).as("거부됐으니 출력 표시는 그대로").isTrue();
+        post("/logistics/work-orders/" + id + "/print", null);
+        JsonNode missing = post("/logistics/work-orders/" + id + "/print/revert", Map.of());
+        assertThat(missing.path("success").asBoolean()).as("사유 누락: %s", missing).isTrue();
+
+        // ‼️사유가 없어도 이력은 남는다 — 비워 두면 기록 누락과 구분이 안 된다.
+        JsonNode hist = data(get("/audit/status-history?entityType=SHIPMENT&entityId=" + id));
+        JsonNode rows = hist.has("content") ? hist.path("content") : hist;
+        boolean noted = false;
+        for (JsonNode h : rows) {
+            noted |= h.path("reason").asText().contains("(사유 미입력)");
+        }
+        assertThat(noted).as("'(사유 미입력)'으로 남는다").isTrue();
     }
 
     @Test

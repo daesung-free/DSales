@@ -135,14 +135,29 @@ class OrderStateChangeTest {
     }
 
     @Test
-    @DisplayName("되돌리기는 한 칸뿐 — 발송완료를 되돌리는 경로는 정본에 없다")
-    void 발송완료는_못_되돌린다() {
+    @DisplayName("되돌리기는 언제나 한 칸 — 발송완료에서 상품준비중으로 바로는 못 뛴다")
+    void 발송완료에서_두칸은_못_뛴다() {
         given(1, "D");
 
         var r = orderService.changeState(List.of(1), OrderState.PREPARING, "실수로 발송처리");
 
         assertThat(r.changed()).isZero();
         verify(dsreGateway, never()).changeState(anyInt(), anyString(), anyString());
+    }
+
+    @Test
+    @DisplayName("★발송취소(D→W) — 9/27 회의로 열린 전이. 그 전엔 막혀 있었다")
+    void 발송취소() {
+        given(1, "D");
+        when(dsreGateway.changeState(1, "D", "W")).thenReturn(1);
+
+        var r = orderService.changeState(List.of(1), OrderState.READY_TO_SHIP, "오발송");
+
+        assertThat(r.changed()).as("실물이 나간 뒤의 되돌리기라 되되, 한 칸만").isEqualTo(1);
+        verify(dsreGateway).changeState(1, "D", "W");
+        // 실물이 나간 뒤라 이력이 특히 중요하다 — DSRE2는 제자리 UPDATE라 우리가 안 남기면 흔적이 없다.
+        verify(statusHistoryService).record(any(), anyLong(), anyString(),
+                eq("D"), eq("W"), eq("오발송"));
     }
 
     @Test

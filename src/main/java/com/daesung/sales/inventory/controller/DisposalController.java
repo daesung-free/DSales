@@ -43,7 +43,7 @@ public class DisposalController {
                     ★취소와 다른 축이다 — 취소는 "되돌렸다"를 반대 이벤트로 장부에 남기고,
                     삭제는 애초에 없던 일로 만든다(원 이벤트를 무효화하고 잔량만 되돌린다).
 
-                    · **사유 필수.** 지운 품목·수량은 상태변경 이력에 남는다.
+                    · **사유는 선택**(9/27 A-3, 항목 9). 지운 품목·수량은 상태변경 이력에 남는다.
                     · **이미 취소된 전표는 400** — 되돌린 기록이 장부에 선 뒤라 오입력이 아니다.
                     · **마감된 달은 400**(PERIOD_LOCKED).
 
@@ -52,8 +52,8 @@ public class DisposalController {
     @DeleteMapping("/{refNo}")
     public ApiResponse<Void> deleteVoucher(
             @Parameter(description = "전표번호", required = true) @PathVariable String refNo,
-            @Valid @RequestBody com.daesung.sales.logistics.dto.RevertRequest req) {
-        inventoryService.deleteVoucher(refNo, req.reason(), currentAuditor.username());
+            @Valid @RequestBody(required = false) com.daesung.sales.logistics.dto.ReasonRequest req) {
+        inventoryService.deleteVoucher(refNo, com.daesung.sales.logistics.dto.ReasonRequest.reasonOf(req), currentAuditor.username());
         return ApiResponse.success(null);
     }
 

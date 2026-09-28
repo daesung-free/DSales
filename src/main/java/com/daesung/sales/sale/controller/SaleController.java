@@ -339,8 +339,9 @@ public class SaleController {
                     합치면 마감 후 정당한 반품 취소와 오입력이 섞여, 세무 소명 때 가릴 수 없다.
 
                     · 재고는 **원 이벤트를 무효화**해 되돌린다(취소처럼 반대 이벤트를 새로 남기지 않는다).
-                    · **사유 필수.** 지운 내용(거래처·도서·수량·금액)은 상태변경 이력에 남는다
-                      — 삭제 후에는 거기에만 남는다.
+                    · **사유는 선택**(9/27 회의 A-3, 항목 12 — 통합매출 취소·삭제 사유 제거).
+                      그래도 지운 내용(거래처·도서·수량·금액)은 상태변경 이력에 남는다
+                      — 삭제 후에는 거기에만 남는다. 사유를 안 보내면 `(사유 미입력)`으로 적힌다.
                     · **마감된 달은 400**(PERIOD_LOCKED) — 그때는 취소로 간다.
                     · **위탁정산 매출은 400** — 정산 행위의 결과물이지 오입력이 아니다.
                       취소로 가야 위탁 미결원장이 함께 되돌아간다.
@@ -351,8 +352,8 @@ public class SaleController {
     //   조회 경로까지 삼켜, "메서드만 틀린" 요청이 405가 아니라 400(숫자 변환 실패)이 된다.
     @DeleteMapping("/{id:\\d+}")
     public ApiResponse<Void> delete(@PathVariable Long id,
-                                    @Valid @RequestBody com.daesung.sales.logistics.dto.RevertRequest req) {
-        saleService.delete(id, req.reason());
+                                    @Valid @RequestBody(required = false) com.daesung.sales.logistics.dto.ReasonRequest req) {
+        saleService.delete(id, com.daesung.sales.logistics.dto.ReasonRequest.reasonOf(req));
         return ApiResponse.success(null);
     }
 

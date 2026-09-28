@@ -153,14 +153,21 @@ class SaleDeleteIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("★사유 없이는 못 지운다")
-    void 사유_필수() {
+    @DisplayName("★사유 없이도 지울 수 있다(9/27 A-3) — 대신 이력에 '(사유 미입력)'으로 남는다")
+    void 사유는_선택() {
         long id = sell(5);
 
+        // 9/27 회의로 화면에서 사유 칸이 빠졌다. 빈 값도, 본문 누락도 통과해야 한다.
         JsonNode r = del("/sales/" + id, Map.of("reason", " "));
 
-        assertThat(r.path("success").asBoolean()).as("%s", r).isFalse();
-        assertThat(listed(id)).as("거부됐으니 그대로 있다").isTrue();
+        assertThat(r.path("success").asBoolean()).as("%s", r).isTrue();
+        assertThat(listed(id)).as("지워졌다").isFalse();
+
+        // ‼️사유가 없다고 이력까지 비면 안 된다 — "안 적은 것"과 "기록이 안 된 것"이 구분돼야 한다.
+        JsonNode hist = data(get("/audit/status-history?entityType=SALE&entityId=" + id));
+        JsonNode rows = hist.has("content") ? hist.path("content") : hist;
+        assertThat(rows).isNotEmpty();
+        assertThat(rows.get(0).path("reason").asText()).contains("(사유 미입력)");
     }
 
     @Test

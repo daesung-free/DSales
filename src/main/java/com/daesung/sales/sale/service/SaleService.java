@@ -528,7 +528,9 @@ public class SaleService {
                 + sale.getPartner().getName() + " / " + sale.getProduct().getCode()
                 + " " + sale.getQty() + "부 / 공급가 " + sale.getSupplyAmount()
                 + " / 매출일 " + sale.getSalesDate()
-                + " — 사유: " + reason;
+                // 9/27 회의(A-3)로 사유 칸이 화면에서 빠져 빈 값이 정상이 됐다.
+                // 그래도 "null"이 찍히게 두지 않는다 — 이력을 읽는 사람이 버그로 읽는다.
+                + " — 사유: " + ((reason == null || reason.isBlank()) ? "(사유 미입력)" : reason.trim());
     }
 
     /**

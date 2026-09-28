@@ -4,7 +4,7 @@ import com.daesung.sales.common.query.Keywords;
 import com.daesung.sales.common.excel.ExcelExportUtil;
 import com.daesung.sales.common.excel.ExcelExportUtil.Col;
 import com.daesung.sales.common.response.ApiResponse;
-import com.daesung.sales.logistics.dto.RevertRequest;
+import com.daesung.sales.logistics.dto.ReasonRequest;
 import com.daesung.sales.logistics.dto.ShippingUpdateRequest;
 import com.daesung.sales.logistics.dto.TrackingUploadResponse;
 import com.daesung.sales.logistics.entity.DeliveryType;
@@ -110,16 +110,19 @@ public class WorkController {
             description = """
                     잘못 출력한 건의 '출력' 표시를 내린다 → 다시 미출력분으로 돌아온다.
 
-                    **사유가 필수다.** 이 기록의 의미는 "언제 처음 작업지시가 나갔나"이고,
-                    되돌리기는 그 답을 지우는 행위다. 사유 없이 내릴 수 있으면 나중에
-                    "이 건은 왜 지시가 안 나간 걸로 되어 있나"에 아무도 답하지 못한다.
+                    **사유는 선택이다**(9/27 회의 A-3 — 작업요청서에서 사유 칸 제거).
+                    본문 자체를 생략해도 된다.
 
-                    지운 값은 사라지지만 **누가·언제·왜 내렸는지는 상태변경 이력에 남는다**
-                    (`GET /audit/status-history`, 대상 SHIPMENT). 애초에 출력 전이면 `false`.""")
+                    지운 값은 사라지지만 **누가·언제 내렸는지는 상태변경 이력에 남는다**
+                    (`GET /audit/status-history`, 대상 SHIPMENT).
+                    사유를 안 보내면 이력에 `(사유 미입력)`으로 적힌다 — 빈칸으로 두면
+                    "안 적은 것"인지 "기록이 안 된 것"인지 나중에 가릴 수 없다.
+
+                    애초에 출력 전이면 `false`.""")
     @PostMapping("/work-orders/{id}/print/revert")
     public ApiResponse<Boolean> revertPrinted(@PathVariable Long id,
-                                              @Valid @RequestBody RevertRequest req) {
-        return ApiResponse.success(shipmentService.revertPrinted(id, req.reason()));
+                                              @Valid @RequestBody(required = false) ReasonRequest req) {
+        return ApiResponse.success(shipmentService.revertPrinted(id, ReasonRequest.reasonOf(req)));
     }
 
     @Operation(summary = "작업 확인 표시",
@@ -137,11 +140,12 @@ public class WorkController {
     }
 
     @Operation(summary = "작업 확인 되돌리기",
-            description = "'확인' 표시를 내린다. 출력 되돌리기와 같은 이유로 **사유가 필수**이고 이력에 남는다.")
+            description = "'확인' 표시를 내린다(화면의 **삭제** 버튼). "
+                    + "사유는 **선택**이고(9/27 A-3) 이력에는 그대로 남는다.")
     @PostMapping("/work-orders/{id}/acknowledge/revert")
     public ApiResponse<Boolean> revertAcknowledged(@PathVariable Long id,
-                                                   @Valid @RequestBody RevertRequest req) {
-        return ApiResponse.success(shipmentService.revertAcknowledged(id, req.reason()));
+                                                   @Valid @RequestBody(required = false) ReasonRequest req) {
+        return ApiResponse.success(shipmentService.revertAcknowledged(id, ReasonRequest.reasonOf(req)));
     }
 
     @Operation(summary = "발송정보 입력",
@@ -265,4 +269,5 @@ public class WorkController {
                 workService.workResults(fromDate, toDate, tradeClass, partnerId, printed, acknowledged, warehouseType));
         return excel.asDownload(xlsx, "작업결과.xlsx");
     }
+
 }

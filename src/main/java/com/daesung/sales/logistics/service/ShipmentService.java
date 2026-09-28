@@ -91,7 +91,7 @@ public class ShipmentService {
         boolean changed = getOrThrow(shipmentId).revertPrinted();
         if (changed) {
             statusHistoryService.record(StatusEntityType.SHIPMENT, shipmentId,
-                    FIELD_PRINTED, true, false, reason);
+                    FIELD_PRINTED, true, false, orNoReason(reason));
         }
         return changed;
     }
@@ -114,13 +114,24 @@ public class ShipmentService {
         return changed;
     }
 
-    /** 확인 표시를 되돌린다. 출력 되돌리기와 같은 이유로 사유를 받는다. */
+    /**
+     * 사유가 비었을 때 이력에 남길 문구.
+     *
+     * <p>9/27 회의(A-3)로 화면에서 사유 칸이 빠져 빈 값이 정상이 됐다.
+     * 그래도 <b>null 로 두지 않는다</b> — 이력이 비어 있으면 "안 적은 것"인지
+     * "기록이 안 된 것"인지 나중에 가릴 수 없다.
+     */
+    private static String orNoReason(String reason) {
+        return (reason == null || reason.isBlank()) ? "(사유 미입력)" : reason.trim();
+    }
+
+    /** 확인 표시를 되돌린다. 출력 되돌리기와 같은 이유로 사유를 받는다(9/27부터 선택). */
     @Transactional
     public boolean revertAcknowledged(Long shipmentId, String reason) {
         boolean changed = getOrThrow(shipmentId).revertAcknowledged();
         if (changed) {
             statusHistoryService.record(StatusEntityType.SHIPMENT, shipmentId,
-                    FIELD_ACKNOWLEDGED, true, false, reason);
+                    FIELD_ACKNOWLEDGED, true, false, orNoReason(reason));
         }
         return changed;
     }

@@ -86,15 +86,22 @@ public class OrderService {
      *   S → W   거래명세서 출력(자동). 수동으로도 넘길 수 있게 열어 둔다
      *   W → S   ★되돌리기 — "되돌릴 때는 수동 전환"
      *   W → D   발송완료 — "물류가 발송 처리(체크박스 다건 일괄)"
+     *   D → W   ★발송취소 — 2026-09-27 회의 항목 20 ④ "발송완료·발송취소 버튼 필요"
      * </pre>
      *
      * <p>★<b>표에 없는 전이는 거부한다.</b> 아무 상태로나 뛰게 열어 두면 접수완료가 곧바로
      * 발송완료가 되는 주문이 생기고, 그러면 검수·준비 단계가 있으나 마나가 된다.
-     * 되돌리기도 <b>한 칸(W→S)</b>만이다 — 발송완료를 되돌리는 경로는 정본에 없다.
+     *
+     * <p>‼️<b>D → W(발송취소)는 9/27 회의로 열렸다.</b> 그 전까지는 "발송완료를 되돌리는 경로는
+     * 정본에 없다"고 보고 막아 두었는데, 회의에서 발송취소 버튼을 요구해 한 칸 되돌리기로 넣었다.
+     * <b>한 칸씩만</b>이라는 규칙은 그대로다 — D 에서 S 나 접수완료로 바로 뛰지는 못한다.
+     * 실물이 이미 나간 뒤의 되돌리기라 오조작 위험이 큰 전이다. 이력(status_history)에
+     * 반드시 남고, 사유를 함께 보내는 것을 권한다.
      */
     private static final Map<OrderState, Set<OrderState>> ALLOWED = Map.of(
             OrderState.PREPARING, Set.of(OrderState.READY_TO_SHIP),
-            OrderState.READY_TO_SHIP, Set.of(OrderState.PREPARING, OrderState.SHIPPED));
+            OrderState.READY_TO_SHIP, Set.of(OrderState.PREPARING, OrderState.SHIPPED),
+            OrderState.SHIPPED, Set.of(OrderState.READY_TO_SHIP));
 
     /**
      * 진행상태 <b>다건 일괄</b> 전환. 발송완료 처리와 되돌리기가 같은 경로를 쓴다.
