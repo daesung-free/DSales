@@ -531,18 +531,34 @@ public class InventoryService {
      * 그건 화면에서 실제로 둘 다 쓰는지 확인한 뒤에 할 일이다.
      */
     @Transactional(readOnly = true)
-    public List<DisposalRecordRow> disposals(LocalDate fromDate, LocalDate toDate,
-                                             List<Long> productIds, List<Long> warehouseIds) {
+    public org.springframework.data.domain.Page<DisposalRecordRow> disposals(
+            LocalDate fromDate, LocalDate toDate, List<Long> productIds, List<Long> warehouseIds,
+            org.springframework.data.domain.Pageable pageable) {
         return inventoryTxnRepository.findDisposals(fromDate, toDate,
                         MultiSelect.isAny(productIds), MultiSelect.orPlaceholder(productIds, 0L),
+                        MultiSelect.isAny(warehouseIds), MultiSelect.orPlaceholder(warehouseIds, 0L),
+                        pageable)
+                .map(InventoryService::disposalRow);
+    }
+
+    /** 폐기 내역 전량(엑셀 다운로드 전용). 화면은 페이지로 보지만 파일은 전량이 나가야 쓸모가 있다. */
+    @Transactional(readOnly = true)
+    public List<DisposalRecordRow> disposalsAll(LocalDate fromDate, LocalDate toDate,
+                                                List<Long> productIds, List<Long> warehouseIds) {
+        return inventoryTxnRepository.findDisposalsAll(fromDate, toDate,
+                        MultiSelect.isAny(productIds), MultiSelect.orPlaceholder(productIds, 0L),
                         MultiSelect.isAny(warehouseIds), MultiSelect.orPlaceholder(warehouseIds, 0L)).stream()
-                .map(t -> new DisposalRecordRow(
-                        t.getId(), t.getRefNo(), t.getTradeDate(),
-                        t.getWarehouse().getId(), t.getWarehouse().getName(),
-                        t.getProduct().getId(), t.getProduct().getCode(), t.getProduct().getName(),
-                        t.getProduct().getCatCode(), t.getProduct().getCatName(),
-                        Math.abs(t.getQty()), t.getMemo(), null))
+                .map(InventoryService::disposalRow)
                 .toList();
+    }
+
+    private static DisposalRecordRow disposalRow(InventoryTxn t) {
+        return new DisposalRecordRow(
+                t.getId(), t.getRefNo(), t.getTradeDate(),
+                t.getWarehouse().getId(), t.getWarehouse().getName(),
+                t.getProduct().getId(), t.getProduct().getCode(), t.getProduct().getName(),
+                t.getProduct().getCatCode(), t.getProduct().getCatName(),
+                Math.abs(t.getQty()), t.getMemo(), null);
     }
 
     /**

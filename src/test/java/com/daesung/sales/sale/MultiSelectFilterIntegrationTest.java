@@ -170,7 +170,7 @@ class MultiSelectFilterIntegrationTest extends IntegrationTestSupport {
                 + "&warehouseIds=" + wh1 + "," + wh2 + "&productIds=" + book;
 
         long detail = 0;
-        for (JsonNode r : data(get("/disposals" + q))) {
+        for (JsonNode r : rows(get("/disposals?size=200&" + q.substring(1)))) {
             detail += r.path("qty").asLong();
         }
         assertThat(detail).as("6 + 4").isEqualTo(10);
@@ -196,5 +196,13 @@ class MultiSelectFilterIntegrationTest extends IntegrationTestSupport {
                 .as("작업구분 다중선택 — 입고만 있으니 2건").hasSize(2);
         assertThat(data(get("/stock/records" + q + "&kinds=TRANSFER")))
                 .as("이고는 없다").isEmpty();
+    }
+
+    /**
+     * 폐기 목록은 <b>페이지</b>로 온다(9/27 항목 10 "페이지네이션 필수").
+     * 검증은 전량을 봐야 해서 size 를 크게 주고 content 만 꺼낸다.
+     */
+    private com.fasterxml.jackson.databind.JsonNode rows(com.fasterxml.jackson.databind.JsonNode res) {
+        return data(res).path("content");
     }
 }

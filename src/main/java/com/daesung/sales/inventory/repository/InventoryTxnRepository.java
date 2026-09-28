@@ -72,7 +72,7 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
                and (:anyWarehouse = true or t.warehouse.id in :warehouseIds)
              order by t.tradeDate desc, t.id desc
             """)
-    List<InventoryTxn> findDisposals(@Param("fromDate") LocalDate fromDate,
+    List<InventoryTxn> findDisposalsAll(@Param("fromDate") LocalDate fromDate,
                                      @Param("toDate") LocalDate toDate,
                                      @Param("anyProduct") boolean anyProduct,
                                      @Param("productIds") java.util.Collection<Long> productIds,
@@ -411,4 +411,40 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
             @Param("warehouseIds") java.util.Collection<Long> warehouseIds,
             @Param("anyKind") boolean anyKind,
             @Param("kinds") java.util.Collection<com.daesung.sales.inventory.entity.TxnType> kinds);
+
+    /**
+     * 폐기 내역 <b>페이지</b>(항목 10 "엑셀다운로드·페이지네이션 필수").
+     *
+     * <p>목록 전체를 한 번에 주던 것을 페이지로 바꾼다 — 폐기가 쌓이면 화면이 못 버틴다.
+     * 엑셀 다운로드는 페이지를 나누지 않는다(그건 전량이 나가야 의미가 있다).
+     *
+     * <p>★{@code countQuery} 를 따로 준다. 안 주면 Spring Data 가 fetch 조인이 붙은
+     * 본 쿼리로 count 를 만들어 오류가 난다. product·warehouse 는 단일 연관이라
+     * fetch 조인과 페이징을 같이 써도 DB 가 limit 을 적용한다(컬렉션 조인과 다르다).
+     */
+    @Query(value = """
+            select t from InventoryTxn t
+              join fetch t.product join fetch t.warehouse
+             where t.txnType = com.daesung.sales.inventory.entity.TxnType.DISPOSE
+               and (cast(:fromDate as date) is null or t.tradeDate >= :fromDate)
+               and (cast(:toDate as date) is null or t.tradeDate <= :toDate)
+               and (:anyProduct = true or t.product.id in :productIds)
+               and (:anyWarehouse = true or t.warehouse.id in :warehouseIds)
+            """,
+            countQuery = """
+            select count(t) from InventoryTxn t
+             where t.txnType = com.daesung.sales.inventory.entity.TxnType.DISPOSE
+               and (cast(:fromDate as date) is null or t.tradeDate >= :fromDate)
+               and (cast(:toDate as date) is null or t.tradeDate <= :toDate)
+               and (:anyProduct = true or t.product.id in :productIds)
+               and (:anyWarehouse = true or t.warehouse.id in :warehouseIds)
+            """)
+    org.springframework.data.domain.Page<InventoryTxn> findDisposals(
+            @Param("fromDate") LocalDate fromDate,
+            @Param("toDate") LocalDate toDate,
+            @Param("anyProduct") boolean anyProduct,
+            @Param("productIds") java.util.Collection<Long> productIds,
+            @Param("anyWarehouse") boolean anyWarehouse,
+            @Param("warehouseIds") java.util.Collection<Long> warehouseIds,
+            org.springframework.data.domain.Pageable pageable);
 }

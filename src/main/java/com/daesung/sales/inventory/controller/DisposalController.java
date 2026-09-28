@@ -19,6 +19,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestPart;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -32,6 +33,8 @@ public class DisposalController {
 
     private final InventoryService inventoryService;
     private final com.daesung.sales.common.audit.CurrentAuditor currentAuditor;
+    private final com.daesung.sales.common.excel.ExcelExportUtil excel;
+    private final com.daesung.sales.inventory.service.DisposalUploadService disposalUploadService;
 
     @Operation(summary = "전표 삭제(마감 前)",
             description = """
@@ -75,7 +78,7 @@ public class DisposalController {
                     도서·창고는 **다중선택**이다(좌측 트리뷰 체크박스, 2026-08-31 공통 요구).
                     단수 `productId`·`warehouseId`도 그대로 살아 있고, 복수와 같이 오면 합집합이다.""")
     @GetMapping
-    public ApiResponse<java.util.List<com.daesung.sales.inventory.dto.DisposalRecordRow>> list(
+    public ApiResponse<com.daesung.sales.common.response.PageResponse<com.daesung.sales.inventory.dto.DisposalRecordRow>> list(
             @Parameter(description = "폐기일 시작(yyyy-MM-dd). 미지정=전체")
             @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
@@ -87,10 +90,55 @@ public class DisposalController {
             java.util.List<Long> productIds,
             @Parameter(description = "창고 id 필터(단건)") @RequestParam(required = false) Long warehouseId,
             @Parameter(description = "창고 id **다중선택**") @RequestParam(required = false)
-            java.util.List<Long> warehouseIds) {
-        return ApiResponse.success(inventoryService.disposals(fromDate, toDate,
-                MultiSelect.merge(productId, productIds),
-                MultiSelect.merge(warehouseId, warehouseIds)));
+            java.util.List<Long> warehouseIds,
+            @org.springdoc.core.annotations.ParameterObject
+            com.daesung.sales.common.dto.PageRequestDto page) {
+        return ApiResponse.success(com.daesung.sales.common.response.PageResponse.of(
+                inventoryService.disposals(fromDate, toDate,
+                        MultiSelect.merge(productId, productIds),
+                        MultiSelect.merge(warehouseId, warehouseIds),
+                        page.toPageable(DISPOSAL_SORTS))));
+    }
+
+    /** 정렬 별칭. 화면이 보내는 컬럼명을 엔티티 경로로 바꾼다(모르는 키는 400 + 가능한 목록). */
+    private static final java.util.Map<String, String> DISPOSAL_SORTS = java.util.Map.of(
+            "date", "tradeDate", "tradeDate", "tradeDate",
+            "refNo", "refNo", "qty", "qty",
+            "bookCode", "product.code", "bookName", "product.name",
+            "warehouse", "warehouse.name", "id", "id");
+
+    @Operation(summary = "폐기 내역 엑셀 다운로드(10p)",
+            description = """
+                    근거: 9/27 회의 항목 10 — "엑셀다운로드·페이지네이션 필수".
+
+                    ★조회는 페이지로 주지만 **파일은 전량**이 나간다. 한 페이지만 받으면
+                    담당자는 페이지를 넘겨가며 여러 파일을 합쳐야 한다.""")
+    @GetMapping("/export")
+    public org.springframework.http.ResponseEntity<byte[]> export(
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @RequestParam(required = false) Long productId,
+            @RequestParam(required = false) java.util.List<Long> productIds,
+            @RequestParam(required = false) Long warehouseId,
+            @RequestParam(required = false) java.util.List<Long> warehouseIds) {
+        java.util.List<com.daesung.sales.common.excel.ExcelExportUtil.Col> cols = java.util.List.of(
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("폐기일자", "date"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("전표번호", "refNo"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("창고", "warehouseName"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("분류코드", "catCode"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("분류명", "catName"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("도서코드", "bookCode"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("도서명", "bookName"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("폐기수량", "qty"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("비고", "memo"));
+        byte[] xlsx = excel.toXlsx("폐기내역", cols,
+                inventoryService.disposalsAll(fromDate, toDate,
+                        MultiSelect.merge(productId, productIds),
+                        MultiSelect.merge(warehouseId, warehouseIds)),
+                com.daesung.sales.common.excel.ExcelExportUtil.Heading.period("폐기내역", fromDate, toDate));
+        return excel.asDownload(xlsx, "폐기내역.xlsx");
     }
 
     @Operation(summary = "폐기 분류명별 요약(10p)",
@@ -134,4 +182,33 @@ public class DisposalController {
         return ApiResponse.success(inventoryService.cancelVoucher(refNo, reason));
     }
 
+
+    @Operation(summary = "폐기수량 일괄 등록(엑셀 업로드, 10p)",
+            description = """
+                    근거: 9/27 회의 항목 8 — "폐기수량 일일이 적어야되는데 **일괄 등록 가능하게**.
+                    엑셀업로드(**수불부 상품코드 + 수량**) 적용."
+
+                    양식은 두 칸이면 된다. 열 순서가 달라도, 모르는 열이 붙어 있어도 읽는다.
+                    ```
+                    상품코드 | 수량 | (비고)
+                    ```
+
+                    · ★**한 건이라도 오류면 아무것도 등록되지 않는다.** 폐기는 재고를 깎는 전표라
+                      절반만 들어가면 무엇이 빠졌는지 파일과 대조해야 한다.
+                      오류 줄은 응답 `lines` 에 엑셀 행번호와 함께 나온다.
+                    · 같은 상품이 여러 줄에 있으면 **합산**해 한 전표로 등록한다.
+                    · `dryRun=true` 로 먼저 검증만 해볼 수 있다.
+                    · ‼️양식에 **사유 칸은 없다**(9/27 A-3, 항목 9). 비고는 읽는다.""")
+    @PostMapping(value = "/upload", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
+    public ApiResponse<com.daesung.sales.inventory.dto.DisposalUploadResponse> upload(
+            @Parameter(description = "엑셀 파일(xlsx)", required = true)
+            @RequestPart("file") org.springframework.web.multipart.MultipartFile file,
+            @Parameter(description = "처리일자(yyyy-MM-dd)", required = true) @RequestParam
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate processedDate,
+            @Parameter(description = "폐기 창고 id", required = true) @RequestParam Long warehouseId,
+            @Parameter(description = "검증만 하고 등록하지 않음") @RequestParam(required = false,
+                    defaultValue = "false") boolean dryRun) {
+        return ApiResponse.success(
+                disposalUploadService.upload(file, processedDate, warehouseId, dryRun));
+    }
 }

@@ -48,7 +48,7 @@ class DisposalListIntegrationTest extends IntegrationTestSupport {
     }
 
     private JsonNode row() {
-        for (JsonNode r : data(get("/disposals?fromDate=" + YEAR + "-01-01&toDate=" + YEAR + "-12-31"
+        for (JsonNode r : rows(get("/disposals?size=200&fromDate=" + YEAR + "-01-01&toDate=" + YEAR + "-12-31"
                 + "&productId=" + product))) {
             if (disposalNo.equals(r.path("disposalNo").asText())) {
                 return r;
@@ -87,7 +87,15 @@ class DisposalListIntegrationTest extends IntegrationTestSupport {
         String base = "/disposals?fromDate=" + YEAR + "-01-01&toDate=" + YEAR + "-12-31";
         assertThat(data(get(base + "&warehouseId=" + wh)).size()).isPositive();
         // 폐기일 이전까지만 보면 안 잡힌다
-        assertThat(data(get("/disposals?fromDate=" + YEAR + "-01-01&toDate=" + YEAR + "-04-09"
+        assertThat(rows(get("/disposals?size=200&fromDate=" + YEAR + "-01-01&toDate=" + YEAR + "-04-09"
                 + "&productId=" + product)).size()).isZero();
+    }
+
+    /**
+     * 폐기 목록은 <b>페이지</b>로 온다(9/27 항목 10 "페이지네이션 필수").
+     * 검증은 전량을 봐야 해서 size 를 크게 주고 content 만 꺼낸다.
+     */
+    private com.fasterxml.jackson.databind.JsonNode rows(com.fasterxml.jackson.databind.JsonNode res) {
+        return data(res).path("content");
     }
 }

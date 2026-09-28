@@ -76,7 +76,7 @@ class DisposalSummaryIntegrationTest extends IntegrationTestSupport {
     void 요약과_상세가_일치() {
         String range = "?fromDate=" + YEAR + "-01-01&toDate=" + YEAR + "-12-31&warehouseId=" + wh;
         long detailSum = 0;
-        for (JsonNode r : data(get("/disposals" + range))) {
+        for (JsonNode r : rows(get("/disposals?size=200&" + range.substring(1)))) {
             detailSum += r.path("qty").asLong();
         }
         assertThat(data(get("/disposals/summary" + range)).path("totalQty").asLong())
@@ -117,5 +117,13 @@ class DisposalSummaryIntegrationTest extends IntegrationTestSupport {
         List<String> out = new java.util.ArrayList<>();
         data(get(url)).path("content").forEach(n -> out.add(n.path("productCode").asText()));
         return out;
+    }
+
+    /**
+     * 폐기 목록은 <b>페이지</b>로 온다(9/27 항목 10 "페이지네이션 필수").
+     * 검증은 전량을 봐야 해서 size 를 크게 주고 content 만 꺼낸다.
+     */
+    private com.fasterxml.jackson.databind.JsonNode rows(com.fasterxml.jackson.databind.JsonNode res) {
+        return data(res).path("content");
     }
 }

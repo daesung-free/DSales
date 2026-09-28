@@ -329,10 +329,15 @@ class MaterialStockIntegrationTest extends IntegrationTestSupport {
         }
     }
 
-    /** 검증용 도서의 수불부 현재고. */
+    /**
+     * 검증용 도서의 수불부 현재고.
+     *
+     * <p>‼️수불부는 <b>페이지</b>로 온다. 예전엔 content 를 안 꺼내고 응답 객체를 그대로
+     * 돌면서 합을 냈는데, 그러면 언제나 0이 나와 <b>검증이 헛돈다</b>(0 == 0 으로 통과).
+     */
     private long ledgerClosing() {
-        JsonNode rows = data(get("/stock/ledger?fromDate=2092-01-01&toDate=2092-12-31"
-                + "&productId=" + book));
+        JsonNode rows = data(get("/stock/ledger?size=200&fromDate=2092-01-01&toDate=2092-12-31"
+                + "&productId=" + book)).path("content");
         long sum = 0;
         for (JsonNode r : rows) {
             sum += r.path("closing").asLong();
