@@ -24,6 +24,9 @@ import org.springframework.data.repository.query.Param;
 
 public interface SaleRepository extends JpaRepository<Sale, Long> {
 
+    /** 매출번호로 한 건. 주문 등록이 방금 세운 매출에 주문번호를 붙일 때 쓴다(9/27 항목 2). */
+    java.util.Optional<Sale> findBySalesNo(String salesNo);
+
     /**
      * 거래명세서 발행 대상 <b>학교 목록</b>. 실물 양식의 「학교(원)」 칸은 <b>값이 하나</b>라
      * 명세서는 (거래처 × 학교) 단위로 발행된다 — 기간에 학교가 여럿이면 여러 장이다.

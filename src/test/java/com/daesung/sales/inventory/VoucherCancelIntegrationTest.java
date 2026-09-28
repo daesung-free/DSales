@@ -107,6 +107,45 @@ class VoucherCancelIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @org.junit.jupiter.api.Order(20)
+    @DisplayName("★폐기 삭제(마감 前) — 재고가 돌아온다. 9/27 항목 7 '폐기한 재고는 되돌릴 수 있게'")
+    void 폐기_삭제로도_복원() {
+        inbound(100);
+        int before = balance();
+        JsonNode d = post("/disposals", Map.of(
+                "processedDate", YEAR + "-03-01", "warehouseId", wh,
+                "items", List.of(Map.of("productId", book, "qty", 25))));
+        String no = data(d).path("disposalNo").asText();
+        assertThat(balance()).isEqualTo(before - 25);
+
+        // ★취소(역분개)와 다른 축이다 — 삭제는 '없던 일'로 만든다.
+        //   회의는 되돌리는 방법을 지정하지 않았으므로 두 경로 다 재고가 돌아와야 한다.
+        JsonNode r = del("/disposals/" + no, Map.of("reason", "오입력"));
+
+        assertThat(r.path("success").asBoolean()).as("%s", r).isTrue();
+        assertThat(balance()).as("폐기 전으로 돌아온다").isEqualTo(before);
+    }
+
+    @Test
+    @org.junit.jupiter.api.Order(21)
+    @DisplayName("삭제한 폐기는 목록에서도 사라진다 — 재고만 돌아오고 내역이 남으면 두 번 센다")
+    void 삭제하면_목록에서도_빠진다() {
+        inbound(60);
+        JsonNode d = post("/disposals", Map.of(
+                "processedDate", YEAR + "-03-02", "warehouseId", wh,
+                "items", List.of(Map.of("productId", book, "qty", 15))));
+        String no = data(d).path("disposalNo").asText();
+
+        del("/disposals/" + no, Map.of("reason", "오입력"));
+
+        boolean found = false;
+        for (JsonNode r : data(get("/disposals" + RANGE + "&size=200")).path("content")) {
+            found |= no.equals(r.path("refNo").asText());
+        }
+        assertThat(found).as("삭제된 전표가 폐기 내역에 남아 있으면 안 된다").isFalse();
+    }
+
+    @Test
     @org.junit.jupiter.api.Order(3)
     @DisplayName("★두 번 취소하면 400 — 막지 않으면 재고가 반대로 밀린다")
     void 중복_취소() {

@@ -15,6 +15,12 @@ public record OrderCreateResponse(
         @Schema(description = "진행상태명") String stateName,
         @Schema(description = "등록된 반 수") int classCount,
         @Schema(description = "등록된 과목수량 줄 수(간편신청만이면 0)") int subjectLineCount,
-        @Schema(description = "총 신청 수량") long totalQty
+        @Schema(description = "총 신청 수량") long totalQty,
+
+        @Schema(description = """
+                함께 세운 매출번호(9/27 항목 2). 매출 직접입력을 안 보냈으면 **없다**.
+                ‼️매출 등록이 실패하면 주문도 자동 취소되므로, 이 값이 없는데 주문이 있다면
+                애초에 매출을 요청하지 않은 것이다.""")
+        String salesNo
 ) {
 }

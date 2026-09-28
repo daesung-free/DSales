@@ -54,6 +54,14 @@ public record OrderCreateRequest(
                 example = "H")
         @Pattern(regexp = "[HT]") String deliveryGubun,
 
+        @Schema(description = """
+                매출 직접입력(선택). 근거: 9/27 회의 항목 2 —
+                "신규등록에서 매출직접입력의 정가·공급률·수량 가능해야됨. **매출등록도 그대로 유지**".
+
+                주면 주문 등록 직후 <b>매출까지 함께</b> 세운다. 안 주면 주문만 등록한다
+                (기존 동작 그대로 — 매출은 매출등록 화면에서 따로 친다).""")
+        @Valid SaleLine sale,
+
         @Schema(description = "반 목록. 최소 1개", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotEmpty @Size(max = 200) @Valid List<ClassLine> classes
 ) {
@@ -89,6 +97,51 @@ public record OrderCreateRequest(
             @NotNull Integer resCd,
             @Schema(description = "신청 수량", requiredMode = Schema.RequiredMode.REQUIRED)
             @NotNull @Positive Integer qty
+    ) {
+    }
+
+    /**
+     * 주문과 함께 세울 매출(9/27 항목 2).
+     *
+     * <p>★<b>거래처는 id 로 받는다.</b> 주문의 {@code custCode} 는 DSRE2 지사코드(CUST_CD)이고
+     * 우리 거래처코드는 <b>매출코드(MACHUL_CD)</b>라 서로 다른 값이다 — 자동으로 유추하면
+     * 엉뚱한 거래처에 매출이 붙는다. 화면이 고른 거래처를 그대로 보낸다.
+     *
+     * <p>상품은 비워도 된다. 비우면 <b>시행코드(dtlCd)와 같은 도서코드</b>를 찾는다 —
+     * 매출일괄등록(더프)이 쓰는 매핑과 같은 규칙이다.
+     */
+    @Schema(name = "OrderSaleLine", description = "주문과 함께 세울 매출(선택)")
+    public record SaleLine(
+
+            @Schema(description = "거래처 id — 우리 마스터의 id. DSRE 지사코드와 다른 값이다",
+                    requiredMode = Schema.RequiredMode.REQUIRED)
+            @NotNull Long partnerId,
+
+            @Schema(description = "상품 id. 미지정이면 시행코드(dtlCd)와 같은 도서코드를 찾는다")
+            Long productId,
+
+            @Schema(description = "매출일자. 미지정이면 오늘")
+            java.time.LocalDate salesDate,
+
+            @Schema(description = "출고 창고 id. 미지정이면 재고를 건드리지 않는 '미출고 매출'이 된다")
+            Long warehouseId,
+
+            @Schema(description = "정가(원). 미지정이면 도서 마스터 정가", example = "12000")
+            @PositiveOrZero Integer unitPrice,
+
+            @Schema(description = "공급률(%). 미지정이면 거래처별 단가 매핑에서 자동조회", example = "70")
+            @PositiveOrZero Integer supplyRate,
+
+            @Schema(description = """
+                    수량. **미지정이면 이 주문의 총 신청 수량**을 쓴다 —
+                    신규등록 화면에서 반별 인원을 이미 친 뒤라 같은 숫자를 두 번 치게 하지 않는다.""",
+                    example = "120")
+            @PositiveOrZero Integer qty,
+
+            @Schema(description = "세액(선택). 자동산출하지 않는다 — 미입력이면 0")
+            @PositiveOrZero Integer tax,
+
+            @Schema(description = "비고") @Size(max = 500) String memo
     ) {
     }
 }

@@ -10,6 +10,12 @@ import com.daesung.sales.order.dto.OrderCreateResponse;
 import com.daesung.sales.dsre.gateway.DsreGateway;
 import com.daesung.sales.dsre.gateway.DsreOrderRow;
 import com.daesung.sales.dsre.gateway.OrderState;
+import com.daesung.sales.product.repository.ProductRepository;
+import com.daesung.sales.sale.dto.SalesEntryRequest;
+import com.daesung.sales.sale.dto.SalesEntryResponse;
+import com.daesung.sales.sale.service.SaleService;
+import com.daesung.sales.salestype.entity.ShipmentType;
+import java.time.LocalDate;
 import java.util.HashMap;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
@@ -39,6 +45,8 @@ public class OrderService {
     private final StatusHistoryService statusHistoryService;
     private final com.daesung.sales.common.audit.CurrentAuditor currentAuditor;
     private final com.daesung.sales.sale.repository.SaleRepository saleRepository;
+    private final ProductRepository productRepository;
+    private final SaleService saleService;
 
     /**
      * 거래명세서 발급 처리 → 발송준비중(W).
@@ -247,8 +255,87 @@ public class OrderService {
                 "주문 등록(시행 " + req.dtlCd() + " · 거래처 " + req.custCode()
                         + " · 반 " + classes.size() + "개 · 수량 " + totalQty + ")");
 
+        // ★매출 직접입력(9/27 항목 2). 주문만 등록하던 기존 동작은 sale 이 없으면 그대로다.
+        String salesNo = null;
+        if (req.sale() != null) {
+            try {
+                salesNo = createSale(req, reqCd, totalQty);
+            } catch (RuntimeException e) {
+                // ‼️DSRE2 와 우리 DB는 **한 트랜잭션에 못 묶인다**(데이터소스가 다르다).
+                //   매출이 실패했는데 주문만 남으면 담당자는 "등록됐다"고 보고 다시 치지 않는다.
+                //   방금 만든 주문을 되돌리고 원인을 그대로 올린다.
+                orderDeleteQuietly(reqCd);
+                throw e;
+            }
+        }
+
         return new OrderCreateResponse(reqCd, OrderState.RECEIVED.code(), OrderState.RECEIVED.label(),
-                classes.size(), subjectLines, totalQty);
+                classes.size(), subjectLines, totalQty, salesNo);
+    }
+
+    /**
+     * 주문과 함께 매출을 세운다(9/27 항목 2).
+     *
+     * <p>수량을 안 주면 <b>이 주문의 총 신청 수량</b>을 쓴다 — 화면에서 반별 인원을 이미 친 뒤라
+     * 같은 숫자를 두 번 치게 할 이유가 없다.
+     *
+     * <p>상품을 안 주면 <b>시행코드와 같은 도서코드</b>를 찾는다(매출일괄등록이 쓰는 매핑과 동일).
+     * 못 찾으면 그대로 오류다 — 임의 상품에 붙이면 어느 도서 매출인지 알 수 없게 된다.
+     */
+    private String createSale(OrderCreateRequest req, int reqCd, long totalQty) {
+        OrderCreateRequest.SaleLine sl = req.sale();
+
+        Long productId = sl.productId();
+        if (productId == null) {
+            String code = String.valueOf(req.dtlCd());
+            productId = productRepository.findByCode(code)
+                    .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                            "시행코드와 같은 도서코드(" + code + ")가 도서 마스터에 없습니다. "
+                                    + "매출 상품을 직접 지정하거나 도서를 먼저 등록하세요."))
+                    .getId();
+        }
+
+        int qty = (sl.qty() != null && sl.qty() > 0) ? sl.qty() : (int) totalQty;
+        if (qty <= 0) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "매출 수량이 0입니다. 반별 인원이 없으면 수량을 직접 지정하세요.");
+        }
+
+        SalesEntryRequest.Item item = new SalesEntryRequest.Item(
+                productId, ShipmentType.NORMAL_SHIP, sl.unitPrice(), sl.supplyRate(),
+                null,               // 할인액 — 미지정이면 거래처×대분류 매핑에서 자동조회된다
+                qty, sl.tax(),
+                null,               // 성적처리 구분 — 주문의 procYn 과 축이 달라 섞지 않는다
+                req.schoolCode(), null, null, null, sl.memo());
+        SalesEntryRequest entry = new SalesEntryRequest(
+                (sl.salesDate() != null) ? sl.salesDate() : LocalDate.now(),
+                sl.partnerId(), sl.warehouseId(), List.of(item));
+
+        SalesEntryResponse res = saleService.createEntries(entry);
+        String no = res.items().isEmpty() ? null : res.items().get(0).salesNo();
+        // 주문 목록이 "이 주문이 무슨 매출이 됐나"를 되짚는다(매출일괄등록과 같은 연결).
+        if (no != null) {
+            saleRepository.findBySalesNo(no).ifPresent(x -> x.linkOrder(reqCd));
+        }
+        return no;
+    }
+
+    /**
+     * 보상 삭제. 이미 실패한 요청을 되돌리는 중이라, 여기서 또 던지면 <b>원래 원인이 가려진다</b>.
+     *
+     * <p>★취소까지 실패하면 <b>매출 없는 주문이 그대로 남는다</b> — 사람이 손대야 하는 상태다.
+     * 그 사실을 <b>상태변경 이력</b>에 적는다. 로그로만 남기면 아무도 안 보고,
+     * 이력은 화면(`GET /audit/status-history`)에서 조회된다.
+     */
+    private void orderDeleteQuietly(int reqCd) {
+        try {
+            delete(reqCd, "매출 등록 실패로 자동 취소");
+        } catch (RuntimeException e) {
+            statusHistoryService.record(StatusEntityType.DSRE_ORDER, (long) reqCd, "state",
+                    OrderState.RECEIVED.code(), OrderState.RECEIVED.code(),
+                    "‼️매출 등록이 실패해 주문을 자동 취소하려 했으나 그것도 실패했습니다. "
+                            + "매출 없는 주문이 남아 있으니 수동으로 확인하세요. 원인: " + e.getMessage());
+        }
     }
 
     private static long nz(Integer v) {

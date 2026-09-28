@@ -45,12 +45,15 @@ class OrderCreateValidationTest {
         CurrentAuditor auditor = mock(CurrentAuditor.class);
         when(auditor.username()).thenReturn("tester");
         when(gateway.createOrder(any(), anyString())).thenReturn(777);
-        service = new OrderService(gateway, history, auditor, mock(com.daesung.sales.sale.repository.SaleRepository.class));
+        service = new OrderService(gateway, history, auditor,
+                mock(com.daesung.sales.sale.repository.SaleRepository.class),
+                mock(com.daesung.sales.product.repository.ProductRepository.class),
+                mock(com.daesung.sales.sale.service.SaleService.class));
     }
 
     private OrderCreateRequest req(OrderCreateRequest.ClassLine... classes) {
         return new OrderCreateRequest(78331, "70501", "10001", null, null, null,
-                "김선생", "010-0000-0000", null, null, null, null, null, List.of(classes));
+                "김선생", "010-0000-0000", null, null, null, null, null, null, List.of(classes));
     }
 
     /** 간편신청 — 인원만 채운 반. */
