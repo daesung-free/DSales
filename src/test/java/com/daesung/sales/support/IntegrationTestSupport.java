@@ -71,6 +71,20 @@ public abstract class IntegrationTestSupport {
         return cachedToken;
     }
 
+    /**
+     * <b>/api/v1 접두어 없이</b> 그대로 GET(액추에이터 등). 인증도 붙이지 않는다 —
+     * 배포 스크립트가 토큰 없이 부르는 경로를 같은 조건으로 확인하기 위해서다.
+     */
+    protected JsonNode getRaw(String path) {
+        org.springframework.http.ResponseEntity<String> resp =
+                rest.getForEntity(path, String.class);
+        try {
+            return om.readTree(resp.getBody());
+        } catch (Exception e) {
+            throw new RuntimeException("응답 파싱 실패: " + resp.getBody(), e);
+        }
+    }
+
     /** 인증 GET → ApiResponse JsonNode 반환. */
     protected JsonNode get(String path) {
         return exchange(HttpMethod.GET, path, null, true);

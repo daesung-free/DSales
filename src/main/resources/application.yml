@@ -44,6 +44,21 @@ spring:
 server:
   port: 8080
 
+management:
+  health:
+    # ★★메일 서버 상태를 앱 상태에 섞지 않는다.
+    #
+    #   spring-boot-starter-mail 을 넣는 순간 액추에이터가 MailHealthIndicator 를 자동으로 달고,
+    #   기동할 때마다 SMTP 에 접속을 시도한다. 그게 실패하면 /actuator/health 가 통째로 DOWN 이 되고,
+    #   배포 스크립트의 기동 검증이 그 값을 보기 때문에 **배포 자체가 막힌다**.
+    #   (2026-09-28 실제로 이렇게 배포가 실패했다 — SMTPTransport SSLException 으로 30회 DOWN.)
+    #
+    #   메일은 부가 기능이다. 메일 서버가 안 된다고 매출·재고가 안 도는 것이 아니다.
+    #   발송 실패는 발송하는 그 순간에 알리면 된다 — 우리는 설정이 없으면 400,
+    #   개별 실패는 거래처별 결과(FAILED)로 돌려주고 있다. 헬스체크가 대신 소리칠 자리가 아니다.
+    mail:
+      enabled: false
+
 springdoc:
   swagger-ui:
     path: /swagger-ui.html
