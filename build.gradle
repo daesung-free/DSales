@@ -62,6 +62,9 @@ dependencies {
 	implementation 'org.flywaydb:flyway-mysql'
 
 	// --- Security / RBAC ---
+	// 메일 발송(9/27 항목 17·A-4 — 통합매출조회·외상매출장조회 이메일 전송).
+	// 레거시(Common.vb:SendMail)가 하던 일을 그대로 옮긴다.
+	implementation 'org.springframework.boot:spring-boot-starter-mail'
 	implementation 'org.springframework.boot:spring-boot-starter-security'
 	implementation 'io.jsonwebtoken:jjwt-api:0.12.6'
 	runtimeOnly 'io.jsonwebtoken:jjwt-impl:0.12.6'

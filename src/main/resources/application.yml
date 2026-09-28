@@ -15,6 +15,27 @@ spring:
         format_sql: true
   flyway:
     enabled: true             # 기동 시 db/migration/V*.sql 자동 적용
+  mail:
+    # ★메일 발송 설정(9/27 항목 17·A-4). 레거시 Common.vb:SendMail 의 값을 그대로 쓰되
+    #   **소스에는 두지 않는다** — 레거시는 SMTP 계정과 비밀번호가 .vb 에 하드코딩돼 있었고,
+    #   그건 소스를 받은 사람 누구나 회사 메일로 발송할 수 있다는 뜻이다(§9 위반).
+    #   호스트·포트·계정까지 전부 환경변수로 받는다. 값이 비면 발송 기능이 꺼진다(아래 daesung.mail.enabled).
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:465}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: true
+          # 레거시가 EnableSsl=True 로 465 포트를 썼다 — 그건 STARTTLS 가 아니라 SMTPS 다.
+          ssl:
+            enable: ${MAIL_SSL:true}
+          starttls:
+            enable: ${MAIL_STARTTLS:false}
+          connectiontimeout: 5000
+          timeout: 10000
+          writetimeout: 10000
   data:
     redis:                    # refresh 토큰 저장(TTL 자동만료). 컨테이너에선 host=redis로 override.
       host: localhost
@@ -34,6 +55,17 @@ logging:
 # 계산서(홈택스) 공급자(자사) 정보. ★실값은 배포 시 환경변수/시크릿으로 주입 — 소스에 커밋 금지.
 # 예: DAESUNG_SUPPLIER_BIZ-NO=... (2법인 지원은 후속: default/consign 분리)
 daesung:
+  mail:
+    # ‼️기본 off. 설정이 비어 있는 채로 켜 두면 화면에서 '전송'을 눌렀을 때
+    #   조용히 실패하고 담당자는 보냈다고 믿는다. 값을 넣은 환경에서만 켠다.
+    enabled: ${MAIL_ENABLED:false}
+    # 보내는 사람. 레거시는 발신 계정과 같은 주소를 썼고 참조(CC)에도 자기를 넣었다.
+    from: ${MAIL_FROM:}
+    from-name: ${MAIL_FROM_NAME:대성학력개발연구소}
+    # 본문 문구(레거시 조회.vb:3781 그대로). 회사명이 바뀌면 여기만 고친다.
+    body: ${MAIL_BODY:(주)대성학력개발연구소에서 발송된 메일입니다.}
+    # 참조로 발신자를 넣을지. 레거시는 항상 넣었다(보낸 기록을 메일함에 남기려는 것).
+    cc-sender: ${MAIL_CC_SENDER:true}
   supplier:
     # 계산서(홈택스)·거래명세서의 공급자 블록. 발행 법인은 대성학력개발연구소 1개 확정(정본 2탭).
     #

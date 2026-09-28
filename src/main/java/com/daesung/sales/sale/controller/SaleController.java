@@ -106,6 +106,7 @@ public class SaleController {
     private final SaleReportService saleReportService;
     private final com.daesung.sales.sale.service.AttendanceService attendanceService;
     private final SalesUploadService salesUploadService;
+    private final com.daesung.sales.sale.service.SalesMailService salesMailService;
     private final ExcelExportUtil excel;
 
     /**
@@ -900,5 +901,32 @@ public class SaleController {
      */
     private static LocalDate either(LocalDate primary, LocalDate alias) {
         return (primary != null) ? primary : alias;
+    }
+
+    @Operation(summary = "거래상세내역서 이메일 전송(12p)",
+            description = """
+                    조회 결과를 **거래처별 엑셀**로 만들어 거래처 이메일로 보낸다.
+                    근거: 9/27 회의 A-4(항목 13) — "통합매출조회 … 이메일 버튼 없음 → 추가
+                    (기존 매출프로그램에 있는 기능)". 레거시 `조회.vb:3781` 과 같은 동작이다.
+
+                    · **거래처마다 따로 보낸다.** 한 파일에 전 거래처를 담으면 각 거래처가
+                      남의 매출을 본다 — 레거시가 거래처별로 나눈 이유가 그것이다.
+                    · 수신은 거래처 마스터의 **이메일1·이메일2**. 1이 비고 2만 있으면 2로 보낸다(레거시 동일).
+                    · 제목 `{거래처명} 거래상세내역서(2026.06.01-2026.06.30)`.
+                    · **한 건이 실패해도 나머지는 보낸다.** 거래처별 결과(SENT/FAILED/NO_EMAIL)를 돌려준다 —
+                      레거시는 건수만 세고 상세를 로그 파일에 적어, 실패한 거래처를 찾으려면 그 파일을 열어야 했다.
+                    · `NO_EMAIL` 은 실패가 아니다. 거래처관리에서 주소를 채워야 하는 건이다.
+                    · ‼️메일 설정이 없으면 400 — 조용히 실패하면 담당자는 보냈다고 믿는다.""")
+    @PostMapping("/email")
+    public ApiResponse<com.daesung.sales.common.mail.MailSendResponse> email(
+            @Parameter(description = "시작일", required = true) @RequestParam
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @Parameter(description = "종료일", required = true) @RequestParam
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @Parameter(description = "거래처 id **다중선택**. 비우면 조회 결과에 나온 거래처 전부(일괄 발송)")
+            @RequestParam(required = false) List<Long> partnerIds,
+            @Parameter(description = "키워드(조회와 같은 축)") @RequestParam(required = false) String keyword) {
+        return ApiResponse.success(
+                salesMailService.sendStatements(fromDate, toDate, partnerIds, keyword));
     }
 }

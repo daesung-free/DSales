@@ -76,7 +76,7 @@ jobs:
           #   step의 env: 에만 적으면 러너에서만 살아 있고 원격에서는 빈 값이 된다 —
           #   docker run -e VAR="" 로 들어가 앱은 기본값으로 조용히 뜬다(2026-09-08에 이걸로 한 번 헤맸다).
           #   env: 에 값을 추가하면 이 줄에도 반드시 같이 추가할 것.
-          envs: REGISTRY,ECR_PW,DB_HOST,DB_SECRET_ID,REDIS_HOST,JWT_SECRET,AWS_REGION,COOKIE_SECURE,COOKIE_SAME_SITE,DSRE_ENABLED,DSRE_URL,DSRE_USERNAME,DSRE_PASSWORD
+          envs: REGISTRY,ECR_PW,DB_HOST,DB_SECRET_ID,REDIS_HOST,JWT_SECRET,AWS_REGION,COOKIE_SECURE,COOKIE_SAME_SITE,DSRE_ENABLED,DSRE_URL,DSRE_USERNAME,DSRE_PASSWORD,MAIL_ENABLED,MAIL_HOST,MAIL_PORT,MAIL_USERNAME,MAIL_PASSWORD,MAIL_FROM,MAIL_SSL
           # ★DB 계정/비번을 -e 로 넣지 않는다. 넣으면 환경변수가 application-aws.yml 보다 우선순위가 높아
           #   Secrets Manager 조회를 무력화한다(=로테이션 장애 재발). DB_HOST/DB_SECRET_ID 만 전달.
           script: |
@@ -127,6 +127,13 @@ jobs:
               -e DAESUNG_DSRE_URL="$DSRE_URL" \
               -e DAESUNG_DSRE_USERNAME="$DSRE_USERNAME" \
               -e DAESUNG_DSRE_PASSWORD="$DSRE_PASSWORD" \
+              -e MAIL_ENABLED="$MAIL_ENABLED" \
+              -e MAIL_HOST="$MAIL_HOST" \
+              -e MAIL_PORT="$MAIL_PORT" \
+              -e MAIL_USERNAME="$MAIL_USERNAME" \
+              -e MAIL_PASSWORD="$MAIL_PASSWORD" \
+              -e MAIL_FROM="$MAIL_FROM" \
+              -e MAIL_SSL="$MAIL_SSL" \
               "$REGISTRY/dsales:latest"
             docker image prune -f
         env:
@@ -149,6 +156,16 @@ jobs:
           DSRE_URL: ${{ vars.DSRE_URL || 'jdbc:mysql://dsre-mariadb:3306/dsre2?characterEncoding=UTF-8&useUnicode=true' }}
           DSRE_USERNAME: ${{ vars.DSRE_USERNAME || 'dsre' }}
           DSRE_PASSWORD: ${{ secrets.DSRE_PASSWORD || 'dsre' }}
+          # 메일 발송(9/27 항목 17·A-4). ‼️계정·비밀번호는 **시크릿으로만** 넣는다 —
+          # 레거시는 .vb 에 하드코딩돼 있었고 소스를 받은 사람 누구나 회사 메일로 보낼 수 있었다.
+          # 값이 없으면 MAIL_ENABLED 가 false 라 발송 기능이 꺼진 채로 뜬다(조용한 실패가 아니라 400).
+          MAIL_ENABLED: ${{ vars.MAIL_ENABLED || 'false' }}
+          MAIL_HOST: ${{ vars.MAIL_HOST }}
+          MAIL_PORT: ${{ vars.MAIL_PORT || '465' }}
+          MAIL_SSL: ${{ vars.MAIL_SSL || 'true' }}
+          MAIL_USERNAME: ${{ secrets.MAIL_USERNAME }}
+          MAIL_PASSWORD: ${{ secrets.MAIL_PASSWORD }}
+          MAIL_FROM: ${{ vars.MAIL_FROM }}
           AWS_REGION: ${{ env.AWS_REGION }}
 
       # 배포가 "컨테이너는 떴는데 DB 못 붙음" 상태로 조용히 성공 처리되는 것을 막는다.
