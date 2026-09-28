@@ -89,13 +89,37 @@ public record SaleResponse(
      */
     public static SaleResponse from(Sale s, SalesDivision division,
                                     com.daesung.sales.school.entity.SchoolType schoolType) {
+        return from(s, division, schoolType, null, true);
+    }
+
+    /**
+     * 조회용 — 학교명 보완과 쿠폰 카운트를 함께 적용한다(9/27 회의 항목 13-③·⑤).
+     *
+     * @param schoolNameFallback 매출에 학교명이 비어 있을 때 쓸 마스터 이름(없으면 null).
+     *        ★<b>덮어쓰지 않는다.</b> 매출에 적힌 이름은 등록 당시의 것이고 지금 마스터와
+     *        다를 수 있다(통폐합·개명). 비어 있을 때만 채운다.
+     * @param couponCount 쿠폰 포함 카운트. {@code false}(화면 기본)면 도서명에 <b>쿠폰</b>이
+     *        든 상품의 <b>수량만</b> 0으로 본다 — 레거시 {@code 조회.vb:1335}
+     *        {@code iif(CHARINDEX('쿠폰', bookName) > 0, 0, bookCnt)} 그대로다.
+     *        ‼️<b>금액은 건드리지 않는다.</b> 쿠폰도 팔린 것은 맞고, '부수'로 세지 않을 뿐이다.
+     *        ‼️판별이 <b>도서명 문자열</b>이라 이름이 바뀌면 조용히 빗나간다
+     *        (더프원장 시행월의 {@code ##ERROR} 와 같은 함정). 상품 속성으로 옮길지는 확인 대상.
+     */
+    public static SaleResponse from(Sale s, SalesDivision division,
+                                    com.daesung.sales.school.entity.SchoolType schoolType,
+                                    String schoolNameFallback, boolean couponCount) {
         MajorCategory major = (division == null) ? null : division.getMajorCategory();
+        String schoolName = (s.getSchoolName() != null && !s.getSchoolName().isBlank())
+                ? s.getSchoolName() : schoolNameFallback;
+        String productName = s.getProduct().getName();
+        int qty = (!couponCount && productName != null && productName.contains("쿠폰"))
+                ? 0 : s.getQty();
         return new SaleResponse(
                 s.getId(), s.getSalesNo(), s.getSalesDate(),
                 s.getPartner().getId(), s.getPartner().getCode(), s.getPartner().getName(),
                 s.getPartner().getCityName(), s.getPartner().getName1(),
                 s.getPartner().getRegion(), s.getPartner().getClientCategory(),
-                s.getSchoolCode(), s.getSchoolName(),
+                s.getSchoolCode(), schoolName,
                 (schoolType == null) ? null : schoolType.name(),
                 (schoolType == null) ? null : schoolType.label(),
                 s.getProduct().getGrade(),
@@ -103,13 +127,13 @@ public record SaleResponse(
                 s.getProduct().getSalesDivision(),
                 (division == null) ? null : division.getName(),
                 major, (major == null) ? null : major.label(),
-                s.getProduct().getId(), s.getProduct().getCode(), s.getProduct().getName(), s.getBookRound(),
+                s.getProduct().getId(), s.getProduct().getCode(), productName, s.getBookRound(),
                 s.getSalesType(), s.getShipmentType(),
                 ShipmentType.labelOf(s.getShipmentType()),
                 TradeClass.of(s.getSalesCategory()),
                 (s.getSalesCategory() == null) ? null : TradeClass.of(s.getSalesCategory()).label(),
                 s.getSalesCategory(),
-                s.getUnitPrice(), s.getSupplyRate(), s.getDiscountAmount(), s.getQty(),
+                s.getUnitPrice(), s.getSupplyRate(), s.getDiscountAmount(), qty,
                 s.getSupplyAmount(), s.getTax(), s.getTotalAmount(),
                 s.isCanceled(),
                 (s.getWarehouse() == null) ? null : s.getWarehouse().getId(),

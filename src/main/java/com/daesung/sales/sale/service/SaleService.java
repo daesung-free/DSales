@@ -552,7 +552,9 @@ public class SaleService {
                                              List<ShipmentType> shipmentTypes,
                                              List<Long> partnerIds,
                                              List<Long> warehouseIds,
+                                             List<String> schoolCodes,
                                              String keyword,
+                                             boolean couponCount,
                                              boolean includeCanceled, Pageable pageable) {
         List<SalesCategory> categories = salesCategories;
         if (!MultiSelect.isAny(tradeClasses)) {
@@ -593,17 +595,45 @@ public class SaleService {
                 MultiSelect.orPlaceholder(partnerIds, 0L),
                 MultiSelect.isAny(warehouseIds),
                 MultiSelect.orPlaceholder(warehouseIds, 0L),
+                MultiSelect.isAny(schoolCodes),
+                MultiSelect.orPlaceholder(schoolCodes, "\u0000"),
                 kw, includeCanceled, pageable);
         // ★학교/학원 구분은 매출 원장에 없다 — 학교 마스터에서 붙인다.
         //   페이지 안의 학교코드만 모아 **한 번에** 조회한다(행마다 조회하면 N+1이다).
         //   ‼️마스터에 없는 코드는 그냥 null 로 둔다. 거기서 막으면 과거 매출이 조회에서 사라진다.
         Map<String, com.daesung.sales.school.entity.SchoolType> schoolTypes = schoolTypesOf(page);
+        Map<String, String> schoolNames = schoolNamesOf(page);
         return PageResponse.of(page.map(s -> SaleResponse.from(
                 s, divisions.get(s.getProduct().getSalesDivision()),
                 // ‼️학교코드가 없는 매출이 흔하다(학교 없이 거래처로만 나가는 건).
                 //   Map.of() 는 **null 키 조회에서 NPE**를 던진다 — 빈 맵이어도 그렇다.
                 //   조회 전에 걸러야 한다(실제로 GET /sales 가 통째로 500이었다).
-                (s.getSchoolCode() == null) ? null : schoolTypes.get(s.getSchoolCode()))));
+                (s.getSchoolCode() == null) ? null : schoolTypes.get(s.getSchoolCode()),
+                // 학교명 보완(항목 13-③) · 쿠폰 카운트(항목 13-⑤)
+                (s.getSchoolCode() == null) ? null : schoolNames.get(s.getSchoolCode()),
+                couponCount)));
+    }
+
+    /**
+     * 페이지에 실린 학교코드의 <b>학교명</b>을 한 번에 가져온다(N+1 방지).
+     * 매출에 이름이 이미 있으면 그대로 두고, 빈 것만 이 값으로 채운다 —
+     * 등록 당시 이름과 지금 마스터 이름이 다를 수 있어 덮어쓰지 않는다.
+     */
+    private Map<String, String> schoolNamesOf(Page<Sale> page) {
+        java.util.Set<String> codes = new java.util.HashSet<>();
+        page.forEach(s -> {
+            if (s.getSchoolCode() != null && !s.getSchoolCode().isBlank()
+                    && (s.getSchoolName() == null || s.getSchoolName().isBlank())) {
+                codes.add(s.getSchoolCode());
+            }
+        });
+        if (codes.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> names = new java.util.HashMap<>();
+        schoolRepository.findBySchoolCodeIn(codes)
+                .forEach(sc -> names.putIfAbsent(sc.getSchoolCode(), sc.getSchoolName()));
+        return names;
     }
 
     /** 페이지에 실린 학교코드의 학교/학원 구분을 한 번에 가져온다(N+1 방지). */

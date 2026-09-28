@@ -174,6 +174,14 @@ public class SaleController {
             @RequestParam(required = false) Long warehouseId,
             @Parameter(description = "출고 창고 id **다중선택**")
             @RequestParam(required = false) List<Long> warehouseIds,
+            @Parameter(description = "학교코드 **다중선택** — 9/27 회의 13-② '학교별 중복조회'. "
+                    + "한 거래처가 여러 학교에 나가므로 거래처만으로는 좁혀지지 않는다")
+            @RequestParam(required = false) List<String> schoolCodes,
+            @Parameter(description = """
+                    쿠폰 포함 카운트(9/27 회의 13-⑤). **기본 false** — 레거시 체크박스 기본값과 같다.
+                    false 면 도서명에 '쿠폰'이 든 상품의 **수량만** 0으로 본다(금액은 그대로).
+                    ‼️레거시와 같은 규칙이라 판별이 도서명 문자열이다.""")
+            @RequestParam(required = false, defaultValue = "false") boolean couponCount,
             @Parameter(description = "키워드 — 거래처명·도서명·도서코드·매출번호·학교명을 한 번에 훑는다(부분일치)")
             @RequestParam(required = false) String keyword,
             @Parameter(description = "취소건 포함 여부(기본 false)") @RequestParam(defaultValue = "false") boolean includeCanceled,
@@ -184,7 +192,7 @@ public class SaleController {
                 MultiSelect.merge(shipmentType, shipmentTypes),
                 MultiSelect.merge(partnerId, partnerIds),
                 MultiSelect.merge(warehouseId, warehouseIds),
-                keyword,
+                schoolCodes, keyword, couponCount,
                 includeCanceled, pageReq.toPageable(SALE_SORTS)));
     }
 
@@ -224,6 +232,10 @@ public class SaleController {
             @RequestParam(required = false) List<Long> partnerIds,
             @RequestParam(required = false) Long warehouseId,
             @RequestParam(required = false) List<Long> warehouseIds,
+            @Parameter(description = "학교코드 **다중선택**(조회와 같은 축)")
+            @RequestParam(required = false) List<String> schoolCodes,
+            @Parameter(description = "쿠폰 포함 카운트(기본 false — 조회와 같은 기본값)")
+            @RequestParam(required = false, defaultValue = "false") boolean couponCount,
             @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "false") boolean includeCanceled) {
         List<Col> cols = List.of(
@@ -251,7 +263,7 @@ public class SaleController {
                 MultiSelect.merge(shipmentType, shipmentTypes),
                 MultiSelect.merge(partnerId, partnerIds),
                 MultiSelect.merge(warehouseId, warehouseIds),
-                keyword,
+                schoolCodes, keyword, couponCount,
                 includeCanceled,
                 org.springframework.data.domain.PageRequest.of(0, EXPORT_MAX));
         byte[] xlsx = excel.toXlsx("통합매출조회", cols, page.getContent(),

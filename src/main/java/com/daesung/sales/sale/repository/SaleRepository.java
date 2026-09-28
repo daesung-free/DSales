@@ -330,6 +330,9 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
             + "and (:anyShipmentType = true or s.shipmentType in :shipmentTypes) "
             + "and (:anyPartner = true or s.partner.id in :partnerIds) "
             + "and (:anyWarehouse = true or w.id in :warehouseIds) "
+            // ★학교 축(9/27 항목 13-② "학교별 중복조회"). 한 거래처가 여러 학교에 나가므로
+            //   거래처만으로는 좁혀지지 않는다.
+            + "and (:anySchool = true or s.schoolCode in :schoolCodes) "
             // 키워드는 담당자가 화면에서 치는 값이다 — 거래처명·도서명·도서코드·매출번호·학교명을 함께 훑는다.
             // 어느 칸에 쳤는지 기억하고 고르게 하면 실무에서 안 쓴다.
             + "and (:keyword is null or lower(s.partner.name) like :keyword "
@@ -346,6 +349,8 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
                       @Param("partnerIds") Collection<Long> partnerIds,
                       @Param("anyWarehouse") boolean anyWarehouse,
                       @Param("warehouseIds") Collection<Long> warehouseIds,
+                      @Param("anySchool") boolean anySchool,
+                      @Param("schoolCodes") Collection<String> schoolCodes,
                       @Param("keyword") String keyword,
                       @Param("includeCanceled") boolean includeCanceled,
                       Pageable pageable);
