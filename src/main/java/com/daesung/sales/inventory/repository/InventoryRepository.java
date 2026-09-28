@@ -11,6 +11,8 @@ public interface InventoryRepository extends JpaRepository<Inventory, Long> {
 
     Optional<Inventory> findByProductIdAndWarehouseId(Long productId, Long warehouseId);
 
+    Optional<Inventory> findByMaterialIdAndWarehouseId(Long materialId, Long warehouseId);
+
     /**
      * 원자적 잔량 증감(입고/도착 +). {@code qty = qty + delta}를 DB 한 문장으로 처리(lost update 없음).
      * 반환값 = 영향 행수(0이면 행 없음 → 신규 생성 필요).
@@ -33,6 +35,34 @@ public interface InventoryRepository extends JpaRepository<Inventory, Long> {
                        @Param("warehouseId") Long warehouseId,
                        @Param("delta") int delta);
 
+    /**
+     * 자재 잔량 원자적 증감(V78). 도서 쪽 {@link #addQty}와 같은 이유로 read-modify-write 를 쓰지 않는다 —
+     * 같은 자재를 동시에 입고하면 한쪽이 유실된다.
+     */
+    @Modifying(clearAutomatically = true)
+    @Query("update Inventory i set i.qty = i.qty + :delta "
+            + "where i.material.id = :materialId and i.warehouse.id = :warehouseId")
+    int addMaterialQty(@Param("materialId") Long materialId,
+                       @Param("warehouseId") Long warehouseId,
+                       @Param("delta") int delta);
+
+    /**
+     * 자재 재고 현황. 잔량이 0인 자재도 낸다(한 번이라도 다룬 자재는 표에 남아야
+     * "없는 것"과 "0인 것"이 구분된다).
+     *
+     * <p>반환 Object[]: [materialId, code, name, materialType, warehouseId, warehouseName, qty].
+     */
+    @Query("select m.id, m.code, m.name, m.materialType, w.id, w.name, i.qty "
+            + "from Inventory i join i.material m join i.warehouse w "
+            + "where (:materialId is null or m.id = :materialId) "
+            + "  and (:warehouseId is null or w.id = :warehouseId) "
+            + "  and (:type is null or m.materialType = :type) "
+            + "order by m.materialType, m.code, w.id")
+    java.util.List<Object[]> materialStock(
+            @Param("materialId") Long materialId,
+            @Param("warehouseId") Long warehouseId,
+            @Param("type") com.daesung.sales.product.entity.MaterialType type);
+
     /** 창고의 재고 총합. 창고를 중지해도 되는지 판단하는 데 쓴다(0이어야 안전). */
     @org.springframework.data.jpa.repository.Query(
             "select coalesce(sum(i.qty), 0) from Inventory i where i.warehouse.id = :warehouseId")
@@ -44,10 +74,14 @@ public interface InventoryRepository extends JpaRepository<Inventory, Long> {
      * <p>‼️<b>사용 중인 창고만</b> 낸다 — 쓰지 않기로 한 창고가 도넛에 남으면
      * 담당자는 그 창고에 아직 물건이 있다고 읽는다.
      *
+     * <p>‼️<b>도서만</b> 센다(V78). 자재까지 합치면 권수와 장수가 한 숫자에 섞여
+     * 도넛의 크기가 아무 뜻도 갖지 못한다. 자재 재고는 자재 현황에서 따로 본다.
+     *
      * <p>반환 Object[]: [warehouseId, name, type, qty].
      */
     @Query("select w.id, w.name, w.type, coalesce(sum(i.qty), 0) "
-            + "from Inventory i join i.warehouse w where w.useYn = true "
+            + "from Inventory i join i.warehouse w "
+            + "where w.useYn = true and i.product is not null "
             + "group by w.id, w.name, w.type order by w.id")
     java.util.List<Object[]> stockQtyByWarehouse();
 }

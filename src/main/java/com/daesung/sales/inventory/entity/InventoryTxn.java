@@ -36,9 +36,21 @@ public class InventoryTxn extends com.daesung.sales.common.entity.SoftDeletableE
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /** 도서(상품) 거래면 채운다. <b>자재 거래면 null</b> — 한 행은 도서이거나 자재다(V78 CHECK). */
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "product_id", nullable = false)
+    @JoinColumn(name = "product_id")
     private Product product;
+
+    /**
+     * 자재 거래면 채운다. 도서 거래면 null.
+     *
+     * <p>근거: 9/27 회의 A-1 — 수불·자재를 매출프로그램이 단독 관리한다.
+     * 같은 원장에 두는 이유는 자재도 입고·이고·폐기·실사를 똑같이 겪기 때문이다
+     * (표를 나누면 그 동작과 전표취소·마감잠금이 전부 두 벌이 된다).
+     */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "material_id")
+    private com.daesung.sales.material.entity.Material material;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "warehouse_id", nullable = false)
@@ -88,6 +100,46 @@ public class InventoryTxn extends com.daesung.sales.common.entity.SoftDeletableE
                                        InboundType inboundType, LocalDate tradeDate, Partner partner,
                                        String memo, String refNo) {
         InventoryTxn t = inbound(product, warehouse, qty, unitCost, inboundType, tradeDate, partner, memo);
+        t.refNo = refNo;
+        return t;
+    }
+
+    /**
+     * 원 이벤트를 <b>반대 부호로</b> 되돌리는 이벤트(전표 취소 역분개).
+     *
+     * <p>★축(도서/자재)을 원본에서 그대로 복사한다. 예전엔 취소가 product 만 실어
+     * 자재 전표를 취소하면 NPE 로 500 이 났다 — 자재 축이 생긴 뒤의 함정이라 팩토리에 가둔다.
+     */
+    public static InventoryTxn reverseOf(InventoryTxn origin, int reverseQty,
+                                         LocalDate tradeDate, String refNo, String memo) {
+        InventoryTxn t = new InventoryTxn();
+        t.product = origin.product;
+        t.material = origin.material;
+        t.warehouse = origin.warehouse;
+        t.txnType = origin.txnType;
+        t.shipmentType = origin.shipmentType;
+        t.qty = reverseQty;
+        t.tradeDate = tradeDate;
+        t.refNo = refNo;
+        t.memo = memo;
+        return t;
+    }
+
+    /** 자재 입고. 도서 입고와 같은 원장에 남되 product 대신 material 을 채운다. */
+    public static InventoryTxn materialInbound(com.daesung.sales.material.entity.Material material,
+                                               Warehouse warehouse, int qty, Long unitCost,
+                                               InboundType inboundType, LocalDate tradeDate,
+                                               Partner partner, String memo, String refNo) {
+        InventoryTxn t = new InventoryTxn();
+        t.material = material;
+        t.warehouse = warehouse;
+        t.txnType = TxnType.INBOUND;
+        t.qty = qty;
+        t.unitCost = unitCost;
+        t.inboundType = (inboundType != null) ? inboundType : InboundType.NORMAL;
+        t.tradeDate = tradeDate;
+        t.partner = partner;
+        t.memo = memo;
         t.refNo = refNo;
         return t;
     }

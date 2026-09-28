@@ -12,6 +12,11 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
 
     /**
      * 상품별 매입원가(매입입고 unit_cost 가중평균 = Σ(qty×unit_cost)/Σqty). 외부콘텐츠 이익 계산용.
+     *
+     * <p>‼️{@code product_id IS NOT NULL} — 같은 원장에 자재 거래가 함께 있다(V78).
+     * 빼지 않으면 {@code GROUP BY product_id} 가 <b>키가 null 인 그룹</b>을 하나 더 내고,
+     * 호출부가 상품 id 로 만드는 맵에서 터진다. products 를 조인하는 쿼리는 이 걱정이 없지만
+     * 이 쿼리는 조인이 없어 그냥 딸려 온다.
      * 근거: 요구사항 8p 정정(2026-07-28) — PURCHASE(매입입고)로 등록된 입고만 매입 데이터로 집계.
      * 반환 Object[]: [productId, avgCost].
      */
@@ -19,6 +24,7 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
             SELECT product_id, COALESCE(SUM(qty * unit_cost) / NULLIF(SUM(qty), 0), 0) AS avg_cost
             FROM inventory_txn
             WHERE deleted_at IS NULL
+              AND product_id IS NOT NULL
               AND txn_type = 'INBOUND' AND inbound_type = 'PURCHASE' AND unit_cost IS NOT NULL
             GROUP BY product_id
             """, nativeQuery = true)
@@ -38,6 +44,7 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
             SELECT product_id, COALESCE(SUM(qty), 0), COALESCE(SUM(qty * COALESCE(unit_cost, 0)), 0)
             FROM inventory_txn
             WHERE deleted_at IS NULL
+              AND product_id IS NOT NULL
               AND txn_type = 'INBOUND' AND inbound_type = 'PURCHASE'
               AND trade_date BETWEEN :fromDate AND :toDate
             GROUP BY product_id
@@ -108,9 +115,14 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
      *
      * <p>{@link #findShipmentsByRefNo}와 달리 {@code shipmentType} 조건이 없다 —
      * 폐기(DISPOSE)·입고(INBOUND)에는 출고유형이 없기 때문이다.
+     *
+     * <p>‼️<b>product 는 LEFT JOIN 이어야 한다</b>(V78). 자재 거래는 product 가 null 이라
+     * INNER JOIN 이면 통째로 빠지고, 취소·삭제가 "전표가 없습니다"로 실패한다
+     * (자재 축을 넣고 실제로 이렇게 깨졌다). 이 메서드는 전표에 달린 <b>모든</b> 이벤트를
+     * 돌려준다는 약속이라 한 종류라도 빠지면 안 된다.
      */
-    @Query("select t from InventoryTxn t join fetch t.product join fetch t.warehouse"
-            + " where t.refNo = :refNo")
+    @Query("select t from InventoryTxn t left join fetch t.product left join fetch t.material"
+            + " join fetch t.warehouse where t.refNo = :refNo")
     List<InventoryTxn> findAllByRefNo(String refNo);
 
     /** 이고 도착다리 조회(위탁 반품 역-자동이고용). sourceTxn=출발다리인 도착 이벤트 → 위탁창고. */

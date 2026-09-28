@@ -45,6 +45,7 @@ public class InventoryController {
     private final InventoryService inventoryService;
     private final com.daesung.sales.common.audit.CurrentAuditor currentAuditor;
     private final com.daesung.sales.inventory.service.MaterialLedgerService materialLedgerService;
+    private final com.daesung.sales.inventory.service.MaterialStockService materialStockService;
     private final ExcelExportUtil excel;
 
     @Operation(summary = "전표 삭제(마감 前)",
@@ -406,4 +407,59 @@ public class InventoryController {
                 inventoryService.setRounds(setProductId, fromDate, toDate, warehouseType));
     }
 
+
+    // ── 자재 재고(V78) ──────────────────────────────────────────────────────────
+    // 근거: 9/27 회의 A-1 — "dsre는 매출만 변경, 매출에서는 수불·자재 다 관리" ·
+    //       항목 6 "자재별로 입고 가능하게" · 항목 22 "입고/대체등록에 자재 등록 내역이 보이게".
+
+    @Operation(summary = "자재 입고",
+            description = """
+                    자재(시험지·해설지·OMR·라벨·단행본)를 창고로 입고한다.
+
+                    ★도서 입고(`POST /stock/inbound`)와 **요청 모양이 같다** — `productId` 자리에
+                    `materialId` 가 올 뿐이다. 같은 화면에서 품목 종류만 바꿔 쓰는 동작이라 일부러 맞췄다.
+
+                    · 재고이벤트(INBOUND) 기록과 잔량 가산을 **한 트랜잭션**으로 처리한다.
+                    · 전표번호는 도서 입고와 같은 `IN-` 채번을 쓴다.
+                    · 잔량 갱신은 원자적 UPDATE — 같은 자재를 동시에 입고해도 유실되지 않는다.""")
+    @PostMapping("/materials/inbound")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResponse<com.daesung.sales.inventory.dto.MaterialInboundResponse> materialInbound(
+            @Valid @RequestBody com.daesung.sales.inventory.dto.MaterialInboundRequest req) {
+        return ApiResponse.success(materialStockService.inbound(req));
+    }
+
+    @Operation(summary = "자재 재고 현황",
+            description = """
+                    자재별 **현재 잔량**을 창고 단위로 낸다.
+
+                    ‼️제품수불부의 '자재 상세'(`GET /stock/ledger/materials`)와 **다른 것**이다.
+                    그쪽은 "세트가 팔리면서 자재가 몇 장 **쓰였나**"(소요량)이고,
+                    여기는 "그래서 지금 창고에 몇 장 **남았나**"(잔량)다.
+                    9/27 회의 전까지는 앞의 것만 있었다.
+
+                    잔량이 0인 자재도 낸다 — "취급한 적 없는 자재"와 "다 쓴 자재"는 다르다.""")
+    @GetMapping("/materials")
+    public ApiResponse<List<com.daesung.sales.inventory.dto.MaterialStockRow>> materialStock(
+            @Parameter(description = "자재 id 필터(미지정=전체)") @RequestParam(required = false) Long materialId,
+            @Parameter(description = "창고 id 필터(미지정=전체)") @RequestParam(required = false) Long warehouseId,
+            @Parameter(description = "자재구분 필터(시험지/해설지/OMR/라벨/단행본/기타 — 한글·코드명 모두 가능)")
+            @RequestParam(required = false) com.daesung.sales.product.entity.MaterialType materialType) {
+        return ApiResponse.success(materialStockService.stock(materialId, warehouseId, materialType));
+    }
+
+    @Operation(summary = "자재 재고 현황 엑셀 다운로드")
+    @GetMapping("/materials/export")
+    public ResponseEntity<byte[]> materialStockExport(
+            @RequestParam(required = false) Long materialId,
+            @RequestParam(required = false) Long warehouseId,
+            @RequestParam(required = false) com.daesung.sales.product.entity.MaterialType materialType) {
+        List<Col> cols = List.of(
+                new Col("자재코드", "materialCode"), new Col("자재명", "materialName"),
+                new Col("자재구분", "materialType"), new Col("창고", "warehouseName"),
+                new Col("현재잔량", "qty"));
+        byte[] xlsx = excel.toXlsx("자재재고현황", cols,
+                materialStockService.stock(materialId, warehouseId, materialType));
+        return excel.asDownload(xlsx, "자재재고현황.xlsx");
+    }
 }

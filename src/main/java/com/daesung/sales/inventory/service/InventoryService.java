@@ -235,13 +235,46 @@ public class InventoryService {
         int n = 0;
         for (InventoryTxn origin : inventoryTxnRepository.findAllByRefNo(refNo)) {
             int reverseDelta = -origin.getQty();
-            applyDelta(origin.getProduct(), origin.getWarehouse(), reverseDelta);
-            inventoryTxnRepository.save(InventoryTxn.shipment(
-                    origin.getProduct(), origin.getWarehouse(), reverseDelta,
-                    origin.getTxnType(), origin.getShipmentType(), reverseDate, refNo, memo));
+            applyTxnDelta(origin, reverseDelta);
+            inventoryTxnRepository.save(
+                    InventoryTxn.reverseOf(origin, reverseDelta, reverseDate, refNo, memo));
             n++;
         }
         return n;
+    }
+
+    /** 이벤트의 축(도서/자재)을 보고 알맞은 잔량에 delta 를 민다. 취소·삭제가 공통으로 쓴다. */
+    private void applyTxnDelta(InventoryTxn origin, int delta) {
+        if (origin.getMaterial() != null) {
+            applyMaterialDelta(origin.getMaterial(), origin.getWarehouse(), delta);
+        } else {
+            applyDelta(origin.getProduct(), origin.getWarehouse(), delta);
+        }
+    }
+
+    /**
+     * 자재 잔량 증감(V78). 도서와 같은 이유로 <b>원자적 UPDATE</b>만 쓴다 —
+     * 읽고 더해 저장하면 동시 입고에서 한쪽이 유실된다.
+     *
+     * <p>음수는 막지 않는다(도서와 동일 — 발주처 지시로 차단 규칙은 V56에서 걷어냈다).
+     *
+     * @return 처리 후 잔량
+     */
+    public int applyMaterialDelta(com.daesung.sales.material.entity.Material material,
+                                  Warehouse warehouse, int delta) {
+        int updated = inventoryRepository.addMaterialQty(material.getId(), warehouse.getId(), delta);
+        if (updated == 0) {
+            inventoryRepository.save(Inventory.createMaterial(material, warehouse, delta));
+            return delta;
+        }
+        return inventoryRepository.findByMaterialIdAndWarehouseId(material.getId(), warehouse.getId())
+                .map(Inventory::getQty)
+                .orElse(delta);
+    }
+
+    /** 이벤트가 가리키는 품목 코드(도서코드 또는 자재코드). 이력 문구용. */
+    private static String itemCode(InventoryTxn t) {
+        return (t.getMaterial() != null) ? t.getMaterial().getCode() : t.getProduct().getCode();
     }
 
     /**
@@ -712,7 +745,7 @@ public class InventoryService {
         // ‼️지운 내용을 먼저 남긴다 — 삭제 후에는 이 기록에만 남는다.
         StringBuilder sb = new StringBuilder("전표 삭제(").append(refNo).append(") ");
         for (InventoryTxn t : origins) {
-            sb.append(t.getProduct().getCode()).append(' ').append(t.getQty()).append("부 / ");
+            sb.append(itemCode(t)).append(' ').append(t.getQty()).append("부 / ");
         }
         statusHistoryService.record(StatusEntityType.INVENTORY_VOUCHER, origins.get(0).getId(),
                 "deleted", "false", "true", sb.append("사유: ").append(reason).toString());
@@ -744,17 +777,22 @@ public class InventoryService {
         //   **영속성 컨텍스트를 비운다** — 먼저 잔량을 밀면 뒤이은 markDeleted 가 detached 엔티티에
         //   걸려 조용히 아무것도 안 한다(실제로 이 순서로 짰다가 재고도 목록도 안 바뀌었다).
         //   삭제 표시를 먼저 확정(flush)하고, 잔량은 미리 빼둔 값으로 민다.
-        record Delta(Product product, Warehouse warehouse, int qty) {
+        record Delta(Product product, com.daesung.sales.material.entity.Material material,
+                     Warehouse warehouse, int qty) {
         }
         List<Delta> deltas = new ArrayList<>(txns.size());
         for (InventoryTxn t : txns) {
-            deltas.add(new Delta(t.getProduct(), t.getWarehouse(), t.getQty()));
+            deltas.add(new Delta(t.getProduct(), t.getMaterial(), t.getWarehouse(), t.getQty()));
             t.markDeleted(actor);
         }
         inventoryTxnRepository.flush();
 
         for (Delta d : deltas) {
-            applyDelta(d.product(), d.warehouse(), -d.qty());
+            if (d.material() != null) {
+                applyMaterialDelta(d.material(), d.warehouse(), -d.qty());
+            } else {
+                applyDelta(d.product(), d.warehouse(), -d.qty());
+            }
         }
         return txns.size();
     }

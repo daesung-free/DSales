@@ -29,9 +29,15 @@ public class Inventory extends BaseEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    /** 도서 잔량이면 채운다. <b>자재 잔량이면 null</b>(V78). */
     @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "product_id", nullable = false)
+    @JoinColumn(name = "product_id")
     private Product product;
+
+    /** 자재 잔량이면 채운다. 도서 잔량이면 null. */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "material_id")
+    private com.daesung.sales.material.entity.Material material;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "warehouse_id", nullable = false)
@@ -39,6 +45,16 @@ public class Inventory extends BaseEntity {
 
     @Column(nullable = false)
     private int qty;
+
+    /** 자재 잔량 행. */
+    public static Inventory createMaterial(com.daesung.sales.material.entity.Material material,
+                                           Warehouse warehouse, int qty) {
+        Inventory i = new Inventory();
+        i.material = material;
+        i.warehouse = warehouse;
+        i.qty = qty;
+        return i;
+    }
 
     public static Inventory create(Product product, Warehouse warehouse, int qty) {
         Inventory inv = new Inventory();
