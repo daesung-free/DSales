@@ -462,4 +462,74 @@ public class InventoryController {
                 materialStockService.stock(materialId, warehouseId, materialType));
         return excel.asDownload(xlsx, "자재재고현황.xlsx");
     }
+
+    @Operation(summary = "자재 이고(창고 이동)",
+            description = """
+                    자재를 창고 사이로 옮긴다. 출발 −수량 · 도착 +수량을 **한 트랜잭션**으로 처리하고
+                    전표번호(`TR-`)를 붙인다 — 번호가 있어야 나중에 되돌릴 수 있다.
+
+                    도서 이고(`POST /stock/transfer`)와 요청 모양이 같다(`productId` → `materialId`).""")
+    @PostMapping("/materials/transfer")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResponse<com.daesung.sales.inventory.dto.MaterialTransferResponse> materialTransfer(
+            @Valid @RequestBody com.daesung.sales.inventory.dto.MaterialTransferRequest req) {
+        return ApiResponse.success(materialStockService.transfer(req));
+    }
+
+    @Operation(summary = "자재 폐기",
+            description = """
+                    자재를 폐기한다. 전표번호(`P-`)를 붙이고 원장에는 **음수**로 기록한다(재고를 깎으므로).
+                    수량은 **양수로 보낸다** — 화면에서 "120장 버림"을 −120으로 입력하게 하지 않는다.
+
+                    ‼️**사유 칸이 없다.** 9/27 회의 A-3(항목 9)에서 폐기 사유 입력을 없애기로 확정됐다.
+                    비고는 남아 있다 — 사유를 강제하지 않는 것과 메모를 못 쓰게 하는 것은 다르다.""")
+    @PostMapping("/materials/dispose")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResponse<com.daesung.sales.inventory.dto.MaterialDisposalResponse> materialDispose(
+            @Valid @RequestBody com.daesung.sales.inventory.dto.MaterialDisposalRequest req) {
+        return ApiResponse.success(materialStockService.dispose(req));
+    }
+
+    @Operation(summary = "자재 거래 내역",
+            description = """
+                    자재의 **입고·이고·폐기·실사** 내역을 최근순으로 낸다.
+                    근거: 9/27 회의 항목 22 — "도서관리-자재관리, 입고/대체등록에 자재 등록한 내역이 보이게".
+
+                    도서 내역(`GET /stock/records`)과 **서로 섞이지 않는다** — 같은 원장에 있지만
+                    이쪽은 자재 행만, 저쪽은 도서 행만 낸다.
+
+                    자재·창고·작업구분은 **다중선택**이다(예: `kinds=INBOUND,DISPOSE`).""")
+    @GetMapping("/materials/records")
+    public ApiResponse<List<com.daesung.sales.inventory.dto.MaterialRecordRow>> materialRecords(
+            @Parameter(description = "시작일") @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @Parameter(description = "종료일") @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @Parameter(description = "자재 id **다중선택**") @RequestParam(required = false) List<Long> materialIds,
+            @Parameter(description = "창고 id **다중선택**") @RequestParam(required = false) List<Long> warehouseIds,
+            @Parameter(description = "작업구분 **다중선택**(INBOUND/TRANSFER/DISPOSE/ADJUST). 미지정=전체")
+            @RequestParam(required = false) List<com.daesung.sales.inventory.entity.TxnType> kinds) {
+        return ApiResponse.success(
+                materialStockService.records(fromDate, toDate, materialIds, warehouseIds, kinds));
+    }
+
+    @Operation(summary = "자재 거래 내역 엑셀 다운로드")
+    @GetMapping("/materials/records/export")
+    public ResponseEntity<byte[]> materialRecordsExport(
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @RequestParam(required = false) List<Long> materialIds,
+            @RequestParam(required = false) List<Long> warehouseIds,
+            @RequestParam(required = false) List<com.daesung.sales.inventory.entity.TxnType> kinds) {
+        List<Col> cols = List.of(
+                new Col("처리일자", "date"), new Col("작업구분", "kind"),
+                new Col("창고", "warehouse"), new Col("자재코드", "materialCode"),
+                new Col("자재명", "materialName"), new Col("자재구분", "materialType"),
+                new Col("증감수량", "qtyDelta"), new Col("입고단가", "unitCost"),
+                new Col("전표번호", "refNo"), new Col("비고", "memo"));
+        byte[] xlsx = excel.toXlsx("자재거래내역", cols,
+                materialStockService.records(fromDate, toDate, materialIds, warehouseIds, kinds),
+                Heading.period("자재거래내역", fromDate, toDate));
+        return excel.asDownload(xlsx, "자재거래내역.xlsx");
+    }
 }

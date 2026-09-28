@@ -38,6 +38,9 @@ class MaterialStockIntegrationTest extends IntegrationTestSupport {
     private Long material2;     // 자재구분_필터 전용
     private Long material3;     // 자재전표_취소 전용
     private Long material4;     // 도서리포트_격리 전용
+    private Long material5;     // 이고 전용
+    private Long material6;     // 폐기 전용
+    private Long warehouse2;    // 이고 도착창고
 
     @BeforeAll
     void seed() {
@@ -67,6 +70,12 @@ class MaterialStockIntegrationTest extends IntegrationTestSupport {
                 "code", "MSM3" + SFX, "name", "격리검증 라벨", "materialType", "라벨"));
         material4 = createId("/masters/materials", Map.of(
                 "code", "MSM4" + SFX, "name", "격리검증 해설지", "materialType", "해설지"));
+        material5 = createId("/masters/materials", Map.of(
+                "code", "MSM5" + SFX, "name", "이고검증 시험지", "materialType", "시험지"));
+        material6 = createId("/masters/materials", Map.of(
+                "code", "MSM6" + SFX, "name", "폐기검증 시험지", "materialType", "시험지"));
+        warehouse2 = createId("/masters/warehouses",
+                Map.of("code", "MSW2" + SFX, "name", "자재창고2", "type", "MAIN"));
     }
 
     private JsonNode materialInbound(Long materialId, int qty, Long unitCost) {
@@ -171,6 +180,79 @@ class MaterialStockIntegrationTest extends IntegrationTestSupport {
                 .as("입고/대체 내역 — 도서 화면이라 자재가 섞이면 안 된다").isEqualTo(recordsBefore);
         assertThat(data(get("/sales/book-inout?" + period)).toString())
                 .as("도서입출고현황").isEqualTo(bookInoutBefore);
+    }
+
+    @Test
+    @DisplayName("★자재 이고 — 출발에서 빠지고 도착으로 들어간다(한 트랜잭션)")
+    void 자재_이고() {
+        materialInbound(material5, 1000, 50L);
+
+        JsonNode r = post("/stock/materials/transfer", Map.of(
+                "processedDate", DATE, "fromWarehouseId", warehouse, "toWarehouseId", warehouse2,
+                "items", List.of(Map.of("materialId", material5, "qty", 400))));
+
+        assertThat(r.path("success").asBoolean()).as("%s", r).isTrue();
+        assertThat(data(r).path("transferNo").asText()).startsWith("TR-");
+        JsonNode line = data(r).path("lines").get(0);
+        assertThat(line.path("fromQty").asInt()).isEqualTo(600);
+        assertThat(line.path("toQty").asInt()).isEqualTo(400);
+
+        // 합은 보존된다 — 이고는 총량을 바꾸지 않는다.
+        JsonNode rows = data(get("/stock/materials?materialId=" + material5));
+        int sum = 0;
+        for (JsonNode row : rows) {
+            sum += row.path("qty").asInt();
+        }
+        assertThat(sum).as("창고를 옮겨도 총량은 그대로").isEqualTo(1000);
+    }
+
+    @Test
+    @DisplayName("같은 창고로 이고하면 400 — 아무 일도 안 일어나는 전표를 만들지 않는다")
+    void 같은창고_이고() {
+        JsonNode r = post("/stock/materials/transfer", Map.of(
+                "processedDate", DATE, "fromWarehouseId", warehouse, "toWarehouseId", warehouse,
+                "items", List.of(Map.of("materialId", material5, "qty", 1))));
+
+        assertThat(r.path("success").asBoolean()).isFalse();
+        assertThat(r.path("error").path("message").asText()).contains("같습니다");
+    }
+
+    @Test
+    @DisplayName("★자재 폐기 — 양수로 넣고 원장엔 음수로 남는다(사유 칸 없음, A-3)")
+    void 자재_폐기() {
+        materialInbound(material6, 500, 40L);
+
+        JsonNode r = post("/stock/materials/dispose", Map.of(
+                "processedDate", DATE, "warehouseId", warehouse,
+                "items", List.of(Map.of("materialId", material6, "qty", 120, "memo", "인쇄 불량"))));
+
+        assertThat(r.path("success").asBoolean()).as("%s", r).isTrue();
+        assertThat(data(r).path("disposalNo").asText()).startsWith("P-");
+        JsonNode line = data(r).path("lines").get(0);
+        assertThat(line.path("qty").asInt()).as("화면엔 양수").isEqualTo(120);
+        assertThat(line.path("currentQty").asInt()).isEqualTo(380);
+
+        // 원장은 음수로 남는다
+        JsonNode rec = data(get("/stock/materials/records?materialIds=" + material6
+                + "&kinds=DISPOSE"));
+        assertThat(rec).hasSize(1);
+        assertThat(rec.get(0).path("qtyDelta").asInt()).as("원장엔 음수").isEqualTo(-120);
+        assertThat(rec.get(0).path("kind").asText()).isEqualTo("폐기");
+    }
+
+    @Test
+    @DisplayName("★자재 내역(항목22) — 도서 내역과 서로 섞이지 않는다")
+    void 자재_내역() {
+        JsonNode rows = data(get("/stock/materials/records?fromDate=2092-01-01&toDate=2092-12-31"));
+        assertThat(rows).as("자재 거래가 잡힌다").isNotEmpty();
+        for (JsonNode r : rows) {
+            assertThat(r.hasNonNull("materialCode")).as("자재 행만 나온다").isTrue();
+        }
+
+        // 반대 방향 — 도서 내역에는 자재가 없다
+        for (JsonNode r : data(get("/stock/records?fromDate=2092-01-01&toDate=2092-12-31"))) {
+            assertThat(r.hasNonNull("bookCode")).as("도서 행만 나온다").isTrue();
+        }
     }
 
     /** 검증용 도서의 수불부 현재고. */

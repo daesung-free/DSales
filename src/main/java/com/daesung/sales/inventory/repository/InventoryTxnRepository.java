@@ -384,4 +384,31 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
                                    @Param("catCode") String catCode,
                                    @Param("productId") Long productId);
 
+
+    /**
+     * 자재 거래 내역(V78). 근거: 9/27 회의 항목 22 —
+     * "도서관리-자재관리, 입고/대체등록에 <b>자재 등록한 내역이 보이게</b>".
+     *
+     * <p>‼️{@code join fetch t.material} 은 INNER 라 도서 거래가 자연히 빠진다 —
+     * 도서 내역({@link #findStockRecords})과 서로 섞이지 않는 것이 이 조인의 역할이다.
+     */
+    @Query("""
+            select t from InventoryTxn t
+              join fetch t.material m join fetch t.warehouse w
+             where (cast(:fromDate as date) is null or t.tradeDate >= :fromDate)
+               and (cast(:toDate as date) is null or t.tradeDate <= :toDate)
+               and (:anyMaterial = true or m.id in :materialIds)
+               and (:anyWarehouse = true or w.id in :warehouseIds)
+               and (:anyKind = true or t.txnType in :kinds)
+             order by t.tradeDate desc, t.id desc
+            """)
+    List<InventoryTxn> findMaterialRecords(
+            @Param("fromDate") LocalDate fromDate,
+            @Param("toDate") LocalDate toDate,
+            @Param("anyMaterial") boolean anyMaterial,
+            @Param("materialIds") java.util.Collection<Long> materialIds,
+            @Param("anyWarehouse") boolean anyWarehouse,
+            @Param("warehouseIds") java.util.Collection<Long> warehouseIds,
+            @Param("anyKind") boolean anyKind,
+            @Param("kinds") java.util.Collection<com.daesung.sales.inventory.entity.TxnType> kinds);
 }

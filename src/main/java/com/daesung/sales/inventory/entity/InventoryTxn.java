@@ -125,6 +125,25 @@ public class InventoryTxn extends com.daesung.sales.common.entity.SoftDeletableE
         return t;
     }
 
+    /**
+     * 자재 거래 한 건(입고 외 — 이고·폐기·실사). 도서 쪽이 이벤트 종류마다 팩토리를 둔 것과 달리
+     * 자재는 <b>하나로 받는다</b>. 자재는 출고유형·입고구분 같은 매출 축이 없어 종류별로
+     * 다른 필드를 채울 일이 없기 때문이다 — 팩토리를 쪼개면 같은 코드가 네 벌이 된다.
+     */
+    public static InventoryTxn materialTxn(com.daesung.sales.material.entity.Material material,
+                                           Warehouse warehouse, TxnType txnType, int qty,
+                                           LocalDate tradeDate, String refNo, String memo) {
+        InventoryTxn t = new InventoryTxn();
+        t.material = material;
+        t.warehouse = warehouse;
+        t.txnType = txnType;
+        t.qty = qty;
+        t.tradeDate = tradeDate;
+        t.refNo = refNo;
+        t.memo = memo;
+        return t;
+    }
+
     /** 자재 입고. 도서 입고와 같은 원장에 남되 product 대신 material 을 채운다. */
     public static InventoryTxn materialInbound(com.daesung.sales.material.entity.Material material,
                                                Warehouse warehouse, int qty, Long unitCost,
