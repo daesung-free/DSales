@@ -40,6 +40,8 @@ class MaterialStockIntegrationTest extends IntegrationTestSupport {
     private Long material4;     // 도서리포트_격리 전용
     private Long material5;     // 이고 전용
     private Long material6;     // 폐기 전용
+    private Long material7;     // 폐기/파손 구분 전용
+    private Long material8;     // 출고·회수 전용
     private Long warehouse2;    // 이고 도착창고
 
     @BeforeAll
@@ -74,6 +76,10 @@ class MaterialStockIntegrationTest extends IntegrationTestSupport {
                 "code", "MSM5" + SFX, "name", "이고검증 시험지", "materialType", "시험지"));
         material6 = createId("/masters/materials", Map.of(
                 "code", "MSM6" + SFX, "name", "폐기검증 시험지", "materialType", "시험지"));
+        material7 = createId("/masters/materials", Map.of(
+                "code", "MSM7" + SFX, "name", "파손검증 시험지", "materialType", "시험지"));
+        material8 = createId("/masters/materials", Map.of(
+                "code", "MSM8" + SFX, "name", "출고검증 OMR", "materialType", "OMR"));
         warehouse2 = createId("/masters/warehouses",
                 Map.of("code", "MSW2" + SFX, "name", "자재창고2", "type", "MAIN"));
     }
@@ -217,17 +223,21 @@ class MaterialStockIntegrationTest extends IntegrationTestSupport {
         assertThat(r.path("error").path("message").asText()).contains("같습니다");
     }
 
+    private JsonNode io(Long materialId, String gubun, int qty) {
+        return post("/stock/materials/io", Map.of(
+                "processedDate", DATE, "warehouseId", warehouse, "io", gubun,
+                "items", List.of(Map.of("materialId", materialId, "qty", qty, "memo", "검증"))));
+    }
+
     @Test
     @DisplayName("★자재 폐기 — 양수로 넣고 원장엔 음수로 남는다(사유 칸 없음, A-3)")
     void 자재_폐기() {
         materialInbound(material6, 500, 40L);
 
-        JsonNode r = post("/stock/materials/dispose", Map.of(
-                "processedDate", DATE, "warehouseId", warehouse,
-                "items", List.of(Map.of("materialId", material6, "qty", 120, "memo", "인쇄 불량"))));
+        JsonNode r = io(material6, "DISPOSE", 120);
 
         assertThat(r.path("success").asBoolean()).as("%s", r).isTrue();
-        assertThat(data(r).path("disposalNo").asText()).startsWith("P-");
+        assertThat(data(r).path("refNo").asText()).startsWith("P-");
         JsonNode line = data(r).path("lines").get(0);
         assertThat(line.path("qty").asInt()).as("화면엔 양수").isEqualTo(120);
         assertThat(line.path("currentQty").asInt()).isEqualTo(380);
@@ -238,6 +248,70 @@ class MaterialStockIntegrationTest extends IntegrationTestSupport {
         assertThat(rec).hasSize(1);
         assertThat(rec.get(0).path("qtyDelta").asInt()).as("원장엔 음수").isEqualTo(-120);
         assertThat(rec.get(0).path("kind").asText()).isEqualTo("폐기");
+        assertThat(rec.get(0).path("io").asText()).isEqualTo("DISPOSE");
+    }
+
+    @Test
+    @DisplayName("★★폐기와 파손이 갈린다 — 잔량 효과가 같아 구분을 안 남기면 되돌릴 수 없다")
+    void 폐기와_파손() {
+        materialInbound(material7, 1000, 40L);
+
+        io(material7, "폐기", 100);        // 한글로도 받는다
+        io(material7, "파손", 30);
+
+        JsonNode rows = data(get("/stock/materials/records?materialIds=" + material7));
+        String kinds = rows.toString();
+        assertThat(kinds).contains("폐기").contains("파손");
+
+        int dispose = 0;
+        int damage = 0;
+        for (JsonNode r : rows) {
+            if ("DISPOSE".equals(r.path("io").asText())) {
+                dispose += -r.path("qtyDelta").asInt();
+            }
+            if ("DAMAGE".equals(r.path("io").asText())) {
+                damage += -r.path("qtyDelta").asInt();
+            }
+        }
+        assertThat(dispose).as("폐기 100").isEqualTo(100);
+        assertThat(damage).as("파손 30 — txnType 만 보면 둘 다 DISPOSE 라 뭉친다").isEqualTo(30);
+        assertThat(materialQty(material7)).isEqualTo(870);
+    }
+
+    @Test
+    @DisplayName("★자재 출고·회수 — 나가고 되돌아온다(DSRE 6종)")
+    void 출고와_회수() {
+        materialInbound(material8, 2000, 40L);
+
+        io(material8, "OUTBOUND", 800);
+        assertThat(materialQty(material8)).as("출고하면 준다").isEqualTo(1200);
+
+        io(material8, "RECOVER_ACCIDENT", 50);
+        io(material8, "RECOVER_RETURN", 30);
+        assertThat(materialQty(material8)).as("회수하면 는다").isEqualTo(1280);
+
+        JsonNode rows = data(get("/stock/materials/records?materialIds=" + material8));
+        assertThat(rows.toString())
+                .contains("출고").contains("회수(사고처리용)").contains("회수(반품)");
+    }
+
+    @Test
+    @DisplayName("입고는 이 API 로 안 받는다 — 거래처·단가가 빠진 채 들어가지 않게")
+    void 입고는_거부() {
+        JsonNode r = io(material8, "INBOUND", 10);
+
+        assertThat(r.path("success").asBoolean()).isFalse();
+        assertThat(r.path("error").path("message").asText()).contains("/stock/materials/inbound");
+    }
+
+    @Test
+    @DisplayName("모르는 구분이면 400 — 무엇이 가능한지 알려준다")
+    void 모르는_구분() {
+        JsonNode r = io(material8, "분실", 1);
+
+        assertThat(r.path("success").asBoolean()).isFalse();
+        assertThat(r.path("error").path("message").asText())
+                .contains("분실").contains("파손");
     }
 
     @Test

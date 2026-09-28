@@ -52,6 +52,15 @@ public class InventoryTxn extends com.daesung.sales.common.entity.SoftDeletableE
     @JoinColumn(name = "material_id")
     private com.daesung.sales.material.entity.Material material;
 
+    /**
+     * 자재 입출고 구분(V79). 자재 거래에만 값이 있다.
+     * {@link #txnType} 이 잔량을 계산하고, 이 축이 "무슨 일이었나"를 보존한다
+     * (회수 2종·폐기/파손이 txnType 만으로는 서로 뭉개진다).
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "material_io", length = 20)
+    private MaterialIo materialIo;
+
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "warehouse_id", nullable = false)
     private Warehouse warehouse;
@@ -118,6 +127,7 @@ public class InventoryTxn extends com.daesung.sales.common.entity.SoftDeletableE
         t.warehouse = origin.warehouse;
         t.txnType = origin.txnType;
         t.shipmentType = origin.shipmentType;
+        t.materialIo = origin.materialIo;
         t.qty = reverseQty;
         t.tradeDate = tradeDate;
         t.refNo = refNo;
@@ -133,10 +143,18 @@ public class InventoryTxn extends com.daesung.sales.common.entity.SoftDeletableE
     public static InventoryTxn materialTxn(com.daesung.sales.material.entity.Material material,
                                            Warehouse warehouse, TxnType txnType, int qty,
                                            LocalDate tradeDate, String refNo, String memo) {
+        return materialTxn(material, warehouse, txnType, null, qty, tradeDate, refNo, memo);
+    }
+
+    /** 입출고 구분까지 남기는 자재 거래(V79). 부호는 호출부가 이미 붙여서 넘긴다. */
+    public static InventoryTxn materialTxn(com.daesung.sales.material.entity.Material material,
+                                           Warehouse warehouse, TxnType txnType, MaterialIo io,
+                                           int qty, LocalDate tradeDate, String refNo, String memo) {
         InventoryTxn t = new InventoryTxn();
         t.material = material;
         t.warehouse = warehouse;
         t.txnType = txnType;
+        t.materialIo = io;
         t.qty = qty;
         t.tradeDate = tradeDate;
         t.refNo = refNo;
@@ -153,6 +171,7 @@ public class InventoryTxn extends com.daesung.sales.common.entity.SoftDeletableE
         t.material = material;
         t.warehouse = warehouse;
         t.txnType = TxnType.INBOUND;
+        t.materialIo = MaterialIo.INBOUND;   // 자재 내역 표에서 '입고'로 읽히도록 구분도 남긴다
         t.qty = qty;
         t.unitCost = unitCost;
         t.inboundType = (inboundType != null) ? inboundType : InboundType.NORMAL;

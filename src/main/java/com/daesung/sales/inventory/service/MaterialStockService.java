@@ -4,14 +4,15 @@ import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.common.sequence.SequenceService;
 import com.daesung.sales.common.query.MultiSelect;
-import com.daesung.sales.inventory.dto.MaterialDisposalRequest;
-import com.daesung.sales.inventory.dto.MaterialDisposalResponse;
 import com.daesung.sales.inventory.dto.MaterialInboundRequest;
 import com.daesung.sales.inventory.dto.MaterialInboundResponse;
+import com.daesung.sales.inventory.dto.MaterialIoRequest;
+import com.daesung.sales.inventory.dto.MaterialIoResponse;
 import com.daesung.sales.inventory.dto.MaterialRecordRow;
 import com.daesung.sales.inventory.dto.MaterialStockRow;
 import com.daesung.sales.inventory.dto.MaterialTransferRequest;
 import com.daesung.sales.inventory.dto.MaterialTransferResponse;
+import com.daesung.sales.inventory.entity.MaterialIo;
 import com.daesung.sales.inventory.entity.TxnType;
 import com.daesung.sales.inventory.entity.InventoryTxn;
 import com.daesung.sales.inventory.repository.InventoryRepository;
@@ -121,27 +122,45 @@ public class MaterialStockService {
     }
 
     /**
-     * 자재 폐기. 전표번호(P-)를 붙이고 원장에는 <b>음수</b>로 기록한다(재고를 깎으므로).
-     * 화면에는 양수로 보여야 해서 응답에서 부호를 되돌린다 — 도서 폐기와 같은 규율이다.
+     * 자재 입출고 등록(입고 외 5종) — 출고·회수2종·폐기·파손.
+     *
+     * <p>근거: 9/27 회의 항목 22 "dsre 자재입출고관리 참고". DSRE({@code FM_LOGI_MatInOut.cs})가
+     * 한 화면에서 구분을 골라 처리하는 구조라 그대로 맞췄다.
+     *
+     * <p>★<b>부호는 여기서 붙인다.</b> 화면은 언제나 양수를 보낸다 —
+     * "120장 버림"을 담당자가 −120으로 입력하게 하지 않는다.
+     *
+     * <p>전표번호는 폐기 계열이면 {@code P-}, 들어오는 계열이면 {@code IN-} 을 쓴다.
+     * 출고는 매출 전표(I-)와 섞이면 안 되므로 폐기와 같은 {@code P-} 계열을 쓴다 —
+     * 자재 출고는 매출이 아니라 소모다.
      */
     @Transactional
-    public MaterialDisposalResponse dispose(MaterialDisposalRequest req) {
+    public MaterialIoResponse io(MaterialIoRequest req) {
+        if (req.io() == MaterialIo.INBOUND) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "입고는 이 API 로 등록하지 않습니다. 거래처·입고단가가 필요해 "
+                            + "POST /stock/materials/inbound 를 쓰세요.");
+        }
         Warehouse warehouse = warehouse(req.warehouseId(), "창고");
-        String disposalNo = "P-" + req.processedDate().format(YYYYMMDD) + "-"
-                + sequenceService.next(SequenceService.SEQ_PURGE);
 
-        List<MaterialDisposalResponse.Line> lines = new ArrayList<>();
-        for (MaterialDisposalRequest.Item item : req.items()) {
+        String prefix = req.io().isOutgoing() ? "P-" : "IN-";
+        String seq = req.io().isOutgoing() ? SequenceService.SEQ_PURGE : SequenceService.SEQ_INBOUND;
+        String refNo = prefix + req.processedDate().format(YYYYMMDD) + "-" + sequenceService.next(seq);
+
+        List<MaterialIoResponse.Line> lines = new ArrayList<>();
+        for (MaterialIoRequest.Item item : req.items()) {
             Material material = material(item.materialId());
+            int delta = req.io().sign() * item.qty();
 
-            int balance = inventoryService.applyMaterialDelta(material, warehouse, -item.qty());
-            inventoryTxnRepository.save(InventoryTxn.materialTxn(material, warehouse, TxnType.DISPOSE,
-                    -item.qty(), req.processedDate(), disposalNo, item.memo()));
+            int balance = inventoryService.applyMaterialDelta(material, warehouse, delta);
+            inventoryTxnRepository.save(InventoryTxn.materialTxn(material, warehouse,
+                    req.io().txnType(), req.io(), delta, req.processedDate(), refNo, item.memo()));
 
-            lines.add(new MaterialDisposalResponse.Line(material.getId(), material.getCode(),
+            lines.add(new MaterialIoResponse.Line(material.getId(), material.getCode(),
                     material.getName(), item.qty(), balance));
         }
-        return new MaterialDisposalResponse(disposalNo, warehouse.getId(), warehouse.getName(), lines);
+        return new MaterialIoResponse(refNo, req.io().name(), req.io().label(),
+                warehouse.getId(), warehouse.getName(), lines);
     }
 
     /**
@@ -158,22 +177,28 @@ public class MaterialStockService {
                         MultiSelect.isAny(kinds),
                         MultiSelect.orPlaceholder(kinds, TxnType.INBOUND)).stream()
                 .map(t -> new MaterialRecordRow(
-                        t.getId(), t.getTradeDate(), kindLabel(t.getTxnType()),
+                        t.getId(), t.getTradeDate(), ioLabel(t),
                         t.getWarehouse().getId(), t.getWarehouse().getName(),
                         t.getMaterial().getId(), t.getMaterial().getCode(),
                         t.getMaterial().getName(), t.getMaterial().getMaterialType(),
-                        t.getQty(), t.getUnitCost(), t.getRefNo(), t.getMemo()))
+                        t.getMaterialIo(), t.getQty(), t.getUnitCost(), t.getRefNo(), t.getMemo()))
                 .toList();
     }
 
-    /** 화면 표기. 담당자는 INBOUND 가 아니라 '입고'라고 읽는다. */
-    private static String kindLabel(TxnType type) {
-        return switch (type) {
-            case INBOUND -> "입고";
+    /**
+     * 화면 표기. 담당자는 OUTBOUND 가 아니라 '출고'라고 읽는다.
+     *
+     * <p>입출고 구분이 있으면 그 표기를 쓴다 — 폐기와 파손, 회수 2종이 여기서 갈린다.
+     * 이고는 우리 축이라 구분이 없다(DSRE 에 창고 개념이 없어 대응 구분도 없다).
+     */
+    private static String ioLabel(InventoryTxn t) {
+        if (t.getMaterialIo() != null) {
+            return t.getMaterialIo().label();
+        }
+        return switch (t.getTxnType()) {
             case TRANSFER -> "단순이고";
-            case DISPOSE -> "폐기";
             case ADJUST -> "실사";
-            default -> type.name();
+            default -> t.getTxnType().name();
         };
     }
 

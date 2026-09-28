@@ -476,18 +476,27 @@ public class InventoryController {
         return ApiResponse.success(materialStockService.transfer(req));
     }
 
-    @Operation(summary = "자재 폐기",
+    @Operation(summary = "자재 입출고 등록(출고·회수·폐기·파손)",
             description = """
-                    자재를 폐기한다. 전표번호(`P-`)를 붙이고 원장에는 **음수**로 기록한다(재고를 깎으므로).
-                    수량은 **양수로 보낸다** — 화면에서 "120장 버림"을 −120으로 입력하게 하지 않는다.
+                    DSRE2 자재입출고관리(`FM_LOGI_MatInOut`)의 구분을 그대로 옮긴 등록 API 다.
+                    근거: 9/27 회의 항목 22 "dsre 자재입출고관리 참고".
 
-                    ‼️**사유 칸이 없다.** 9/27 회의 A-3(항목 9)에서 폐기 사유 입력을 없애기로 확정됐다.
-                    비고는 남아 있다 — 사유를 강제하지 않는 것과 메모를 못 쓰게 하는 것은 다르다.""")
-    @PostMapping("/materials/dispose")
+                    | 구분 | 잔량 |
+                    |---|---|
+                    | `OUTBOUND` 출고 — 시행·작업으로 나감(**자재가 줄어드는 주 경로**) | − |
+                    | `RECOVER_ACCIDENT` 회수(사고처리용) · `RECOVER_RETURN` 회수(반품) | + |
+                    | `DISPOSE` 폐기 · `DAMAGE` 파손 | − |
+
+                    · **수량은 언제나 양수로 보낸다.** 나가는 구분이면 서버가 음수로 기록한다.
+                    · 구분은 한글로도 받는다(화면이 목록에서 고른 값을 그대로 되보내므로).
+                    · ‼️**폐기와 파손은 잔량 효과가 같아 이 구분으로만 갈린다** — 뭉치면 되돌릴 수 없다.
+                    · ‼️**사유 칸이 없다**(9/27 A-3, 항목 9). 비고는 남아 있다.
+                    · `INBOUND`(입고)는 거래처·단가가 필요해 전용 API(`/stock/materials/inbound`)를 쓴다.""")
+    @PostMapping("/materials/io")
     @ResponseStatus(HttpStatus.CREATED)
-    public ApiResponse<com.daesung.sales.inventory.dto.MaterialDisposalResponse> materialDispose(
-            @Valid @RequestBody com.daesung.sales.inventory.dto.MaterialDisposalRequest req) {
-        return ApiResponse.success(materialStockService.dispose(req));
+    public ApiResponse<com.daesung.sales.inventory.dto.MaterialIoResponse> materialIo(
+            @Valid @RequestBody com.daesung.sales.inventory.dto.MaterialIoRequest req) {
+        return ApiResponse.success(materialStockService.io(req));
     }
 
     @Operation(summary = "자재 거래 내역",
