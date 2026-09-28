@@ -34,7 +34,17 @@ public record TaxInvoiceResponse(
     public record Item(
             @Schema(description = "품목(도서명)") String name,
             @Schema(description = "공급가액") long supply,
-            @Schema(description = "세액") long tax
+            @Schema(description = "세액") long tax,
+            @Schema(description = """
+                    수량(반품은 음수로 상계). 홈택스 양식의 '수량N' 칸 —
+                    9/27 회의 항목 16 "기존 첨부 홈택스 양식은 더 상세함".""")
+            long qty,
+            @Schema(description = """
+                    단가. 홈택스 양식의 '단가N' 칸.
+                    ‼️**한 품목이 여러 매출 라인의 합**이라 단가가 라인마다 다르면 하나로 정할 수 없다.
+                    그럴 때는 <b>비운다</b>(null) — 아무 값이나 넣으면 단가×수량이 공급가액과
+                    어긋나 신고 파일이 틀린 것으로 보인다. 홈택스에서 단가는 선택 항목이다.""")
+            Long unitPrice
     ) {
     }
 }

@@ -130,9 +130,13 @@ public class TaxInvoiceExcelExporter {
                 TaxInvoiceResponse.Item it = chunk.get(n);
                 r.add(day);            // 일자
                 r.add(it.name());      // 품목
+                // 규격은 우리 도서 마스터에 대응 항목이 없다(레거시도 비운다).
                 r.add("");             // 규격
-                r.add("");             // 수량
-                r.add("");             // 단가
+                // ★수량·단가는 9/27 항목 16으로 채우기 시작했다("기존 첨부 홈택스 양식은 더 상세함").
+                //   레거시는 둘 다 비웠는데, 양식에는 칸이 있어 파일이 비어 보였다.
+                r.add(it.qty());       // 수량
+                // 단가는 라인마다 다르면 null 이다 — 그때는 비운다(임의값은 공급가액과 어긋난다).
+                r.add(it.unitPrice() == null ? "" : it.unitPrice());
                 r.add(it.supply());    // 공급가액
                 if (taxable) {
                     r.add(it.tax());   // 세액

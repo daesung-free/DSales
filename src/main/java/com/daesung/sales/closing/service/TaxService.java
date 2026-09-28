@@ -173,8 +173,12 @@ public class TaxService {
         for (Object[] r : saleRepository.taxInvoiceLines(from, to, partnerId, filter)) {
             Key key = new Key(num(r[0]), (String) r[4]);
             nameByKey.putIfAbsent(key, (String) r[1]);
+            // 단가는 그 품목의 매출 라인이 **모두 같은 단가일 때만** 싣는다(가짓수 1).
+            // 섞여 있으면 비운다 — 임의값을 넣으면 단가×수량이 공급가액과 어긋난다.
+            Long unitPrice = (num(r[8]) == 1L) ? num(r[9]) : null;
             itemsByKey.computeIfAbsent(key, k -> new ArrayList<>())
-                    .add(new TaxInvoiceResponse.Item((String) r[3], num(r[5]), num(r[6])));
+                    .add(new TaxInvoiceResponse.Item((String) r[3], num(r[5]), num(r[6]),
+                            num(r[7]), unitPrice));
             long[] t = totalByKey.computeIfAbsent(key, k -> new long[2]);
             t[0] += num(r[5]); t[1] += num(r[6]);
         }

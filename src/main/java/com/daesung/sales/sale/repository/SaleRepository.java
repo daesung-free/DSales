@@ -552,7 +552,13 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
             SELECT s.partner_id, pt.name, s.product_id, p.name,
               CASE WHEN s.tax = 0 THEN 'FREE' ELSE 'TAXABLE' END AS tax_bucket,
               COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN -s.supply_amount ELSE s.supply_amount END),0) AS supply,
-              COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN -s.tax ELSE s.tax END),0) AS tax
+              COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN -s.tax ELSE s.tax END),0) AS tax,
+              -- 홈택스 양식의 수량·단가 칸(9/27 항목 16). 반품은 음수로 상계한다 —
+              -- 공급가액과 같은 부호 규칙이어야 단가 역산이 어긋나지 않는다.
+              COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN -s.qty ELSE s.qty END),0) AS qty,
+              -- 단가가 라인마다 다르면 하나로 정할 수 없다. 서로 다른 값의 가짓수를 함께 센다.
+              COUNT(DISTINCT s.unit_price) AS price_kinds,
+              MIN(s.unit_price) AS unit_price
             FROM sales s
               JOIN partners pt ON pt.id = s.partner_id
               JOIN products p ON p.id = s.product_id
