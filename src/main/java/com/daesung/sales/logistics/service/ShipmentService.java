@@ -231,8 +231,52 @@ public class ShipmentService {
         }
     }
 
+    /**
+     * 발송 건 <b>삭제</b>(9/27 회의 항목 20 ② — "확인 되돌리기 → 삭제").
+     *
+     * <p>레거시가 하던 그대로다 — {@code 작업요청서.vb:1181} 의 우클릭 '삭제'가
+     * {@code sendData.isDelete = 2} 를 쓴다(주석: {@code 1:발주처에서 삭제 / 2:물류에서 삭제}).
+     * <b>확인 표시를 내리는 것이 아니라 발송 건 자체를 없애는 것</b>이다.
+     *
+     * <p>★<b>행은 지우지 않는다.</b> 목록에는 남고 화면이 취소선으로 표시한다
+     * (레거시 768행이 그렇게 그린다). 숨겨 버리면 "취소된 건"과 "원래 없던 건"이 구분되지 않아
+     * 담당자가 같은 발송을 다시 만든다. 대신 출력·확인·발송 처리에서는 빠진다.
+     *
+     * <p>사유는 <b>선택</b>이다(9/27 A-3). 없으면 이력에 "(사유 미입력)"으로 적는다.
+     *
+     * @return 이번 호출로 삭제됐으면 true(이미 삭제된 건이면 false — 이미 원하는 상태다)
+     */
+    @Transactional
+    public boolean delete(Long shipmentId, String reason) {
+        Shipment s = shipmentRepository.findByIdIncludingDeleted(shipmentId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                        "발송 건이 없습니다. id=" + shipmentId));
+        if (s.getDeletedAt() != null) {
+            return false;
+        }
+        s.markDeleted(currentAuditor.username());
+        statusHistoryService.record(StatusEntityType.SHIPMENT, shipmentId,
+                "deleted", "false", "true", orNoReason(reason));
+        return true;
+    }
+
+    /**
+     * 삭제된 건이면 거부한다. 출력·확인·발송정보 입력이 공통으로 쓴다 —
+     * 레거시도 삭제분을 {@code Continue For} 로 건너뛴다(377·890·1016행).
+     */
+    private static void assertNotDeleted(Shipment s) {
+        if (s.getDeletedAt() != null) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "삭제된 발송 건입니다. 작업 대상이 아닙니다.");
+        }
+    }
+
     private Shipment getOrThrow(Long id) {
-        return shipmentRepository.findById(id)
+        return shipmentRepository.findByIdIncludingDeleted(id)
+                .map(s -> {
+                    assertNotDeleted(s);
+                    return s;
+                })
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "발송 건이 없습니다. id=" + id));
     }
 }

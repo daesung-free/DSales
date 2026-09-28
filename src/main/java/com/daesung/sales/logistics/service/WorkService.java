@@ -115,7 +115,10 @@ public class WorkService {
         }
 
         List<WorkOrderResponse> out = new ArrayList<>();
-        for (Shipment s : shipmentRepository.search(from, to, tradeClass, partnerId, printed, acknowledged, deliveryType)) {
+        // ★삭제된 건도 함께 읽는다(레거시와 같다 — 취소선으로 보여주고 작업 대상에서만 뺀다).
+        for (Shipment s : shipmentRepository.findAllIncludingDeleted(from, to, tradeClass, partnerId,
+                toFlag(printed), toFlag(acknowledged),
+                deliveryType == null ? null : deliveryType.name())) {
             List<WorkOrderResponse.Line> lines = linesByKey.getOrDefault(
                     key(s.getTradeDate(), s.getPartner().getId(), s.getSchoolCode(), s.getTradeClass()),
                     List.of());
@@ -123,7 +126,9 @@ public class WorkService {
             DeliveryType dt = s.getDeliveryType();
             out.add(new WorkOrderResponse(s.getId(), s.getTradeClass(), s.getTradeDate(),
                     s.getPartner().getCode(), s.getPartner().getName(),
-                    s.getSchoolCode(), s.getSchoolName(), s.getPrintedAt() != null,
+                    s.getSchoolCode(), s.getSchoolName(),
+                    s.getDeletedAt() != null,
+                    s.getPrintedAt() != null,
                     s.getAcknowledgedAt() != null, s.getAcknowledgedBy(),
                     s.getBoxCount(), s.getSentDate(), s.getSendMemo(),
                     dt, (dt == null) ? null : dt.label(),
@@ -137,5 +142,14 @@ public class WorkService {
     /** 매출구분이 비어 있는 상품은 '기타'로 묶는다 — 빈 키로 두면 화면에 이름 없는 칸이 생긴다. */
     private static String blankToEtc(String tradeClass) {
         return (tradeClass == null || tradeClass.isBlank()) ? "기타" : tradeClass;
+    }
+
+    /**
+     * 네이티브 쿼리에 넘길 3-상태 플래그. null=전체 / true=1 / false=0.
+     * ‼️JPQL 과 달리 네이티브에서는 Boolean 을 그대로 비교하면 드라이버·DB 마다 다르게 풀려
+     * "전체"가 조용히 "false 만"으로 좁혀진다. 숫자로 고정한다.
+     */
+    private static Integer toFlag(Boolean v) {
+        return (v == null) ? null : (v ? 1 : 0);
     }
 }

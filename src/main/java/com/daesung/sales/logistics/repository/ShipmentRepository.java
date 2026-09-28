@@ -62,4 +62,41 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long> {
                and s.printedAt is null
             """)
     int countUnprinted(@Param("from") LocalDate from, @Param("to") LocalDate to);
+
+    /**
+     * 작업요청서 조회 — <b>삭제된 건까지</b>(9/27 회의 항목 20 ②).
+     *
+     * <p>★{@code @SQLRestriction} 때문에 JPQL 로는 삭제분을 볼 수 없다. 네이티브로 우회한다.
+     *
+     * <p>★<b>왜 삭제분을 보여줘야 하는가</b> — 레거시가 그렇게 한다.
+     * 목록에서 지우지 않고 <b>취소선+회색</b>으로 남긴다({@code 작업요청서.vb:768}).
+     * 숨겨 버리면 "취소된 건"과 "원래 없던 건"이 구분되지 않아, 담당자가 같은 발송을 다시 만든다.
+     * 대신 출력·확인·발송 대상에서는 빠진다(레거시 377·890·1016행도 {@code Continue For}).
+     */
+    @Query(value = """
+            SELECT s.* FROM shipment s
+              JOIN partners p ON p.id = s.partner_id
+             WHERE s.trade_date BETWEEN :from AND :to
+               AND (:tradeClass IS NULL OR s.trade_class = :tradeClass)
+               AND (CAST(:partnerId AS SIGNED) IS NULL OR p.id = :partnerId)
+               AND (CAST(:printed AS SIGNED) IS NULL
+                    OR (:printed = 1 AND s.printed_at IS NOT NULL)
+                    OR (:printed = 0 AND s.printed_at IS NULL))
+               AND (CAST(:acknowledged AS SIGNED) IS NULL
+                    OR (:acknowledged = 1 AND s.acknowledged_at IS NOT NULL)
+                    OR (:acknowledged = 0 AND s.acknowledged_at IS NULL))
+               AND (:deliveryType IS NULL OR s.delivery_type = :deliveryType)
+             ORDER BY s.trade_date DESC, p.code, s.school_code
+            """, nativeQuery = true)
+    List<Shipment> findAllIncludingDeleted(@Param("from") LocalDate from,
+                                           @Param("to") LocalDate to,
+                                           @Param("tradeClass") String tradeClass,
+                                           @Param("partnerId") Long partnerId,
+                                           @Param("printed") Integer printed,
+                                           @Param("acknowledged") Integer acknowledged,
+                                           @Param("deliveryType") String deliveryType);
+
+    /** 삭제된 건 포함 단건 조회 — 삭제 대상을 찾을 때 쓴다(@SQLRestriction 우회). */
+    @Query(value = "SELECT * FROM shipment WHERE id = :id", nativeQuery = true)
+    Optional<Shipment> findByIdIncludingDeleted(@Param("id") Long id);
 }

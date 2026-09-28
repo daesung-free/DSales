@@ -20,6 +20,13 @@ public record WorkOrderResponse(
         @Schema(description = "거래처명") String partnerName,
         @Schema(description = "학교코드") String schoolCode,
         @Schema(description = "학교명") String schoolName,
+        @Schema(description = """
+                삭제 여부(9/27 회의 항목 20 ②). **목록에서 지우지 않고 표시만 한다** —
+                레거시가 취소선+회색으로 남긴다(작업요청서.vb:768). 숨기면 '취소된 건'과
+                '원래 없던 건'이 구분되지 않아 담당자가 같은 발송을 다시 만든다.
+                ‼️출력·확인·발송 처리에서는 빠진다.""")
+        boolean deleted,
+
         @Schema(description = "출력 여부") boolean printed,
         @Schema(description = "확인 여부(출력 다음 단계). ⚠️레거시 '완료'와는 다른 축이다") boolean acknowledged,
         @Schema(description = "확인 처리자") String acknowledgedBy,

@@ -23,6 +23,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -123,6 +124,27 @@ public class WorkController {
     public ApiResponse<Boolean> revertPrinted(@PathVariable Long id,
                                               @Valid @RequestBody(required = false) ReasonRequest req) {
         return ApiResponse.success(shipmentService.revertPrinted(id, ReasonRequest.reasonOf(req)));
+    }
+
+    @Operation(summary = "작업요청서 삭제",
+            description = """
+                    발송 건을 **삭제**한다. 근거: 9/27 회의 항목 20 ② "'확인 되돌리기' → '삭제'".
+
+                    ★**확인 표시를 내리는 것이 아니다.** 레거시 `작업요청서.vb:1181` 의 우클릭 '삭제'가
+                    `sendData.isDelete = 2` 를 쓴다(주석: `1:발주처에서 삭제 / 2:물류에서 삭제`).
+                    발송 건 자체를 없애는 동작이다. 확인만 내리려면 `/acknowledge/revert` 를 쓴다.
+
+                    · **행은 지우지 않는다.** 목록에는 `deleted=true` 로 남고 화면이 취소선으로 표시한다
+                      (레거시도 지우지 않고 회색 취소선으로 그린다). 숨기면 '취소된 건'과
+                      '원래 없던 건'이 구분되지 않아 담당자가 같은 발송을 다시 만든다.
+                    · 삭제된 건은 **출력·확인·발송정보 입력에서 400** — 레거시도 작업 루프에서 건너뛴다.
+                    · **사유는 선택**(9/27 A-3). 없으면 이력에 `(사유 미입력)`으로 적힌다.
+                    · 이미 삭제된 건이면 `false`.""")
+    @DeleteMapping("/work-orders/{id}")
+    public ApiResponse<Boolean> deleteWorkOrder(
+            @PathVariable Long id,
+            @Valid @RequestBody(required = false) ReasonRequest req) {
+        return ApiResponse.success(shipmentService.delete(id, ReasonRequest.reasonOf(req)));
     }
 
     @Operation(summary = "작업 확인 표시",
