@@ -94,6 +94,11 @@ class DisposalUploadIntegrationTest extends IntegrationTestSupport {
                 + "&dryRun=" + dryRun, bytes, "폐기.xlsx");
     }
 
+    /** 처리일자·창고 없이 파일만 읽는 호출(화면이 그리드를 채울 때 쓴다). */
+    private JsonNode parseOnly(byte[] bytes) {
+        return multipart("/disposals/upload?dryRun=true", bytes, "폐기.xlsx");
+    }
+
     /** ‼️수불부는 **페이지**로 온다 — content 를 꺼내지 않으면 조용히 0이 나온다. */
     private int stockOf(Long productId) {
         JsonNode rows = data(get("/stock/ledger?fromDate=2093-01-01&toDate=2093-12-31"
@@ -173,5 +178,51 @@ class DisposalUploadIntegrationTest extends IntegrationTestSupport {
         assertThat(data(r).path("ok").asInt()).isEqualTo(1);
         assertThat(data(r).hasNonNull("disposalNo")).isFalse();
         assertThat(stockOf(productA)).as("재고는 그대로").isEqualTo(before);
+    }
+
+    @Test
+    @DisplayName("★파일만 읽을 땐 처리일자·창고가 없어도 된다 — 아직 어느 창고에서 뺄지 고르기 전이다")
+    void 파일만_읽기() throws Exception {
+        JsonNode r = parseOnly(xlsx(new String[][]{{codeA, "5"}, {codeB, "7"}}));
+
+        assertThat(r.path("success").asBoolean()).as("%s", r).isTrue();
+        assertThat(data(r).path("ok").asInt()).isEqualTo(2);
+        assertThat(data(r).hasNonNull("disposalNo")).as("등록은 일어나지 않는다").isFalse();
+        // 화면이 그리드에 채울 수 있게 도서명·수량이 함께 온다.
+        assertThat(data(r).path("lines").get(0).path("productName").asText()).isNotEmpty();
+        assertThat(data(r).path("lines").get(0).path("qty").asInt()).isEqualTo(5);
+    }
+
+    @Test
+    @DisplayName("등록할 땐 처리일자·창고가 필요하다 — 없으면 어디서 뺄지 알 수 없다")
+    void 등록엔_필수() throws Exception {
+        JsonNode r = multipart("/disposals/upload?dryRun=false",
+                xlsx(new String[][]{{codeA, "5"}}), "폐기.xlsx");
+
+        assertThat(r.path("success").asBoolean()).isFalse();
+        assertThat(r.path("error").path("message").asText()).contains("처리일자");
+    }
+
+    @Test
+    @DisplayName("비고를 memo 로 보내도 같은 칸 — 화면 라벨이 '비고'라 헷갈린다")
+    void 비고는_두이름() {
+        JsonNode r = post("/disposals", Map.of(
+                "processedDate", DATE, "warehouseId", warehouse,
+                "items", List.of(Map.of("productId", productA, "qty", 3, "memo", "메모로 보냄"))));
+
+        assertThat(r.path("success").asBoolean()).as("%s", r).isTrue();
+        String refNo = data(r).path("disposalNo").asText();
+
+        boolean found = false;
+        // ‼️자기 상품으로 좁힌다 — 다른 테스트가 넣은 폐기가 쌓이면 첫 페이지 밖으로 밀린다.
+        for (JsonNode row : data(get("/disposals?size=200&productIds=" + productA
+                + "&fromDate=2093-01-01&toDate=2093-12-31")).path("content")) {
+            if (refNo.equals(row.path("disposalNo").asText())) {
+                found = true;
+                // 등록 시 비고는 사유 칸에 저장된다(레거시도 한 칸이다).
+                assertThat(row.path("reason").asText()).isEqualTo("메모로 보냄");
+            }
+        }
+        assertThat(found).as("등록된 폐기를 찾을 수 있어야 한다").isTrue();
     }
 }

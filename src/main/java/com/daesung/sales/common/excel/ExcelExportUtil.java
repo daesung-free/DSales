@@ -65,6 +65,22 @@ public class ExcelExportUtil {
             return new Heading(title, "조회기준 : " + dot(baseDate));
         }
 
+        /**
+         * 기간 뒤에 조건을 덧붙인다(2026-09-28 화면 정리안 — 엑셀 조회기준에 "거래처 N곳" 표시).
+         *
+         * <p>★<b>왜 필요한가</b> — 거래처를 여러 곳 골라 내려받은 파일은 전량과 겉모습이 같다.
+         * 나중에 그 파일만 보면 "전체를 뽑은 것"인지 "몇 곳만 고른 것"인지 알 수 없고,
+         * 그대로 보고서에 붙으면 빠진 거래처가 있다는 사실이 드러나지 않는다.
+         *
+         * @param extra 덧붙일 문구. 비면 기간만 나온다
+         */
+        public static Heading period(String title, java.time.LocalDate from, java.time.LocalDate to,
+                                     String extra) {
+            String base = "조회기준 : " + dot(from) + " ~ " + dot(to);
+            return new Heading(title,
+                    (extra == null || extra.isBlank()) ? base : base + "   |   " + extra.trim());
+        }
+
         private static String dot(java.time.LocalDate d) {
             return (d == null) ? "" : d.format(java.time.format.DateTimeFormatter.ofPattern("yyyy.MM.dd"));
         }

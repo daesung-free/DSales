@@ -57,6 +57,27 @@ public class PartnerController {
         return ApiResponse.success(partnerService.findAll(keyword, includeExpired, pageReq.toPageable()));
     }
 
+    @Operation(summary = "거래처코드 일괄 조회",
+            description = """
+                    거래처**코드 여러 개**를 한 번에 id 로 바꿔 준다.
+                    근거: 2026-09-28 화면 정리안 — 조회화면 좌측 거래처 목록에서
+                    "**거래처코드 붙여넣기로 일괄 선택**".
+
+                    ★이게 없으면 화면이 코드 하나마다 검색을 한 번씩 돌려야 한다
+                    (50개를 붙여넣으면 50번). 조회 조건은 id 로만 받으므로 변환이 꼭 필요하다.
+
+                    · 만료된 거래처도 포함해 돌려준다 — 과거 자료를 뽑을 때 붙여넣는 코드에
+                      만료 거래처가 섞여 있는데, 조용히 빠지면 담당자는 그 거래처 매출이
+                      없는 줄 안다. 만료 여부는 `endDate` 로 화면에서 구분한다.
+                    · **없는 코드는 그냥 빠진다.** 어느 코드가 빠졌는지는 화면이 요청한 목록과
+                      대조하면 알 수 있다(우리가 빈 껍데기를 만들어 주면 그게 실재하는 거래처처럼 보인다).""")
+    @GetMapping("/by-codes")
+    public ApiResponse<List<PartnerResponse>> byCodes(
+            @Parameter(description = "거래처코드 목록 — 예: `codes=A001,A002,A003`", required = true)
+            @RequestParam List<String> codes) {
+        return ApiResponse.success(partnerService.findByCodes(codes));
+    }
+
     @Operation(summary = "거래처 목록 엑셀 다운로드", description = "30p 거래처관리 컬럼 전체. 검색조건 그대로.")
     @GetMapping("/export")
     public ResponseEntity<byte[]> listExport(

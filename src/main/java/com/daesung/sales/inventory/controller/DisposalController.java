@@ -125,14 +125,16 @@ public class DisposalController {
             @RequestParam(required = false) java.util.List<Long> warehouseIds) {
         java.util.List<com.daesung.sales.common.excel.ExcelExportUtil.Col> cols = java.util.List.of(
                 new com.daesung.sales.common.excel.ExcelExportUtil.Col("폐기일자", "date"),
-                new com.daesung.sales.common.excel.ExcelExportUtil.Col("전표번호", "refNo"),
-                new com.daesung.sales.common.excel.ExcelExportUtil.Col("창고", "warehouseName"),
+                // ‼️필드명을 틀리면 그 열이 **조용히 빈칸**으로 나간다(테스트가 잡았다).
+                //   DisposalRecordRow 는 disposalNo·warehouse 다(refNo·warehouseName 아님).
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("전표번호", "disposalNo"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("창고", "warehouse"),
                 new com.daesung.sales.common.excel.ExcelExportUtil.Col("분류코드", "catCode"),
                 new com.daesung.sales.common.excel.ExcelExportUtil.Col("분류명", "catName"),
                 new com.daesung.sales.common.excel.ExcelExportUtil.Col("도서코드", "bookCode"),
                 new com.daesung.sales.common.excel.ExcelExportUtil.Col("도서명", "bookName"),
                 new com.daesung.sales.common.excel.ExcelExportUtil.Col("폐기수량", "qty"),
-                new com.daesung.sales.common.excel.ExcelExportUtil.Col("비고", "memo"));
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("비고", "reason"));
         byte[] xlsx = excel.toXlsx("폐기내역", cols,
                 inventoryService.disposalsAll(fromDate, toDate,
                         MultiSelect.merge(productId, productIds),
@@ -198,14 +200,22 @@ public class DisposalController {
                       오류 줄은 응답 `lines` 에 엑셀 행번호와 함께 나온다.
                     · 같은 상품이 여러 줄에 있으면 **합산**해 한 전표로 등록한다.
                     · `dryRun=true` 로 먼저 검증만 해볼 수 있다.
+                      **파일만 읽어 화면 그리드에 채우는 용도**라면 처리일자·창고 없이 호출해도 된다 —
+                      아직 어느 창고에서 뺄지 고르기 전이기 때문이다. 실제 등록할 때만 필요하다.
+                    · ‼️**제품수불부 엑셀을 그대로 올릴 때 주의**: 그 파일에는 '수량' 열이 없고
+                      '폐기' 열이 있는데, 그건 **이미 폐기된 수량**이다. 그대로 수량으로 읽으면
+                      같은 물량을 또 폐기하게 되므로 읽지 않는다. 도서코드로 줄만 맞추고
+                      폐기할 수량은 화면에서 입력하는 흐름을 권한다.
                     · ‼️양식에 **사유 칸은 없다**(9/27 A-3, 항목 9). 비고는 읽는다.""")
     @PostMapping(value = "/upload", consumes = org.springframework.http.MediaType.MULTIPART_FORM_DATA_VALUE)
     public ApiResponse<com.daesung.sales.inventory.dto.DisposalUploadResponse> upload(
             @Parameter(description = "엑셀 파일(xlsx)", required = true)
             @RequestPart("file") org.springframework.web.multipart.MultipartFile file,
-            @Parameter(description = "처리일자(yyyy-MM-dd)", required = true) @RequestParam
+            @Parameter(description = "처리일자(yyyy-MM-dd). **dryRun 이면 생략 가능**")
+            @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate processedDate,
-            @Parameter(description = "폐기 창고 id", required = true) @RequestParam Long warehouseId,
+            @Parameter(description = "폐기 창고 id. **dryRun 이면 생략 가능**")
+            @RequestParam(required = false) Long warehouseId,
             @Parameter(description = "검증만 하고 등록하지 않음") @RequestParam(required = false,
                     defaultValue = "false") boolean dryRun) {
         return ApiResponse.success(

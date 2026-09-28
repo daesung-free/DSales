@@ -267,8 +267,13 @@ public class SaleController {
                 schoolCodes, keyword, couponCount,
                 includeCanceled,
                 org.springframework.data.domain.PageRequest.of(0, EXPORT_MAX));
+        // ★고른 거래처 수를 머리말에 남긴다(2026-09-28 화면 정리안).
+        //   몇 곳만 골라 뽑은 파일과 전량 파일이 겉으로 구분되지 않으면,
+        //   그대로 보고서에 붙었을 때 빠진 거래처가 있다는 사실이 드러나지 않는다.
+        List<Long> chosen = MultiSelect.merge(partnerId, partnerIds);
+        String extra = MultiSelect.isAny(chosen) ? null : ("거래처 " + chosen.size() + "곳");
         byte[] xlsx = excel.toXlsx("통합매출조회", cols, page.getContent(),
-                Heading.period("통합 매출 조회", either(startDate, fromDate), either(endDate, toDate)));
+                Heading.period("통합 매출 조회", either(startDate, fromDate), either(endDate, toDate), extra));
         return excel.asDownload(xlsx, "통합매출조회.xlsx");
     }
 

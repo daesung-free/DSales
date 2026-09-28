@@ -368,7 +368,8 @@ public class InventoryService {
                             "상품이 없습니다. id=" + item.productId()));
             int balance = applyDelta(product, warehouse, -item.qty());
             inventoryTxnRepository.save(InventoryTxn.dispose(product, warehouse, -item.qty(),
-                    req.processedDate(), disposalNo, item.reason()));
+                    // 화면 라벨이 '비고'라 reason/memo 어느 쪽으로 와도 같은 칸이다(note()).
+                    req.processedDate(), disposalNo, item.note()));
             lines.add(new DisposalResponse.Line(product.getId(), product.getCode(), item.qty(), balance));
         }
         return new DisposalResponse(disposalNo, warehouse.getId(), warehouse.getName(), lines,

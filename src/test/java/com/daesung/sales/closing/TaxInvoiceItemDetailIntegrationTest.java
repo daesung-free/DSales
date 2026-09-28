@@ -113,7 +113,7 @@ class TaxInvoiceItemDetailIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("★수량이 실린다 — 양식에 칸이 있는데 비어 있어 '간소화'로 보였다")
+    @DisplayName("★수량은 응답에 실린다 — 엑셀 칸은 비우지만 데이터는 갖고 있다")
     void 수량이_실린다() {
         JsonNode it = itemOf("단일단가");
         assertThat(it).isNotNull();
@@ -137,8 +137,8 @@ class TaxInvoiceItemDetailIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("★홈택스 파일의 수량·단가 칸이 실제로 찬다 — 화면만 고치면 파일은 그대로 빈칸이다")
-    void 파일에도_찬다() throws Exception {
+    @DisplayName("★홈택스 파일의 수량·단가는 **비운다** — 기존 프로그램과 같게(2026-09-28 확정)")
+    void 파일은_비운다() throws Exception {
         var res = getBytes("/closing/tax-invoices/export?fromDate=" + FROM + "&toDate=" + TO
                 + "&partnerId=" + partner);
         assertThat(res.getStatusCode().value()).isEqualTo(200);
@@ -158,15 +158,22 @@ class TaxInvoiceItemDetailIntegrationTest extends IntegrationTestSupport {
             List<String> row = cells(free.getRow(1));
             assertThat(row).as("계산서 한 장은 나와야 한다").isNotEmpty();
 
-            // 품목 슬롯 어딘가에 수량 30 / 단가 10000 이 들어 있어야 한다.
-            boolean found = false;
+            // ★품목이 실린 슬롯의 규격·수량·단가는 모두 비어 있어야 한다.
+            //   홈택스는 단가×수량이 공급가액과 맞아야 하는데, 한 품목 칸이 여러 매출의 합이라
+            //   단가가 갈리는 건이 생긴다 — 수량만 있고 단가가 빈 줄은 반려 사유가 될 수 있다.
+            boolean sawItem = false;
             for (int slot = 0; slot < 4; slot++) {
                 int base = 21 + slot * 7;      // 일자·품목·규격·수량·단가·공급가액·비고
-                if ("30".equals(row.get(base + 3)) && "10000".equals(row.get(base + 4))) {
-                    found = true;
+                if (row.get(base + 1).isBlank()) {
+                    continue;                  // 빈 슬롯
                 }
+                sawItem = true;
+                assertThat(row.get(base + 2)).as("규격").isEmpty();
+                assertThat(row.get(base + 3)).as("수량").isEmpty();
+                assertThat(row.get(base + 4)).as("단가").isEmpty();
+                assertThat(row.get(base + 5)).as("공급가액은 채운다").isNotEmpty();
             }
-            assertThat(found).as("수량·단가 칸이 실제로 채워진다: %s", row).isTrue();
+            assertThat(sawItem).as("품목이 한 줄은 실려야 한다: %s", row).isTrue();
         }
     }
 

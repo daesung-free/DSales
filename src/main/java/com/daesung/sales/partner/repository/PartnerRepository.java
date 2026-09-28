@@ -12,6 +12,12 @@ import org.springframework.data.jpa.repository.Query;
 public interface PartnerRepository extends JpaRepository<Partner, Long> {
     Optional<Partner> findByCode(String code);
 
+    /**
+     * 거래처코드 여러 개를 한 번에(2026-09-28 화면 정리안 — "거래처코드 붙여넣기로 일괄 선택").
+     * 없는 코드는 그냥 빠진다.
+     */
+    java.util.List<Partner> findByCodeIn(java.util.Collection<String> codes);
+
     Page<Partner> findByCodeContainingIgnoreCaseOrNameContainingIgnoreCase(
             String code, String name, Pageable pageable);
 

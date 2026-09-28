@@ -70,6 +70,32 @@ public class PartnerService {
                 .map(PartnerResponse::from));
     }
 
+    /**
+     * 거래처코드 일괄 조회(2026-09-28 화면 정리안 — 좌측 목록에 코드 붙여넣기).
+     *
+     * <p>★공백·빈 값을 걸러 낸다. 붙여넣기는 줄바꿈·쉼표·따옴표가 섞여 들어오고,
+     * 빈 문자열이 그대로 조건에 들어가면 {@code IN ('')} 이 되어 아무것도 안 나온다.
+     *
+     * <p>★중복도 정리한다 — 같은 코드를 두 번 붙여넣어도 거래처가 두 줄로 보이면 안 된다.
+     */
+    public java.util.List<PartnerResponse> findByCodes(java.util.List<String> codes) {
+        if (codes == null || codes.isEmpty()) {
+            return java.util.List.of();
+        }
+        java.util.LinkedHashSet<String> cleaned = new java.util.LinkedHashSet<>();
+        for (String c : codes) {
+            if (c != null && !c.isBlank()) {
+                cleaned.add(c.trim());
+            }
+        }
+        if (cleaned.isEmpty()) {
+            return java.util.List.of();
+        }
+        return partnerRepository.findByCodeIn(cleaned).stream()
+                .map(PartnerResponse::from)
+                .toList();
+    }
+
     public PartnerResponse findById(Long id) {
         return PartnerResponse.from(getOrThrow(id));
     }

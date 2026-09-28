@@ -56,6 +56,12 @@ public class DisposalUploadService {
     @Transactional
     public DisposalUploadResponse upload(MultipartFile file, LocalDate processedDate,
                                          Long warehouseId, boolean dryRun) {
+        // ★dryRun(파일만 읽기)에는 처리일자·창고가 없어도 된다 — 아직 어느 창고에서 뺄지
+        //   고르기 전이기 때문이다. 실제 등록에서만 요구한다.
+        if (!dryRun && (processedDate == null || warehouseId == null)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "등록하려면 처리일자와 창고가 필요합니다. 파일만 확인하려면 dryRun=true 로 호출하세요.");
+        }
         ExcelSheetReader sheet = ExcelSheetReader.read(file, List.of(H_CODE, H_QTY));
 
         List<DisposalUploadResponse.Line> lines = new ArrayList<>();
@@ -78,7 +84,7 @@ public class DisposalUploadService {
                                 "도서 마스터에 없는 상품코드입니다"));
 
                 mergedQty.merge(product.getId(), qty, Integer::sum);
-                items.add(new DisposalRequest.Item(product.getId(), qty, r.str(H_MEMO)));
+                items.add(new DisposalRequest.Item(product.getId(), qty, r.str(H_MEMO), null));
                 lines.add(new DisposalUploadResponse.Line(r.rowNo(), "OK", code,
                         product.getName(), qty, null));
             } catch (BusinessException e) {
