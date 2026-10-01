@@ -921,6 +921,9 @@ public class SaleController {
                     · **한 건이 실패해도 나머지는 보낸다.** 거래처별 결과(SENT/FAILED/NO_EMAIL)를 돌려준다 —
                       레거시는 건수만 세고 상세를 로그 파일에 적어, 실패한 거래처를 찾으려면 그 파일을 열어야 했다.
                     · `NO_EMAIL` 은 실패가 아니다. 거래처관리에서 주소를 채워야 하는 건이다.
+                    · ★**조회(`GET /sales`)와 같은 필터를 받는다**(2026-10-01). 구분·출고유형·창고·학교·
+                      쿠폰 포함 카운트까지 그대로다. 화면에서 걸러 본 것과 다른 내용이 나가면 안 된다 —
+                      메일은 되돌릴 수 없다.
                     · ‼️메일 설정이 없으면 400 — 조용히 실패하면 담당자는 보냈다고 믿는다.""")
     @PostMapping("/email")
     public ApiResponse<com.daesung.sales.common.mail.MailSendResponse> email(
@@ -928,10 +931,23 @@ public class SaleController {
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
             @Parameter(description = "종료일", required = true) @RequestParam
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @Parameter(description = "회계구분 **다중선택**(조회와 동일)")
+            @RequestParam(required = false) List<SalesCategory> salesCategories,
+            @Parameter(description = "거래분류 **다중선택**(조회와 동일)")
+            @RequestParam(required = false) List<TradeClass> tradeClasses,
+            @Parameter(description = "출고유형 **다중선택**(조회와 동일)")
+            @RequestParam(required = false) List<ShipmentType> shipmentTypes,
             @Parameter(description = "거래처 id **다중선택**. 비우면 조회 결과에 나온 거래처 전부(일괄 발송)")
             @RequestParam(required = false) List<Long> partnerIds,
-            @Parameter(description = "키워드(조회와 같은 축)") @RequestParam(required = false) String keyword) {
-        return ApiResponse.success(
-                salesMailService.sendStatements(fromDate, toDate, partnerIds, keyword));
+            @Parameter(description = "창고 id **다중선택**(조회와 동일)")
+            @RequestParam(required = false) List<Long> warehouseIds,
+            @Parameter(description = "학교코드 **다중선택**(조회와 동일)")
+            @RequestParam(required = false) List<String> schoolCodes,
+            @Parameter(description = "키워드(조회와 같은 축)") @RequestParam(required = false) String keyword,
+            @Parameter(description = "쿠폰 포함 카운트(조회와 동일, 기본 false)")
+            @RequestParam(required = false, defaultValue = "false") boolean couponCount) {
+        return ApiResponse.success(salesMailService.sendStatements(fromDate, toDate,
+                salesCategories, tradeClasses, shipmentTypes, partnerIds, warehouseIds,
+                schoolCodes, keyword, couponCount));
     }
 }

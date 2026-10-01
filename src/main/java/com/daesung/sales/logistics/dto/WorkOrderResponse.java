@@ -27,6 +27,14 @@ public record WorkOrderResponse(
                 ‼️출력·확인·발송 처리에서는 빠진다.""")
         boolean deleted,
 
+        @Schema(description = """
+                이 발송 건에 묶인 **신청번호(DSRE reqCd)** 목록(2026-10-01 추가).
+                발송완료·발송취소(`POST /orders/state`)가 신청번호로 동작해서, 이게 없으면
+                작업요청서 화면에서 상태를 바꿀 수 없었다.
+                ★같은 날 같은 학교로 두 주문이 들어오면 물류는 한 번에 싸서 보내므로 **여럿일 수 있다**.
+                주문을 거치지 않고 수기로 등록한 매출만 있는 발송 건은 **빈 목록**이다.""")
+        List<Integer> reqCds,
+
         @Schema(description = "출력 여부") boolean printed,
         @Schema(description = "확인 여부(출력 다음 단계). ⚠️레거시 '완료'와는 다른 축이다") boolean acknowledged,
         @Schema(description = "확인 처리자") String acknowledgedBy,

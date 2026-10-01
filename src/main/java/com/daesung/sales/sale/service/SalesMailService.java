@@ -64,24 +64,44 @@ public class SalesMailService {
             new Col("총금액", "totalAmount"), new Col("메모", "memo"));
 
     /**
-     * 기간·거래처 조건의 매출을 거래처별 엑셀로 만들어 메일로 보낸다.
+     * 보낼 수 있는 상태인지 먼저 확인한다.
      *
-     * @param partnerIds 보낼 거래처. 비우면 <b>조회 결과에 나온 거래처 전부</b>(레거시 일괄 발송과 같다)
+     * <p>★<b>조회보다 먼저 부른다.</b> 메일이 꺼져 있는데 "보낼 자료가 없습니다"가 뜨면
+     * 담당자는 조건을 계속 바꿔 본다 — 고쳐야 할 곳은 서버 설정이다.
      */
-    @Transactional(readOnly = true)
-    public MailSendResponse sendStatements(LocalDate fromDate, LocalDate toDate,
-                                           List<Long> partnerIds, String keyword) {
-        if (fromDate == null || toDate == null) {
-            throw new BusinessException(ErrorCode.INVALID_INPUT,
-                    "기간을 지정하세요. 기간 없이 보내면 몇 년치가 첨부됩니다.");
-        }
+    public void assertUsable() {
         if (!mailService.usable()) {
             throw new BusinessException(ErrorCode.INVALID_INPUT,
                     "메일 발송이 꺼져 있습니다. 서버 설정(daesung.mail.enabled·spring.mail.*)을 확인하세요.");
         }
+    }
 
-        List<SaleResponse> rows = saleService.search(fromDate, toDate, null, null, null,
-                        partnerIds, null, null, keyword, true, false,
+    /**
+     * 조회 조건 그대로의 매출을 거래처별 엑셀로 만들어 메일로 보낸다.
+     *
+     * <p>★<b>조회({@code GET /sales})와 같은 필터를 받는다</b>(프론트 실측 지적 2026-10-01).
+     * 예전엔 기간·거래처·키워드만 받아서, 화면에서 구분·출고유형·창고·학교로 걸러 본 것과
+     * <b>다른 내용이 거래처에 나갔다</b>. 메일은 되돌릴 수 없어 조회와 어긋나면 안 된다.
+     *
+     * @param partnerIds 보낼 거래처. 비우면 <b>조회 결과에 나온 거래처 전부</b>(레거시 일괄 발송과 같다)
+     */
+    @Transactional(readOnly = true)
+    public MailSendResponse sendStatements(
+            LocalDate fromDate, LocalDate toDate,
+            List<com.daesung.sales.salestype.entity.SalesCategory> salesCategories,
+            List<com.daesung.sales.salestype.entity.TradeClass> tradeClasses,
+            List<com.daesung.sales.salestype.entity.ShipmentType> shipmentTypes,
+            List<Long> partnerIds, List<Long> warehouseIds, List<String> schoolCodes,
+            String keyword, boolean couponCount) {
+        if (fromDate == null || toDate == null) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "기간을 지정하세요. 기간 없이 보내면 몇 년치가 첨부됩니다.");
+        }
+        assertUsable();
+
+        List<SaleResponse> rows = saleService.search(fromDate, toDate,
+                        salesCategories, tradeClasses, shipmentTypes,
+                        partnerIds, warehouseIds, schoolCodes, keyword, couponCount, false,
                         PageRequest.of(0, MAX_ROWS))
                 .getContent();
         if (rows.isEmpty()) {

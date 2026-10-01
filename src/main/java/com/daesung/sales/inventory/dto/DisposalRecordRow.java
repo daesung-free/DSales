@@ -28,6 +28,18 @@ public record DisposalRecordRow(
         @Schema(description = "분류코드") String catCode,
         @Schema(description = "분류명") String catName,
         @Schema(description = "폐기수량(양수로 보여준다 — 원장은 음수로 기록된다)") int qty,
+        @Schema(description = """
+                취소 여부(2026-10-01 추가). 취소된 전표면 true.
+
+                ★<b>표시·버튼 제어용이다. 합계에서 빼지 말 것.</b>
+                취소는 <b>취소한 달</b>에 역분개로 잡힌다(원 전표의 달이 아니다) — 마감된 달의 숫자를
+                나중에 바꾸지 않으려는 규칙이다. 그래서 이 기간의 폐기 합계에는 그대로 들어가고,
+                분류별 요약(`/disposals/summary`)도 같은 숫자를 낸다.
+
+                ‼️취소로 생기는 역분개 행은 목록에 싣지 않는다 — 예전엔 같은 전표가 두 줄로 나와
+                합계가 두 배였다. 원 행에 이 표시만 붙인다.""")
+        boolean canceled,
+
         @Schema(description = "폐기사유", example = "파본") String reason,
         @Schema(description = "비고") String memo
 ) {

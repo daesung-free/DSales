@@ -300,6 +300,17 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     boolean existsByBulkImportKey(String bulkImportKey);
 
     /**
+     * 그 <b>신청번호로 이미 매출이 섰는지</b>(취소분 제외).
+     *
+     * <p>근거: 프론트 확인 질문(2026-10-01) — 주문 등록 화면에서 매출까지 함께 세운 신청이
+     * 매출일괄등록·더프 가져오기에 <b>다시 잡히면 이중 매출</b>이 된다.
+     *
+     * <p>★소스키({@code bulkImportKey})로는 못 막는다. 그 키는 가져오기 경로가 만드는 값이라,
+     * 주문 화면에서 만든 매출에는 없다. 두 경로가 공유하는 유일한 값이 신청번호다.
+     */
+    boolean existsByReqCdAndCanceledFalse(Integer reqCd);
+
+    /**
      * 월별 실적(순매출액 = 매출−반품). 취소 제외. 상품 필터(null=전체). 대시보드 목표대비용.
      * 반환 Object[]: [month(1~12), netAmount].
      */
@@ -713,6 +724,44 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
              order by p.catCode, p.code
             """)
     List<WorkOrderLineAgg> workOrderLines(@Param("from") LocalDate from, @Param("to") LocalDate to);
+
+    /**
+     * 발송 건(거래일자·거래처·학교·분류)별 <b>신청번호(reqCd)</b> 목록.
+     *
+     * <p>근거: 프론트 실측 지적(2026-10-01) — 작업요청서에서 발송취소를 부르려면 신청번호가 필요한데
+     * 행 어디에도 없어 <b>"주문 조회에서 하세요"로 안내만</b> 하고 있었다.
+     *
+     * <p>★<b>한 발송 건에 신청이 여럿일 수 있다.</b> 같은 날 같은 학교로 두 주문이 들어오면
+     * 물류는 한 번에 싸서 보낸다 — 그래서 목록이다. 하나만 돌려주면 나머지는 되돌릴 수 없다.
+     *
+     * <p>취소된 매출은 뺀다. 되돌린 건의 신청번호를 발송취소 대상으로 주면 안 된다.
+     */
+    @Query("""
+            select s.salesDate as tradeDate, s.partner.id as partnerId,
+                   coalesce(s.schoolCode, '') as schoolCode,
+                   coalesce(p.salesDivision, '') as tradeClass,
+                   s.reqCd as reqCd
+              from Sale s join s.product p
+             where s.canceled = false and s.reqCd is not null
+               and s.salesDate between :from and :to
+             group by s.salesDate, s.partner.id, coalesce(s.schoolCode, ''),
+                      coalesce(p.salesDivision, ''), s.reqCd
+             order by s.reqCd
+            """)
+    List<WorkOrderReqCd> workOrderReqCds(@Param("from") LocalDate from, @Param("to") LocalDate to);
+
+    /** 발송 건 ↔ 신청번호 한 줄. */
+    interface WorkOrderReqCd {
+        LocalDate getTradeDate();
+
+        Long getPartnerId();
+
+        String getSchoolCode();
+
+        String getTradeClass();
+
+        Integer getReqCd();
+    }
 
     /**
      * 응시현황(연도별) 원자료 — 거래처×월 수량·금액. 근거: 레거시 응시현황.vb:330~.

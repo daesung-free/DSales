@@ -55,6 +55,12 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
     /**
      * 폐기 내역(10p 조회). 재고이벤트 DISPOSE를 최근순으로.
      *
+     * <p>★<b>{@code qty < 0} — 역분개 행은 뺀다</b>(2026-10-01 프론트 실측 지적).
+     * 취소하면 같은 전표번호로 <b>반대 부호</b> 이벤트가 하나 더 생기는데, 그 행까지 목록에 실리면
+     * 수량을 양수로 뒤집어 보여주는 탓에 <b>원 행 200 + 역분개 행 200 = 400</b>이 된다.
+     * 분류별 요약은 {@code SUM(-qty)} 라 0으로 상쇄되고 있어 <b>같은 화면의 두 숫자가 어긋났다</b>.
+     * 원 폐기는 언제나 음수, 역분개는 양수라 부호로 가른다.
+     *
      * <p>★별도 폐기 테이블을 만들지 않는다 — 재고는 {@code inventory_txn}이 유일 진실이고
      * 폐기 원장을 따로 두면 둘이 어긋날 수 있다(§재고 정의 단일화).
      *
@@ -66,6 +72,7 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
             select t from InventoryTxn t
               join fetch t.product join fetch t.warehouse
              where t.txnType = com.daesung.sales.inventory.entity.TxnType.DISPOSE
+               and t.qty < 0
                and (cast(:fromDate as date) is null or t.tradeDate >= :fromDate)
                and (cast(:toDate as date) is null or t.tradeDate <= :toDate)
                and (:anyProduct = true or t.product.id in :productIds)
@@ -426,6 +433,7 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
             select t from InventoryTxn t
               join fetch t.product join fetch t.warehouse
              where t.txnType = com.daesung.sales.inventory.entity.TxnType.DISPOSE
+               and t.qty < 0
                and (cast(:fromDate as date) is null or t.tradeDate >= :fromDate)
                and (cast(:toDate as date) is null or t.tradeDate <= :toDate)
                and (:anyProduct = true or t.product.id in :productIds)
@@ -434,6 +442,7 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
             countQuery = """
             select count(t) from InventoryTxn t
              where t.txnType = com.daesung.sales.inventory.entity.TxnType.DISPOSE
+               and t.qty < 0
                and (cast(:fromDate as date) is null or t.tradeDate >= :fromDate)
                and (cast(:toDate as date) is null or t.tradeDate <= :toDate)
                and (:anyProduct = true or t.product.id in :productIds)

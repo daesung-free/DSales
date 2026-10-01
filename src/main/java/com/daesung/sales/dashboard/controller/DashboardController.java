@@ -32,8 +32,17 @@ public class DashboardController {
     private final com.daesung.sales.dashboard.service.ActionItemService actionItemService;
 
     @Operation(summary = "매출목표 등록/수정",
-            description = "연·월(비우면 연간)·대상(전사/사업부문/상품) 금액 upsert. 예산 입력 권한(재무/관리자)만. "
-                    + "정확한 입력 권한 정책은 발주처 확정 대기.")
+            description = """
+                    연·월(비우면 연간)·대상(전사/사업부문/상품) 금액 upsert.
+
+                    ★**지금은 관리자만 됩니다.** 권한표(V52)에 `재무 × 대시보드 = 조회`로 들어 있어
+                    재무 계정은 403 입니다 — 2026-08-18 확정 권한표(매출관리 × 재무 = 조회)를 따른 것입니다.
+
+                    ‼️예전 설명에 "예산 입력 권한(재무/관리자)만"이라고 적혀 있었는데 **실제 동작과 달랐습니다**
+                    (프론트 실측 지적 2026-10-01). 동작이 맞고 설명이 틀렸던 것이라 설명을 고쳤습니다.
+
+                    재무에게 열지는 발주처 정책 변경 사항입니다. 권한은 코드가 아니라 DB 표라
+                    관리자 화면에서 바꿀 수 있고, 배포는 필요 없습니다.""")
     @PreAuthorize("hasAnyRole('ADMIN','FINANCE')")
     @PostMapping("/targets")
     @ResponseStatus(HttpStatus.CREATED)

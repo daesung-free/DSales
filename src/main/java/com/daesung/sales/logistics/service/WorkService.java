@@ -114,6 +114,15 @@ public class WorkService {
                             a.getQty(), a.getAmount() == null ? 0 : a.getAmount()));
         }
 
+        // 발송 건별 신청번호(2026-10-01). 한 발송에 신청이 여럿일 수 있어 목록으로 모은다.
+        Map<String, List<Integer>> reqCdsByKey = new LinkedHashMap<>();
+        for (var r : saleRepository.workOrderReqCds(from, to)) {
+            reqCdsByKey.computeIfAbsent(
+                            key(r.getTradeDate(), r.getPartnerId(), r.getSchoolCode(), r.getTradeClass()),
+                            k -> new ArrayList<>())
+                    .add(r.getReqCd());
+        }
+
         List<WorkOrderResponse> out = new ArrayList<>();
         // ★삭제된 건도 함께 읽는다(레거시와 같다 — 취소선으로 보여주고 작업 대상에서만 뺀다).
         for (Shipment s : shipmentRepository.findAllIncludingDeleted(from, to, tradeClass, partnerId,
@@ -128,6 +137,10 @@ public class WorkService {
                     s.getPartner().getCode(), s.getPartner().getName(),
                     s.getSchoolCode(), s.getSchoolName(),
                     s.getDeletedAt() != null,
+                    reqCdsByKey.getOrDefault(
+                            key(s.getTradeDate(), s.getPartner().getId(), s.getSchoolCode(),
+                                    s.getTradeClass()),
+                            List.of()),
                     s.getPrintedAt() != null,
                     s.getAcknowledgedAt() != null, s.getAcknowledgedBy(),
                     s.getBoxCount(), s.getSentDate(), s.getSendMemo(),

@@ -82,6 +82,13 @@ public class BulkSalesImportService {
                     lines.add(line(sourceKey, k.category(), row, k.qty(), supply, "UNMAPPED", null));
                     continue;
                 }
+                // ★주문 등록 화면에서 매출까지 함께 세운 신청은 소스키가 없어 아래 검사를 통과한다.
+                //   신청번호로 한 번 더 막는다(프론트 확인 질문 2026-10-01).
+                if (saleRepository.existsByReqCdAndCanceledFalse(row.reqCd())) {
+                    skipped++;
+                    lines.add(line(sourceKey, k.category(), row, k.qty(), supply, "SKIPPED", null));
+                    continue;
+                }
                 if (saleRepository.existsByBulkImportKey(sourceKey)) {
                     skipped++;
                     lines.add(line(sourceKey, k.category(), row, k.qty(), supply, "SKIPPED", null));

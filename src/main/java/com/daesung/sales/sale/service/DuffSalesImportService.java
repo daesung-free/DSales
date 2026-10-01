@@ -156,6 +156,15 @@ public class DuffSalesImportService {
                 lines.add(line(shown, charge, unit, total, "SKIPPED", null));
                 continue;
             }
+            // ★주문 등록 화면에서 매출까지 함께 세운 신청은 소스키가 없어 위 검사를 통과한다.
+            //   그대로 두면 같은 신청이 두 번 매출이 된다(프론트 확인 질문 2026-10-01).
+            //   두 경로가 공유하는 값은 신청번호뿐이라 그것으로 막는다.
+            if (saleRepository.existsByReqCdAndCanceledFalse(row.reqCd())) {
+                skipped++;
+                lines.add(line(shown, charge, unit, total, "SKIPPED",
+                        "이미 매출이 등록된 신청입니다(주문 등록에서 함께 세운 건 포함).", null));
+                continue;
+            }
             if (dryRun) {
                 totalSum += total;
                 lines.add(line(shown, charge, unit, total, "PREVIEW", null));

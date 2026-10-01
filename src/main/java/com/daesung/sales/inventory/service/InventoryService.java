@@ -535,31 +535,45 @@ public class InventoryService {
     public org.springframework.data.domain.Page<DisposalRecordRow> disposals(
             LocalDate fromDate, LocalDate toDate, List<Long> productIds, List<Long> warehouseIds,
             org.springframework.data.domain.Pageable pageable) {
-        return inventoryTxnRepository.findDisposals(fromDate, toDate,
+        org.springframework.data.domain.Page<InventoryTxn> page =
+                inventoryTxnRepository.findDisposals(fromDate, toDate,
                         MultiSelect.isAny(productIds), MultiSelect.orPlaceholder(productIds, 0L),
                         MultiSelect.isAny(warehouseIds), MultiSelect.orPlaceholder(warehouseIds, 0L),
-                        pageable)
-                .map(InventoryService::disposalRow);
+                        pageable);
+        java.util.Set<String> canceled = canceledRefNos(page.getContent());
+        return page.map(t -> disposalRow(t, canceled.contains(t.getRefNo())));
     }
 
     /** 폐기 내역 전량(엑셀 다운로드 전용). 화면은 페이지로 보지만 파일은 전량이 나가야 쓸모가 있다. */
     @Transactional(readOnly = true)
     public List<DisposalRecordRow> disposalsAll(LocalDate fromDate, LocalDate toDate,
                                                 List<Long> productIds, List<Long> warehouseIds) {
-        return inventoryTxnRepository.findDisposalsAll(fromDate, toDate,
+        List<InventoryTxn> rows = inventoryTxnRepository.findDisposalsAll(fromDate, toDate,
                         MultiSelect.isAny(productIds), MultiSelect.orPlaceholder(productIds, 0L),
-                        MultiSelect.isAny(warehouseIds), MultiSelect.orPlaceholder(warehouseIds, 0L)).stream()
-                .map(InventoryService::disposalRow)
-                .toList();
+                        MultiSelect.isAny(warehouseIds), MultiSelect.orPlaceholder(warehouseIds, 0L));
+        java.util.Set<String> canceled = canceledRefNos(rows);
+        return rows.stream().map(t -> disposalRow(t, canceled.contains(t.getRefNo()))).toList();
     }
 
-    private static DisposalRecordRow disposalRow(InventoryTxn t) {
+    /** 페이지에 실린 전표 중 취소된 것(N+1 방지 — 번호만 모아 한 번 묻는다). */
+    private java.util.Set<String> canceledRefNos(List<InventoryTxn> txns) {
+        java.util.Set<String> refNos = new java.util.HashSet<>();
+        txns.forEach(t -> {
+            if (t.getRefNo() != null) {
+                refNos.add(t.getRefNo());
+            }
+        });
+        return refNos.isEmpty() ? java.util.Set.of()
+                : new java.util.HashSet<>(voucherCancelRepository.findRefNosIn(refNos));
+    }
+
+    private static DisposalRecordRow disposalRow(InventoryTxn t, boolean canceled) {
         return new DisposalRecordRow(
                 t.getId(), t.getRefNo(), t.getTradeDate(),
                 t.getWarehouse().getId(), t.getWarehouse().getName(),
                 t.getProduct().getId(), t.getProduct().getCode(), t.getProduct().getName(),
                 t.getProduct().getCatCode(), t.getProduct().getCatName(),
-                Math.abs(t.getQty()), t.getMemo(), null);
+                Math.abs(t.getQty()), canceled, t.getMemo(), null);
     }
 
     /**

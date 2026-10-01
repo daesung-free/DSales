@@ -75,6 +75,16 @@ public class DisposalController {
 
                     수량은 **양수**로 준다(원장에는 음수로 기록된다 — 재고를 깎으므로).
 
+                    ★**취소된 전표도 목록에 남고 `canceled=true` 가 붙는다**(2026-10-01).
+                    화면에서 취소선으로 표시하고 [취소]·[삭제] 버튼을 닫는 데 쓰면 된다.
+
+                    ‼️**합계에서 빼지 말 것.** 취소는 **취소한 달**에 역분개로 잡힌다(원 전표의 달이 아니다)
+                    — 마감된 달의 숫자를 나중에 바꾸지 않으려는 규칙이다.
+                    그래서 이 기간 합계에는 그대로 들어가고, 분류별 요약도 같은 숫자를 낸다.
+
+                    ‼️취소로 생기는 역분개 행은 **목록에 싣지 않는다** — 예전엔 같은 전표가 두 줄로 나와
+                    합계가 두 배였다(요약은 역분개가 취소한 달로 가 있어 안 섞였고, 그래서 두 숫자가 어긋났다).
+
                     도서·창고는 **다중선택**이다(좌측 트리뷰 체크박스, 2026-08-31 공통 요구).
                     단수 `productId`·`warehouseId`도 그대로 살아 있고, 복수와 같이 오면 합집합이다.""")
     @GetMapping
@@ -134,6 +144,7 @@ public class DisposalController {
                 new com.daesung.sales.common.excel.ExcelExportUtil.Col("도서코드", "bookCode"),
                 new com.daesung.sales.common.excel.ExcelExportUtil.Col("도서명", "bookName"),
                 new com.daesung.sales.common.excel.ExcelExportUtil.Col("폐기수량", "qty"),
+                new com.daesung.sales.common.excel.ExcelExportUtil.Col("취소", "canceled"),
                 new com.daesung.sales.common.excel.ExcelExportUtil.Col("비고", "reason"));
         byte[] xlsx = excel.toXlsx("폐기내역", cols,
                 inventoryService.disposalsAll(fromDate, toDate,

@@ -442,18 +442,46 @@ public class ReceivableController {
                     레거시 `외상매출장조회.vb:1434` 와 같은 동작이다.
 
                     ★첨부·제목·수신 규칙은 통합매출조회(`POST /sales/email`)와 **같다** —
-                    레거시도 두 화면이 같은 `SendMail` 을 같은 인자로 부른다.
-                    거래처마다 따로 보내고, 한 건이 실패해도 나머지는 보낸다.""")
+                    레거시도 두 화면이 같은 `SendMail` 을 같은 인자로 부르고, 첨부도 같은
+                    「거래상세내역서」다(`외상매출장조회.vb:1434`).
+
+                    거래처마다 따로 보내고, 한 건이 실패해도 나머지는 보낸다.
+
+                    ★**거래처를 안 고르면 외상매출장에 실제로 잡힌 거래처로 좁힌다**(2026-10-01).
+                    `onlyReportable` 도 그 판정에 함께 쓰인다 — 화면에서 걸러 본 것과 다른 곳에
+                    메일이 나가면 되돌릴 수 없다.""")
     @PostMapping("/ar-ledger/email")
     public ApiResponse<com.daesung.sales.common.mail.MailSendResponse> arLedgerEmail(
             @Parameter(description = "시작일", required = true) @RequestParam
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
             @Parameter(description = "종료일", required = true) @RequestParam
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
-            @Parameter(description = "거래처 id **다중선택**. 비우면 결과에 나온 거래처 전부")
+            @Parameter(description = "거래처 id **다중선택**. 비우면 외상매출장에 나온 거래처 전부")
             @RequestParam(required = false) java.util.List<Long> partnerIds,
+            @Parameter(description = """
+                    신고대상만(조회 화면의 그 체크박스, 2026-10-01 추가).
+                    켜면 **신고대상 거래처에만** 보낸다 — 화면에서 걸러 본 것과 다른 곳에
+                    메일이 나가지 않게 하려는 것이다.""")
+            @RequestParam(required = false, defaultValue = "false") boolean onlyReportable,
             @Parameter(description = "키워드") @RequestParam(required = false) String keyword) {
-        return ApiResponse.success(
-                salesMailService.sendStatements(fromDate, toDate, partnerIds, keyword));
+        // ‼️메일 설정부터 본다. 꺼져 있는데 "거래처가 없습니다"가 뜨면 담당자는 조건만 계속 바꾼다.
+        salesMailService.assertUsable();
+        // ★거래처를 안 고르면 **외상매출장에 실제로 잡힌 거래처**로 좁힌다.
+        //   예전엔 매출 조회 결과 전체로 보내서, 화면에 안 보이던 거래처에도 메일이 나갈 수 있었다.
+        java.util.List<Long> targets = partnerIds;
+        if (targets == null || targets.isEmpty()) {
+            targets = receivableService.arLedgerAll(fromDate, toDate, onlyReportable).stream()
+                    .map(com.daesung.sales.receivable.dto.ArLedgerResponse::partnerId)
+                    .filter(java.util.Objects::nonNull)
+                    .distinct()
+                    .toList();
+            if (targets.isEmpty()) {
+                throw new com.daesung.sales.common.exception.BusinessException(
+                        com.daesung.sales.common.exception.ErrorCode.NOT_FOUND,
+                        "외상매출장에 잡히는 거래처가 없습니다. 조건을 확인하세요.");
+            }
+        }
+        return ApiResponse.success(salesMailService.sendStatements(fromDate, toDate,
+                null, null, null, targets, null, null, keyword, false));
     }
 }
