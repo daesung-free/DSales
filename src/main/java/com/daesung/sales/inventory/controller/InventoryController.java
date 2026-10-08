@@ -150,6 +150,8 @@ public class InventoryController {
                     발주처 요청(2026-08-21): 전체 합산만 보면 **위탁 미결잔여가 실제로 어느 창고에
                     남아 있는지** 알 수 없다.""")
             @RequestParam(required = false) com.daesung.sales.warehouse.entity.WarehouseType warehouseType,
+            @Parameter(description = "분류코드 **다중선택**(2026-10-08). 예: `catCodes=M2026A01,H2026A01`")
+            @RequestParam(required = false) List<String> catCodes,
             @Parameter(description = "키워드 — 도서코드·도서명·창고명을 한 번에 훑는다(부분일치)")
             @RequestParam(required = false) String keyword,
             @Parameter(description = """
@@ -164,7 +166,7 @@ public class InventoryController {
         //   (수불부는 상품×창고로 묶은 뒤라야 이월이 정확하다). 총건수는 전체를 준다.
         return ApiResponse.success(com.daesung.sales.common.response.PageResponse.ofList(
                 inventoryService.stockLedger(fromDate, toDate, productId, warehouseId,
-                        warehouseType, keyword, sort),
+                        warehouseType, keyword, sort, catCodes),
                 page, size));
     }
 

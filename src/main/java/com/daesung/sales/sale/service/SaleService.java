@@ -555,6 +555,9 @@ public class SaleService {
                                              List<Long> partnerIds,
                                              List<Long> warehouseIds,
                                              List<String> schoolCodes,
+                                             List<String> divisionCodes,
+                                             List<Long> productIds,
+                                             List<String> partnerSchools,
                                              String keyword,
                                              boolean couponCount,
                                              boolean includeCanceled, Pageable pageable) {
@@ -599,6 +602,12 @@ public class SaleService {
                 MultiSelect.orPlaceholder(warehouseIds, 0L),
                 MultiSelect.isAny(schoolCodes),
                 MultiSelect.orPlaceholder(schoolCodes, "\u0000"),
+                MultiSelect.isAny(divisionCodes),
+                MultiSelect.orPlaceholder(divisionCodes, "\u0000"),
+                MultiSelect.isAny(productIds),
+                MultiSelect.orPlaceholder(productIds, 0L),
+                MultiSelect.isAny(partnerSchools),
+                MultiSelect.orPlaceholder(normalizePairs(partnerSchools), "\u0000"),
                 kw, includeCanceled, pageable);
         // ★학교/학원 구분은 매출 원장에 없다 — 학교 마스터에서 붙인다.
         //   페이지 안의 학교코드만 모아 **한 번에** 조회한다(행마다 조회하면 N+1이다).
@@ -614,6 +623,30 @@ public class SaleService {
                 // 학교명 보완(항목 13-③) · 쿠폰 카운트(항목 13-⑤)
                 (s.getSchoolCode() == null) ? null : schoolNames.get(s.getSchoolCode()),
                 couponCount)));
+    }
+
+    /**
+     * 거래처×학교 쌍을 쿼리가 비교할 모양으로 다듬는다.
+     *
+     * <p>화면은 {@code 12}(그 거래처 전체) 또는 {@code 12:S001}(그 학교만)로 보낸다.
+     * 앞 형태를 {@code 12:*} 로 바꿔 두면 쿼리에서 한 번에 비교된다.
+     *
+     * <p>★<b>왜 이 축이 따로 필요한가</b> — 거래처목록 AND 학교목록으로는
+     * "A는 전체, B는 그 학교만"을 표현할 수 없다. 학교목록을 걸면 A의 나머지 학교까지 빠진다.
+     */
+    private static List<String> normalizePairs(List<String> pairs) {
+        if (MultiSelect.isAny(pairs)) {
+            return pairs;
+        }
+        List<String> out = new ArrayList<>(pairs.size());
+        for (String raw : pairs) {
+            if (raw == null || raw.isBlank()) {
+                continue;
+            }
+            String v = raw.trim();
+            out.add(v.contains(":") ? v : v + ":*");
+        }
+        return out;
     }
 
     /**

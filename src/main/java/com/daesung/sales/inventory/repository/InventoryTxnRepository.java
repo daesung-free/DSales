@@ -161,6 +161,8 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
               JOIN warehouses w ON w.id = t.warehouse_id
               LEFT JOIN inventory inv ON inv.product_id = t.product_id AND inv.warehouse_id = t.warehouse_id
             WHERE t.deleted_at IS NULL
+              -- ★분류 조건(2026-10-08). 없던 동안 화면이 기간 전체를 받아 걸러 쓰고 있었다.
+              AND (:anyCat = TRUE OR p.cat_code IN (:catCodes))
               AND (CAST(:productId AS SIGNED) IS NULL OR t.product_id = :productId)
               AND (CAST(:warehouseId AS SIGNED) IS NULL OR t.warehouse_id = :warehouseId)
               AND (:warehouseType IS NULL OR w.type = :warehouseType)
@@ -172,7 +174,9 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
                                @Param("toDate") LocalDate toDate,
                                @Param("productId") Long productId,
                                @Param("warehouseId") Long warehouseId,
-                               @Param("warehouseType") String warehouseType);
+                               @Param("warehouseType") String warehouseType,
+                               @Param("anyCat") boolean anyCat,
+                               @Param("catCodes") java.util.Collection<String> catCodes);
 
     /**
      * 제품수불부 <b>결산내역</b> 집계(분류×상품, 창고 합산). 근거: 정본 11p "결산내역(연초~기준일 누적)" +

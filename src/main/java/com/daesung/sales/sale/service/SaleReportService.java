@@ -73,7 +73,8 @@ public class SaleReportService {
      */
     @Transactional(readOnly = true)
     public SalesSummaryResponse summary(LocalDate fromDate, LocalDate toDate, Long partnerId,
-                                        String summaryKind, String salesType) {
+                                        String summaryKind, String salesType,
+                                        java.util.List<com.daesung.sales.salestype.entity.TradeClass> tradeClasses) {
         LocalDate from = (fromDate != null) ? fromDate : LocalDate.now().withDayOfYear(1);
         LocalDate to = (toDate != null) ? toDate : LocalDate.now();
         String kind = normalizeKind(summaryKind);
@@ -82,7 +83,26 @@ public class SaleReportService {
         List<SalesSummaryRow> rows = new ArrayList<>();
         long tSaleQ = 0, tSaleA = 0, tFreeQ = 0, tFreeA = 0, tTchQ = 0, tTchA = 0,
                 tRetQ = 0, tRetA = 0, tTax = 0, tTotal = 0;
-        for (Object[] r : saleRepository.salesSummary(from, to, partnerId, categoryOf(kind),
+        // 거래분류(다중) → 회계구분으로 바꿔 넘긴다. 입고·폐기는 매출 원장에 없어 떨어진다.
+        java.util.List<String> categories = new ArrayList<>();
+        if (!com.daesung.sales.common.query.MultiSelect.isAny(tradeClasses)) {
+            for (com.daesung.sales.salestype.entity.TradeClass tc : tradeClasses) {
+                var mapped = tc.toSalesCategory();
+                if (mapped != null && !categories.contains(mapped.name())) {
+                    categories.add(mapped.name());
+                }
+            }
+            if (categories.isEmpty()) {
+                // 입고·폐기만 골랐다 — 매출 집계로는 한 건도 안 나오는 것이 맞다.
+                return new SalesSummaryResponse(from, to, List.of(),
+                        new SalesSummaryRow(null, null, "합계", kind, type,
+                                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0));
+            }
+        }
+        boolean anyCategory = categories.isEmpty();
+        for (Object[] r : saleRepository.salesSummary(anyCategory,
+                anyCategory ? List.of("\u0000") : categories,
+                from, to, partnerId, categoryOf(kind),
                 kindShipment(kind), typeShipment(type))) {
             long saleQty = num(r[3]), saleAmt = num(r[4]), freeQty = num(r[5]), freeAmt = num(r[6]),
                     tchQty = num(r[7]), tchAmt = num(r[8]), retQty = num(r[9]), retAmt = num(r[10]),
@@ -180,6 +200,16 @@ public class SaleReportService {
      */
     @Transactional(readOnly = true)
     public NetSalesResponse netSales(LocalDate fromDate, LocalDate toDate, String contentType) {
+        return netSales(fromDate, toDate, contentType, null, null, null, null);
+    }
+
+    /** 조회 조건(거래처·세부구분·분류·도서)까지 받는 순매출(2026-10-08). */
+    @Transactional(readOnly = true)
+    public NetSalesResponse netSales(LocalDate fromDate, LocalDate toDate, String contentType,
+                                     java.util.List<Long> partnerIds,
+                                     java.util.List<String> divisions,
+                                     java.util.List<String> catCodes,
+                                     java.util.List<Long> productIds) {
         LocalDate from = (fromDate != null) ? fromDate : LocalDate.now().withDayOfYear(1);
         LocalDate to = (toDate != null) ? toDate : LocalDate.now();
         String filter = (contentType == null || contentType.isBlank())
@@ -199,7 +229,16 @@ public class SaleReportService {
         long tSaleQ = 0, tSaleA = 0, tSaleTax = 0, tFreeQ = 0, tFreeA = 0;
         long tRetQ = 0, tRetA = 0, tRetTax = 0, tPurch = 0, tInQ = 0;
         boolean anyExternal = false;
-        for (Object[] r : saleRepository.netSalesByProduct(from, to, filter)) {
+        for (Object[] r : saleRepository.netSalesByProduct(
+                com.daesung.sales.common.query.MultiSelect.isAny(partnerIds),
+                com.daesung.sales.common.query.MultiSelect.orPlaceholder(partnerIds, 0L),
+                com.daesung.sales.common.query.MultiSelect.isAny(divisions),
+                com.daesung.sales.common.query.MultiSelect.orPlaceholder(divisions, "\u0000"),
+                com.daesung.sales.common.query.MultiSelect.isAny(catCodes),
+                com.daesung.sales.common.query.MultiSelect.orPlaceholder(catCodes, "\u0000"),
+                com.daesung.sales.common.query.MultiSelect.isAny(productIds),
+                com.daesung.sales.common.query.MultiSelect.orPlaceholder(productIds, 0L),
+                from, to, filter)) {
             long pid = num(r[0]);
             String ct = (String) r[3];
             long saleQty = num(r[6]), saleAmt = num(r[7]), saleTax = num(r[8]);

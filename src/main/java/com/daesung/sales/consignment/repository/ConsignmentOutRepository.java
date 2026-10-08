@@ -26,6 +26,17 @@ public interface ConsignmentOutRepository extends JpaRepository<ConsignmentOut, 
     @Query("select c from ConsignmentOut c join fetch c.product"
             + " where c.partner.id = :partnerId and c.remainingQty <> 0 order by c.id")
     List<ConsignmentOut> findPending(Long partnerId);
+
+    /**
+     * <b>전 거래처</b>의 미결 위탁출고(2026-10-08). 거래처를 안 고르고 전체를 훑는 조회다.
+     *
+     * <p>화면이 기간 데이터를 전부 받아 걸러 쓰고 있어서 열었다 —
+     * 미결은 거래처가 늘수록 쌓이기만 하는 자료라 전부 받아 거르는 방식은 오래 못 간다.
+     * 거래처를 함께 로드해 목록에 이름을 붙일 때 N+1 이 나지 않게 한다.
+     */
+    @Query("select c from ConsignmentOut c join fetch c.product join fetch c.partner"
+            + " where c.remainingQty <> 0 order by c.partner.id, c.id")
+    List<ConsignmentOut> findAllPending();
     // ★조건이 `> 0`이 아니라 `<> 0`인 이유: 초과정산 차단을 제거한 뒤(발주처 2026-08-31)
     //   잔여가 **음수**가 될 수 있다. `> 0`으로 두면 초과된 미결이 화면에서 사라져
     //   "경고만 주고 담당자가 수기로 정리한다"는 요구를 만족할 수 없다 — 보여야 고친다.

@@ -407,13 +407,29 @@ public class InventoryService {
                                             Long productId, Long warehouseId,
                                             WarehouseType warehouseType, String keyword,
                                             String sort) {
+        return stockLedger(fromDate, toDate, productId, warehouseId, warehouseType, keyword, sort, null);
+    }
+
+    /**
+     * 분류 조건까지 받는 수불부(2026-10-08).
+     *
+     * <p>★분류는 <b>SQL에서</b> 거른다. 키워드와 달리 이월 계산에 영향을 주지 않기 때문이다 —
+     * 분류는 상품의 속성이라 어떤 분류를 빼도 남은 상품의 이월은 그대로다.
+     * (키워드는 메모리에서 거른다. 그 이유는 위 주석 참고.)
+     */
+    @Transactional(readOnly = true)
+    public List<StockLedgerRow> stockLedger(LocalDate fromDate, LocalDate toDate,
+                                            Long productId, Long warehouseId,
+                                            WarehouseType warehouseType, String keyword,
+                                            String sort, List<String> catCodes) {
         LocalDate from = (fromDate != null) ? fromDate : LocalDate.now().withDayOfYear(1);
         LocalDate to = (toDate != null) ? toDate : LocalDate.now();
 
         List<StockLedgerRow> result = new ArrayList<>();
         // 창고구분은 enum 이름 그대로 저장돼 있다(MAIN/CONSIGN). null이면 전체.
         String whType = (warehouseType == null) ? null : warehouseType.name();
-        for (Object[] r : inventoryTxnRepository.stockLedger(from, to, productId, warehouseId, whType)) {
+        for (Object[] r : inventoryTxnRepository.stockLedger(from, to, productId, warehouseId, whType,
+                MultiSelect.isAny(catCodes), MultiSelect.orPlaceholder(catCodes, "\u0000"))) {
             long closing = num(r[15]);
             long cached = num(r[16]);
             long sale = num(r[10]);          // 음수(재고를 깎는다)

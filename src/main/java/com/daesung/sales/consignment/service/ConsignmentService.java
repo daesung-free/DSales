@@ -144,21 +144,34 @@ public class ConsignmentService {
     /** 거래처별 미결(잔여>0) 조회. */
     @Transactional(readOnly = true)
     public ConsignPendingResponse findPending(Long partnerId) {
-        Partner partner = partnerRepository.findById(partnerId)
-                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
-                        "거래처가 없습니다. id=" + partnerId));
+        // ★거래처를 안 주면 전 거래처 미결을 본다(2026-10-08).
+        //   화면이 전체 조회를 기간 데이터로 흉내 내고 있었다.
+        Partner partner = (partnerId == null) ? null
+                : partnerRepository.findById(partnerId)
+                        .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                                "거래처가 없습니다. id=" + partnerId));
+
+        List<ConsignmentOut> pending = (partnerId == null)
+                ? consignmentOutRepository.findAllPending()
+                : consignmentOutRepository.findPending(partnerId);
 
         List<ConsignPendingResponse.Line> lines = new ArrayList<>();
-        for (ConsignmentOut co : consignmentOutRepository.findPending(partnerId)) {
+        for (ConsignmentOut co : pending) {
             Product p = co.getProduct();
             lines.add(new ConsignPendingResponse.Line(
-                    co.getId(), co.getSourceOutNo(), p.getId(), p.getCode(), p.getName(),
+                    co.getId(),
+                    co.getPartner().getId(), co.getPartner().getCode(), co.getPartner().getName(),
+                    co.getSourceOutNo(), p.getId(), p.getCode(), p.getName(),
                     co.getOriginalQty(), co.getTotalQty(), co.getReturnedQty(),
                     co.getSettledQty(), co.getRemainingQty(), co.getStatus(),
                     co.getUnitPrice(), co.getSupplyRate(), co.getDiscountAmount(),
                     remainingSupply(co, p)));
         }
-        return new ConsignPendingResponse(partner.getId(), partner.getName(), lines);
+        // 전체 조회면 머리의 거래처 자리는 비운다 — 특정 거래처의 미결로 읽히면 안 된다.
+        return new ConsignPendingResponse(
+                (partner == null) ? null : partner.getId(),
+                (partner == null) ? null : partner.getName(),
+                lines);
     }
 
     /**

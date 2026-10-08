@@ -50,10 +50,18 @@ public class ConsignmentController {
     }
 
     @Operation(summary = "위탁 미결 조회",
-            description = "거래처의 미결(잔여>0) 위탁출고 목록. 정산 화면에서 불러온다.")
+            description = """
+                    미결(잔여≠0) 위탁출고 목록. 정산 화면에서 불러온다.
+
+                    ★**거래처를 비우면 전 거래처**를 본다(2026-10-08). 그때 응답의 `partnerId`·`partnerName`은
+                    비어 있고, 줄마다 거래처가 실린다 — 특정 거래처의 미결로 읽히면 안 되기 때문이다.
+
+                    ‼️잔여가 **음수**인 건도 보여준다. 초과정산을 경고만 하고 막지 않기로 해서,
+                    화면에 보여야 담당자가 고칠 수 있다.""")
     @GetMapping("/pending")
     public ApiResponse<ConsignPendingResponse> pending(
-            @Parameter(description = "위탁 거래처 id", example = "1") @RequestParam Long partnerId) {
+            @Parameter(description = "위탁 거래처 id. **비우면 전체**", example = "1")
+            @RequestParam(required = false) Long partnerId) {
         return ApiResponse.success(consignmentService.findPending(partnerId));
     }
 

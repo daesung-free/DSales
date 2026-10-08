@@ -347,6 +347,16 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
             // ★학교 축(9/27 항목 13-② "학교별 중복조회"). 한 거래처가 여러 학교에 나가므로
             //   거래처만으로는 좁혀지지 않는다.
             + "and (:anySchool = true or s.schoolCode in :schoolCodes) "
+            // ★세부구분·도서 축(2026-10-08). 없던 동안 화면이 기간 전체를 받아 걸러 쓰고 있었다 —
+            //   데이터가 쌓이면 느려지는 정도가 아니라 못 쓴다.
+            + "and (:anyDivision = true or coalesce(s.product.salesDivision, '') in :divisions) "
+            + "and (:anyProduct = true or s.product.id in :productIds) "
+            // ★거래처×학교 **조합**. 'A는 전체 + B는 특정 학교만' 처럼 거래처마다 학교가 다른 조회를
+            //   거래처목록 AND 학교목록으로는 표현할 수 없다(A의 그 학교까지 걸러진다).
+            //   쌍을 'partnerId:schoolCode' 문자열로 받아 매칭한다. 전체는 'partnerId:*'.
+            + "and (:anyPair = true "
+            + "     or concat(s.partner.id, ':', coalesce(s.schoolCode, '')) in :pairs "
+            + "     or concat(s.partner.id, ':*') in :pairs) "
             // 키워드는 담당자가 화면에서 치는 값이다 — 거래처명·도서명·도서코드·매출번호·학교명을 함께 훑는다.
             // 어느 칸에 쳤는지 기억하고 고르게 하면 실무에서 안 쓴다.
             + "and (:keyword is null or lower(s.partner.name) like :keyword "
@@ -365,6 +375,12 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
                       @Param("warehouseIds") Collection<Long> warehouseIds,
                       @Param("anySchool") boolean anySchool,
                       @Param("schoolCodes") Collection<String> schoolCodes,
+                      @Param("anyDivision") boolean anyDivision,
+                      @Param("divisions") Collection<String> divisions,
+                      @Param("anyProduct") boolean anyProduct,
+                      @Param("productIds") Collection<Long> productIds,
+                      @Param("anyPair") boolean anyPair,
+                      @Param("pairs") Collection<String> pairs,
                       @Param("keyword") String keyword,
                       @Param("includeCanceled") boolean includeCanceled,
                       Pageable pageable);
@@ -398,10 +414,15 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
               --   따로 걸면 서로 충돌해 빈 결과가 되고, 그게 사실에 맞다.
               AND (CAST(:kindShipment AS CHAR) IS NULL OR s.shipment_type = :kindShipment)
               AND (CAST(:typeShipment AS CHAR) IS NULL OR s.shipment_type = :typeShipment)
+              -- ★거래분류 **다중선택**(2026-10-08). 기존 summaryKind 는 한 번에 하나뿐이라
+              --   "무상+반품만" 같은 조합을 화면이 전체를 받아 걸러 쓰고 있었다.
+              AND (:anyCategory = TRUE OR s.sales_category IN (:categories))
             GROUP BY s.product_id, p.code, p.name
             ORDER BY p.code
             """, nativeQuery = true)
-    List<Object[]> salesSummary(@Param("fromDate") LocalDate fromDate,
+    List<Object[]> salesSummary(@Param("anyCategory") boolean anyCategory,
+                                @Param("categories") Collection<String> categories,
+                                @Param("fromDate") LocalDate fromDate,
                                 @Param("toDate") LocalDate toDate,
                                 @Param("partnerId") Long partnerId,
                                 @Param("salesCategory") String salesCategory,
@@ -499,10 +520,24 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
             WHERE s.deleted_at IS NULL AND s.canceled = false
               AND s.sales_date BETWEEN :fromDate AND :toDate
               AND (CAST(:contentType AS CHAR) IS NULL OR p.content_type = :contentType)
+              -- ★조회 조건(2026-10-08) — 거래처·세부구분·분류·도서.
+              --   없던 동안 화면이 기간 전체를 받아 걸러 쓰고 있었다.
+              AND (:anyPartner = TRUE OR s.partner_id IN (:partnerIds))
+              AND (:anyDivision = TRUE OR COALESCE(p.sales_division, '') IN (:divisions))
+              AND (:anyCat = TRUE OR p.cat_code IN (:catCodes))
+              AND (:anyProduct = TRUE OR s.product_id IN (:productIds))
             GROUP BY s.product_id, p.code, p.name, p.content_type, p.cat_code, p.cat_name
             ORDER BY p.cat_code, p.code
             """, nativeQuery = true)
-    List<Object[]> netSalesByProduct(@Param("fromDate") LocalDate fromDate,
+    List<Object[]> netSalesByProduct(@Param("anyPartner") boolean anyPartner,
+                                     @Param("partnerIds") Collection<Long> partnerIds,
+                                     @Param("anyDivision") boolean anyDivision,
+                                     @Param("divisions") Collection<String> divisions,
+                                     @Param("anyCat") boolean anyCat,
+                                     @Param("catCodes") Collection<String> catCodes,
+                                     @Param("anyProduct") boolean anyProduct,
+                                     @Param("productIds") Collection<Long> productIds,
+                                     @Param("fromDate") LocalDate fromDate,
                                      @Param("toDate") LocalDate toDate,
                                      @Param("contentType") String contentType);
 

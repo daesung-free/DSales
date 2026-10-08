@@ -183,6 +183,16 @@ public class SaleController {
                     false 면 도서명에 '쿠폰'이 든 상품의 **수량만** 0으로 본다(금액은 그대로).
                     ‼️레거시와 같은 규칙이라 판별이 도서명 문자열이다.""")
             @RequestParam(required = false, defaultValue = "false") boolean couponCount,
+            @Parameter(description = "세부구분 **다중선택**(상품의 매출구분 코드). 예: `divisions=모의고사,교재`")
+            @RequestParam(required = false) List<String> divisions,
+            @Parameter(description = "도서(상품) id **다중선택**")
+            @RequestParam(required = false) List<Long> productIds,
+            @Parameter(description = """
+                    거래처×학교 **조합** 선택. `거래처id`(그 거래처 전체) 또는 `거래처id:학교코드`.
+                    예: `partnerSchools=12&partnerSchools=13:S001` → 12는 전체, 13은 S001만.
+                    ★거래처목록·학교목록을 따로 거는 것으로는 "A는 전체 + B는 그 학교만"을
+                    표현할 수 없어(학교 조건이 A에도 걸린다) 별도 축으로 받는다.""")
+            @RequestParam(required = false) List<String> partnerSchools,
             @Parameter(description = "키워드 — 거래처명·도서명·도서코드·매출번호·학교명을 한 번에 훑는다(부분일치)")
             @RequestParam(required = false) String keyword,
             @Parameter(description = "취소건 포함 여부(기본 false)") @RequestParam(defaultValue = "false") boolean includeCanceled,
@@ -193,7 +203,7 @@ public class SaleController {
                 MultiSelect.merge(shipmentType, shipmentTypes),
                 MultiSelect.merge(partnerId, partnerIds),
                 MultiSelect.merge(warehouseId, warehouseIds),
-                schoolCodes, keyword, couponCount,
+                schoolCodes, divisions, productIds, partnerSchools, keyword, couponCount,
                 includeCanceled, pageReq.toPageable(SALE_SORTS)));
     }
 
@@ -237,6 +247,12 @@ public class SaleController {
             @RequestParam(required = false) List<String> schoolCodes,
             @Parameter(description = "쿠폰 포함 카운트(기본 false — 조회와 같은 기본값)")
             @RequestParam(required = false, defaultValue = "false") boolean couponCount,
+            @Parameter(description = "세부구분 **다중선택**(조회와 동일)")
+            @RequestParam(required = false) List<String> divisions,
+            @Parameter(description = "도서 id **다중선택**(조회와 동일)")
+            @RequestParam(required = false) List<Long> productIds,
+            @Parameter(description = "거래처×학교 조합(조회와 동일)")
+            @RequestParam(required = false) List<String> partnerSchools,
             @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "false") boolean includeCanceled) {
         List<Col> cols = List.of(
@@ -264,7 +280,7 @@ public class SaleController {
                 MultiSelect.merge(shipmentType, shipmentTypes),
                 MultiSelect.merge(partnerId, partnerIds),
                 MultiSelect.merge(warehouseId, warehouseIds),
-                schoolCodes, keyword, couponCount,
+                schoolCodes, divisions, productIds, partnerSchools, keyword, couponCount,
                 includeCanceled,
                 org.springframework.data.domain.PageRequest.of(0, EXPORT_MAX));
         // ★고른 거래처 수를 머리말에 남긴다(2026-09-28 화면 정리안).
@@ -386,6 +402,8 @@ public class SaleController {
             @RequestParam(required = false) Long partnerId,
             @RequestParam(required = false) String summaryKind,
             @RequestParam(required = false) String salesType,
+            @Parameter(description = "거래분류 **다중선택**(SALES/FREE/RETURN). 조회와 같은 축")
+            @RequestParam(required = false) List<TradeClass> tradeClasses,
             @RequestParam(required = false) String keyword) {
         List<Col> cols = List.of(
                 new Col("상품코드", "productCode"), new Col("상품명", "productName"),
@@ -396,7 +414,7 @@ public class SaleController {
                 new Col("순매출수량", "netQty"), new Col("순매출액", "netAmount"),
                 new Col("세액", "tax"), new Col("합계", "total"));
         SalesSummaryResponse r = saleReportService.summary(fromDate, toDate, partnerId,
-                summaryKind, salesType);
+                summaryKind, salesType, tradeClasses);
         byte[] xlsx = excel.toXlsx("매출액정리", cols,
                 Keywords.filter(r.rows(), keyword,
                         x -> new Object[]{x.productCode(), x.productName()}),
@@ -418,10 +436,14 @@ public class SaleController {
             @RequestParam(required = false) String summaryKind,
             @Parameter(description = "매출유형 — 일반매출/위탁매출. 미지정=전체. ‼️모르는 값은 400")
             @RequestParam(required = false) String salesType,
+            @Parameter(description = """
+                    거래분류 **다중선택**(SALES/FREE/RETURN). 조회 화면과 같은 축이다(2026-10-08).
+                    `summaryKind` 는 한 번에 하나뿐이라 "무상+반품만" 같은 조합을 표현할 수 없었다.""")
+            @RequestParam(required = false) List<TradeClass> tradeClasses,
             @Parameter(description = "키워드 — 코드·명칭을 함께 훑는다(부분일치)")
             @RequestParam(required = false) String keyword) {
         SalesSummaryResponse r = saleReportService.summary(fromDate, toDate, partnerId,
-                summaryKind, salesType);
+                summaryKind, salesType, tradeClasses);
         return ApiResponse.success(new SalesSummaryResponse(r.fromDate(), r.toDate(),
                 Keywords.filter(r.rows(), keyword,
                         x -> new Object[]{x.productCode(), x.productName()}),
@@ -438,9 +460,18 @@ public class SaleController {
             @Parameter(description = "종료일(yyyy-MM-dd)") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @Parameter(description = "콘텐츠구분(SELF/EXTERNAL)") @RequestParam(required = false) String contentType,
+            @Parameter(description = "거래처 id **다중선택**(2026-10-08)")
+            @RequestParam(required = false) List<Long> partnerIds,
+            @Parameter(description = "세부구분 **다중선택**")
+            @RequestParam(required = false) List<String> divisions,
+            @Parameter(description = "분류코드 **다중선택**")
+            @RequestParam(required = false) List<String> catCodes,
+            @Parameter(description = "도서 id **다중선택**")
+            @RequestParam(required = false) List<Long> productIds,
             @Parameter(description = "키워드 — 코드·명칭을 함께 훑는다(부분일치)")
             @RequestParam(required = false) String keyword) {
-        NetSalesResponse r = saleReportService.netSales(fromDate, toDate, contentType);
+        NetSalesResponse r = saleReportService.netSales(fromDate, toDate, contentType,
+                partnerIds, divisions, catCodes, productIds);
         return ApiResponse.success(new NetSalesResponse(r.fromDate(), r.toDate(), r.contentType(),
                 Keywords.filter(r.rows(), keyword,
                         x -> new Object[]{x.productCode(), x.productName(), x.catCode(), x.catName()}),
@@ -453,7 +484,15 @@ public class SaleController {
     public ResponseEntity<byte[]> netSummaryExport(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
-            @RequestParam(required = false) String contentType) {
+            @RequestParam(required = false) String contentType,
+            @Parameter(description = "거래처 id **다중선택**(조회와 동일)")
+            @RequestParam(required = false) List<Long> partnerIds,
+            @Parameter(description = "세부구분 **다중선택**(조회와 동일)")
+            @RequestParam(required = false) List<String> divisions,
+            @Parameter(description = "분류코드 **다중선택**(조회와 동일)")
+            @RequestParam(required = false) List<String> catCodes,
+            @Parameter(description = "도서 id **다중선택**(조회와 동일)")
+            @RequestParam(required = false) List<Long> productIds) {
         List<Col> cols = List.of(
                 new Col("분류코드", "catCode"), new Col("분류명", "catName"),
                 new Col("상품코드", "productCode"), new Col("상품명", "productName"), new Col("콘텐츠구분", "contentType"),
@@ -465,7 +504,9 @@ public class SaleController {
                 new Col("매입 입고수량", "inboundQty"),
                 new Col("매입단가", "purchaseUnitCost"), new Col("매입액", "purchaseAmount"),
                 new Col("이익", "profit"), new Col("이익률(%)", "marginPct"));
-        byte[] xlsx = excel.toXlsx("순매출조회", cols, saleReportService.netSales(fromDate, toDate, contentType).rows(),
+        byte[] xlsx = excel.toXlsx("순매출조회", cols,
+                saleReportService.netSales(fromDate, toDate, contentType,
+                        partnerIds, divisions, catCodes, productIds).rows(),
                 Heading.period("순매출조회", fromDate, toDate));
         return excel.asDownload(xlsx, "순매출조회.xlsx");
     }

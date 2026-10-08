@@ -14,6 +14,12 @@ public record ConsignPendingResponse(
     @Schema(name = "ConsignPendingLine")
     public record Line(
             @Schema(description = "미결(consignment_out) id") Long consignmentOutId,
+            @Schema(description = """
+                    거래처 id. ★**전체 조회(거래처 미지정)** 일 때 줄마다 어느 거래처인지 가리는 값이다 —
+                    머리의 partnerId 가 비기 때문이다(2026-10-08).""")
+            Long partnerId,
+            @Schema(description = "거래처코드") String partnerCode,
+            @Schema(description = "거래처명") String partnerName,
             @Schema(description = "위탁출고번호", example = "OUT-20260608-1") String sourceOutNo,
             @Schema(description = "상품 id") Long productId,
             @Schema(description = "상품코드") String productCode,
@@ -49,12 +55,14 @@ public record ConsignPendingResponse(
             Long remainingSupplyAmount
     ) {
         /** 코드에서 한글명을 채워 생성 — 화면이 매번 매핑표를 들고 있지 않게. */
-        public Line(Long consignmentOutId, String sourceOutNo, Long productId, String productCode,
+        public Line(Long consignmentOutId, Long partnerId, String partnerCode, String partnerName,
+                    String sourceOutNo, Long productId, String productCode,
                     String productName, int originalQty, int totalQty, int returnedQty,
                     int settledQty, int remainingQty, ConsignmentStatus status,
                     Integer unitPrice, Integer supplyRate, Integer discountAmount,
                     Long remainingSupplyAmount) {
-            this(consignmentOutId, sourceOutNo, productId, productCode, productName,
+            this(consignmentOutId, partnerId, partnerCode, partnerName,
+                    sourceOutNo, productId, productCode, productName,
                     originalQty, totalQty, returnedQty, settledQty, remainingQty, status,
                     status == null ? null : status.label(),
                     unitPrice, supplyRate, discountAmount, remainingSupplyAmount);

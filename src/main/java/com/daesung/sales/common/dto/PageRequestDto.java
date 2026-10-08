@@ -23,9 +23,15 @@ public class PageRequestDto {
     @Schema(description = "페이지 크기 (기본 20)", example = "20", defaultValue = "20")
     private Integer size = 20;
 
-    @Schema(description = "정렬 기준: 컬럼명,정렬방향 (예: code,asc / price,desc). 비우면 정렬 안 함",
+    @Schema(description = """
+            정렬 기준: `컬럼명,정렬방향`. 비우면 정렬 안 함.
+
+            ★**두 축 이상도 된다** — `sort` 를 여러 번 보내면 보낸 순서대로 적용한다(2026-10-08).
+            예) `sort=partnerCode,asc&sort=salesDate,desc` → 거래처 먼저, 같은 거래처 안에서 날짜순.
+            화면의 '정렬 우선순위(거래처→거래일 / 거래일→거래처)'가 이것이다.
+            한 축만 보내던 기존 호출은 그대로 동작한다.""",
             example = "code,asc")
-    private String sort;
+    private java.util.List<String> sort;
 
     /** 페이지 크기 상한(자원 고갈 방지). */
     private static final int MAX_SIZE = 200;
@@ -50,23 +56,31 @@ public class PageRequestDto {
     public Pageable toPageable(java.util.Map<String, String> aliases) {
         int p = (page == null || page < 0) ? 0 : page;
         int s = (size == null || size < 1) ? 20 : Math.min(size, MAX_SIZE);
-        if (sort == null || sort.isBlank()) {
+        if (sort == null || sort.isEmpty()) {
             return PageRequest.of(p, s);
         }
-        String[] parts = sort.split(",");
-        String property = parts[0].trim();
-        Sort.Direction direction = (parts.length > 1 && "desc".equalsIgnoreCase(parts[1].trim()))
-                ? Sort.Direction.DESC : Sort.Direction.ASC;
-
-        if (!aliases.isEmpty()) {
-            String mapped = aliases.get(property);
-            if (mapped == null) {
-                throw new BusinessException(ErrorCode.INVALID_INPUT,
-                        "정렬할 수 없는 항목입니다: " + property
-                                + ". 가능한 항목: " + String.join(", ", new java.util.TreeSet<>(aliases.keySet())));
+        // ★보낸 순서가 곧 우선순위다. 화면의 '거래처 → 거래일' 같은 2단 정렬이 이것으로 표현된다.
+        java.util.List<Sort.Order> orders = new java.util.ArrayList<>();
+        for (String one : sort) {
+            if (one == null || one.isBlank()) {
+                continue;
             }
-            property = mapped;
+            String[] parts = one.split(",");
+            String property = parts[0].trim();
+            Sort.Direction direction = (parts.length > 1 && "desc".equalsIgnoreCase(parts[1].trim()))
+                    ? Sort.Direction.DESC : Sort.Direction.ASC;
+
+            if (!aliases.isEmpty()) {
+                String mapped = aliases.get(property);
+                if (mapped == null) {
+                    throw new BusinessException(ErrorCode.INVALID_INPUT,
+                            "정렬할 수 없는 항목입니다: " + property
+                                    + ". 가능한 항목: " + String.join(", ", new java.util.TreeSet<>(aliases.keySet())));
+                }
+                property = mapped;
+            }
+            orders.add(new Sort.Order(direction, property));
         }
-        return PageRequest.of(p, s, Sort.by(direction, property));
+        return orders.isEmpty() ? PageRequest.of(p, s) : PageRequest.of(p, s, Sort.by(orders));
     }
 }
