@@ -137,7 +137,11 @@ public class SaleService {
             // 반품은 들어오는 물건이라 내보낼 작업이 없다.
             // ★미출고 매출(창고 없음)도 만들지 않는다 — 내보낼 물건이 없는데 작업지시가 서면
             //   물류 대기목록에 영원히 안 끝나는 건이 쌓인다(정본 13p "거래명세서·물류 연계 제외").
-            if (r.salesCategory() != SalesCategory.RETURN && warehouse != null) {
+            // ★「매출만(배송X)」이면 작업지시를 만들지 않는다 — 레거시 CheckBox_OnlySales 가
+            //   하던 일이 정확히 이것이다(UC_TabPages.vb:749, sendData INSERT 건너뜀).
+            //   재고는 평소대로 빠진다 — 창고를 비우는 것과는 다른 축이다.
+            if (r.salesCategory() != SalesCategory.RETURN && warehouse != null
+                    && !Boolean.TRUE.equals(req.onlySales())) {
                 shipmentService.ensureFor(sale);
             }
 

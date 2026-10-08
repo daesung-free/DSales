@@ -11,6 +11,28 @@ import org.springframework.data.repository.query.Param;
 
 public interface ShipmentRepository extends JpaRepository<Shipment, Long> {
 
+    /**
+     * 그 <b>신청번호(DSRE reqCd)</b>로 세운 매출이 묶인 발송 건들.
+     *
+     * <p>근거: 프론트 실측 지적(2026-10-01, 2026-10-08 [A]5) — 「발송취소가 실제로 상태를
+     * 되돌리지 못한다」. 원인은 <b>축이 둘</b>이었다. 발송취소는 DSRE {@code STATE} 를 D→W 로
+     * 되돌리는데, 작업요청서 화면의 '발송완료'는 <b>우리 {@code shipment.sent_date}</b> 로
+     * 판정한다 — DSRE 는 돌아갔는데 우리 화면은 계속 발송완료로 보였다.
+     *
+     * <p>발송 건은 (거래일자·거래처·학교·분류)로 묶이므로, 신청번호에서 그 키를 거쳐 되짚는다.
+     * ★취소된 매출은 제외한다 — 되돌린 건의 신청번호로 남의 발송 건을 내리면 안 된다.
+     */
+    @Query("""
+            select distinct sh from Shipment sh
+             where exists (select 1 from Sale sa join sa.product p
+                            where sa.reqCd = :reqCd and sa.canceled = false
+                              and sa.salesDate = sh.tradeDate
+                              and sa.partner.id = sh.partner.id
+                              and coalesce(sa.schoolCode, '') = coalesce(sh.schoolCode, '')
+                              and coalesce(p.salesDivision, '') = coalesce(sh.tradeClass, ''))
+            """)
+    List<Shipment> findByReqCd(@Param("reqCd") Integer reqCd);
+
     /** 같은 (일자·거래처·학교·분류)의 발송 건. 매출을 여러 번 등록해도 한 건에 묶는다. */
     @Query("""
             select s from Shipment s

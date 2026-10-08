@@ -59,6 +59,42 @@ public class ShipmentService {
                         sale.getSchoolCode(), sale.getSchoolName(), null)));
     }
 
+    /** status_history 의 발송 상태축 이름. */
+    private static final String FIELD_SENT = "sent";
+
+    /**
+     * 발송취소에 맞춰 <b>우리 쪽 발송 기록도</b> 내린다(2026-10-08 [A]5).
+     *
+     * <p>★<b>이게 없어서 발송취소가 안 되는 것으로 보였다.</b> 발송취소는 DSRE
+     * {@code tbl_request_info.STATE} 를 D→W 로 실제로 되돌리는데, 작업요청서 화면의
+     * '발송완료'는 우리 {@code shipment.sent_date} 로 판정한다 — 축이 둘이라
+     * DSRE 만 돌아가고 화면은 그대로였다.
+     *
+     * <p>한 신청이 여러 발송 건에 걸릴 수 있고(분류가 다르면 발송이 갈린다) 한 발송 건에
+     * 신청이 여럿일 수도 있다. 후자는 <b>의도된 동작</b>이다 — 같은 날 같은 학교로 들어온
+     * 두 주문을 한 상자에 싸서 보냈다면, 그 상자의 발송을 취소하는 것이 맞다.
+     * 다만 <b>남은 신청의 상태는 DSRE 쪽에서 D 로 남는다</b>(우리가 임의로 바꾸지 않는다) —
+     * 화면에서 함께 취소하도록 신청번호 목록({@code reqCds})을 이미 내려주고 있다.
+     *
+     * @return 실제로 내려간 발송 건 수(0이면 그 신청으로 세운 발송이 없거나 이미 발송 전이다)
+     */
+    @Transactional
+    public int revertSentByReqCd(Integer reqCd, String reason) {
+        if (reqCd == null) {
+            return 0;
+        }
+        int reverted = 0;
+        for (Shipment s : shipmentRepository.findByReqCd(reqCd)) {
+            if (s.revertSent()) {
+                statusHistoryService.record(StatusEntityType.SHIPMENT, s.getId(),
+                        FIELD_SENT, true, false,
+                        "발송취소(신청번호 " + reqCd + ") — " + orNoReason(reason));
+                reverted++;
+            }
+        }
+        return reverted;
+    }
+
     /**
      * 주문의 「택배 발송」·담당자를 그 매출의 작업요청서에 <b>자동 입력</b>한다
      * (2026-10-08 프론트 요청 [A]4 / 9/27 회의 1·20번).

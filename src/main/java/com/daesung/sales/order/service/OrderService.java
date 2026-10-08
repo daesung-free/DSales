@@ -170,6 +170,14 @@ public class OrderService {
                 : reason;
         statusHistoryService.record(StatusEntityType.DSRE_ORDER, (long) reqCd, "STATE",
                 fromCode, to.code(), why);
+
+        // ★발송취소(D→W)는 우리 쪽 발송 기록도 내려야 실제로 되돌아간다(2026-10-08 [A]5).
+        //   작업요청서 화면의 '발송완료'는 DSRE STATE 가 아니라 shipment.sent_date 로 판정한다 —
+        //   이걸 안 내려서 "발송취소가 상태를 되돌리지 못한다"는 지적을 받았다.
+        if (from == OrderState.SHIPPED && to == OrderState.READY_TO_SHIP) {
+            shipmentService.revertSentByReqCd(reqCd, why);
+        }
+
         return new ItemResult(reqCd, true, fromCode, OrderState.labelOf(fromCode),
                 to.code(), to.label(), null);
     }
@@ -310,7 +318,7 @@ public class OrderService {
                 req.schoolCode(), null, null, null, sl.memo());
         SalesEntryRequest entry = new SalesEntryRequest(
                 (sl.salesDate() != null) ? sl.salesDate() : LocalDate.now(),
-                sl.partnerId(), sl.warehouseId(), List.of(item));
+                sl.partnerId(), sl.warehouseId(), null, List.of(item));
 
         SalesEntryResponse res = saleService.createEntries(entry);
         String no = res.items().isEmpty() ? null : res.items().get(0).salesNo();

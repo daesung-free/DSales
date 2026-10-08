@@ -49,6 +49,7 @@ class OrderStateChangeTest {
 
     @Mock private DsreGateway dsreGateway;
     @Mock private StatusHistoryService statusHistoryService;
+    @Mock private com.daesung.sales.logistics.service.ShipmentService shipmentService;
     @InjectMocks private OrderService orderService;
 
     private static DsreOrderRow order(int reqCd, String stateCode) {
@@ -87,6 +88,33 @@ class OrderStateChangeTest {
 
         verify(statusHistoryService).record(any(), anyLong(), anyString(), anyString(), anyString(),
                 eq("수동 되돌리기(사유 미입력)"));
+    }
+
+    @Test
+    @DisplayName("★★발송취소는 우리 쪽 발송 기록도 내린다 — 그게 없어서 '취소가 안 된다'는 지적을 받았다")
+    void 발송취소는_발송일도_내린다() {
+        given(7, "D");
+        when(dsreGateway.changeState(7, "D", "W")).thenReturn(1);
+
+        var r = orderService.changeState(List.of(7), OrderState.READY_TO_SHIP, "오발송");
+
+        assertThat(r.changed()).isEqualTo(1);
+        // DSRE STATE 만 되돌리면 작업요청서 화면은 계속 발송완료로 보인다 —
+        // 그 화면의 '발송완료'는 shipment.sent_date 로 판정한다(축이 둘이었다).
+        verify(shipmentService).revertSentByReqCd(eq(7), eq("오발송"));
+    }
+
+    @Test
+    @DisplayName("발송취소가 아닌 전이에서는 발송 기록을 건드리지 않는다")
+    void 다른_전이는_발송일을_안_건드린다() {
+        given(8, "W");
+        when(dsreGateway.changeState(8, "W", "S")).thenReturn(1);
+
+        orderService.changeState(List.of(8), OrderState.PREPARING, "재검수");
+
+        // 발송준비중 되돌리기는 애초에 발송된 건이 아니다. 여기서 내리면
+        // 아직 안 보낸 건의 발송일을 지우려 들어 이력에 거짓 기록이 남는다.
+        verify(shipmentService, never()).revertSentByReqCd(anyInt(), anyString());
     }
 
     @Test

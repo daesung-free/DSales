@@ -34,6 +34,25 @@ public record SalesEntryRequest(
                 example = "1")
         Long warehouseId,
 
+        @Schema(description = """
+                「매출만(배송X)」 — 매출은 세우고 <b>작업요청서(발송 건)만 만들지 않는다</b>.
+
+                <p>근거: 레거시 {@code UC_TabPages.vb} 의 같은 이름 체크박스
+                ({@code CheckBox_OnlySales}, Designer.vb:113 "매출만(배송X)"). 그 체크는
+                {@code UC_TabPages.vb:749} 한 곳에만 쓰이고, 하는 일은 <b>sendData INSERT 를 건너뛰는 것</b>이다
+                — 매출 기록과 재고는 평소와 똑같다.
+
+                <p>‼️<b>창고를 비우는 것과 다른 축이다.</b> 혼동이 있어 바로잡는다(2026-10-08 [C]17) —
+                <ul>
+                  <li><b>창고 없음</b> = 미출고 매출(문항사용료·학원매출). <b>재고가 안 움직인다.</b></li>
+                  <li><b>배송X</b> = 물건은 나가므로 <b>재고는 그대로 빠지고</b>, 물류 작업지시만 안 만든다
+                      (이미 배송정보가 있거나 거래처가 직접 가져가는 건).</li>
+                </ul>
+                그래서 재고관리 상품을 창고 없이 보내면 그대로 400이다 — 재고를 조용히 안 건드리고
+                매출만 서면 장부가 갈라진다. 그 경우 필요한 것은 창고를 비우는 게 아니라 이 값이다.""",
+                example = "false")
+        Boolean onlySales,
+
         @Schema(description = "매출 품목 목록", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotEmpty @Valid List<Item> items
 ) {
