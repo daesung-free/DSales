@@ -65,6 +65,30 @@ public class DisposalController {
         return ApiResponse.success(inventoryService.dispose(req));
     }
 
+    @Operation(summary = "폐기 수정(오입력 정정)",
+            description = """
+                    폐기 전표의 품목·수량·비고를 고친다. 근거: 9/27 회의 항목 7·9 「우클릭 [수정]」.
+
+                    ★**삭제 + 재등록이다(한 트랜잭션). 새 전표번호가 나간다.**
+                    제자리에서 수량을 고치거나 취소+재등록으로 하지 않는 이유 —
+                    · 제자리 수정: 이 화면의 목록·요약이 재고 이벤트를 직접 읽는다. 차액 행을 더하면
+                      한 전표가 두 줄로 보이거나 **상세와 요약이 어긋난다**(2026-10-01에 고친 결함이다).
+                    · 취소+재등록: 취소 역분개는 **취소한 달**로 잡혀 원 수량이 그 기간 합계에 남는다
+                      — 200을 150으로 고쳤는데 합계가 350이 된다.
+                    삭제는 "애초에 없던 일"로 만들어 기간 합계에 수정 후 수량만 남는다.
+
+                    · **마감 검사는 두 달 모두** — 원 전표의 달과 새 처리일자의 달.
+                    · **이미 취소된 전표는 400** — 되돌린 기록이 장부에 선 뒤라 오입력이 아니다.
+                    · 폐기가 아닌 전표(입고·이고·실사)는 400.
+                    · 어느 전표가 어느 전표로 바뀌었는지 상태변경 이력에 남는다.""")
+    @org.springframework.web.bind.annotation.PatchMapping("/{refNo}")
+    public ApiResponse<DisposalResponse> revise(
+            @Parameter(description = "수정할 전표번호", required = true) @PathVariable String refNo,
+            @Valid @RequestBody DisposalRequest req) {
+        return ApiResponse.success(
+                inventoryService.reviseDisposal(refNo, req, currentAuditor.username()));
+    }
+
     @Operation(summary = "폐기 내역 조회(10p)",
             description = """
                     등록된 폐기 전표를 최근순으로. 기간·도서·창고로 좁힐 수 있다(전부 선택).

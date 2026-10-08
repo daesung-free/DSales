@@ -21,6 +21,7 @@ import com.daesung.sales.sale.dto.ReturnInboundRequest;
 import com.daesung.sales.sale.dto.ReturnableAgg;
 import com.daesung.sales.sale.dto.ReturnableResponse;
 import com.daesung.sales.sale.dto.SaleResponse;
+import com.daesung.sales.sale.dto.SaleUpdateRequest;
 import com.daesung.sales.sale.dto.SalesEntryRequest;
 import com.daesung.sales.sale.dto.SalesEntryResponse;
 import com.daesung.sales.sale.entity.Sale;
@@ -422,6 +423,100 @@ public class SaleService {
             case CANCEL -> throw new BusinessException(ErrorCode.INVALID_INPUT,
                     "취소는 매출 취소(/sales/{id}/cancel)로 처리하세요.");
         };
+    }
+
+    /**
+     * 매출 수정(오입력 정정). 근거: 프론트 회신 2026-10-08 [A]2 — 9/27 회의 항목 7·9·12가
+     * 모두 「우클릭 [수정]」을 요구하는데 서버에 경로가 없었다.
+     *
+     * <p>★<b>레거시에는 이 기능이 없다.</b> {@code UC_TabPages.vb:800} 주변에 UPDATE 문이
+     * <b>주석 처리</b>돼 있고, 그 안에 당시 개발자 메모가 남아 있다 —
+     * "update의 경우에는 생각할게 많다 … 그냥 삭제하고 넣는게 최선인가?".
+     * 참고구현이 없으니 아래 선택을 근거와 함께 남긴다.
+     *
+     * <p>★<b>제자리 수정이다(매출번호를 유지한다).</b> 삭제 후 재등록하면 번호가 바뀌는데,
+     * 매출번호에는 이미 <b>거래명세서 · 작업요청서(발송 건) · DSRE 신청번호 · 반품 원출고번호</b>가
+     * 매달려 있다. 번호가 바뀌면 그 연결이 전부 끊기고, 특히 이미 출력된 거래명세서와
+     * 대조할 수 없게 된다. (폐기는 그런 연결이 없어 삭제+재등록으로 간다 —
+     * {@code InventoryService#reviseDisposal} 참고. 같은 기능이 다른 방식인 이유가 거기 있다.)
+     *
+     * <p><b>거부하는 경우</b>
+     * <ul>
+     *   <li>마감된 달 → {@code PERIOD_LOCKED}. 신고가 끝난 달의 숫자는 수정이 아니라 취소로 간다.</li>
+     *   <li>이미 취소된 매출 → 되돌린 건을 고치면 역분개와 어긋난다.</li>
+     *   <li>위탁정산 매출 → 미결원장(총출고=기정산+미결잔여)과 어긋난다. 취소 후 다시 정산해야 한다.</li>
+     *   <li>바꿀 항목이 하나도 없음 → 화면 오류다. 조용히 성공으로 돌려주면 담당자는 반영된 줄 안다.</li>
+     * </ul>
+     *
+     * <p>금액은 항상 {@code Amounts} 로 다시 산출한다 — 수량만 바뀌어도 공급가액·총금액이 따라간다.
+     * 세액은 자동산출하지 않는다(재무팀 확정): 보내면 그 값, 안 보내면 기존 값 유지.
+     */
+    @Transactional
+    public SaleResponse update(Long id, SaleUpdateRequest req) {
+        Sale sale = saleRepository.findById(id)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "매출이 없습니다. id=" + id));
+        if (req.isEmpty()) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT, "바꿀 항목이 없습니다.");
+        }
+        if (sale.isCanceled()) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "취소된 매출은 수정할 수 없습니다: " + sale.getSalesNo());
+        }
+        if (sale.getSalesType() == SalesType.CONSIGN_SALES) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "위탁정산으로 만들어진 매출은 수정할 수 없습니다: " + sale.getSalesNo()
+                            + ". 매출 취소(/sales/" + id + "/cancel) 후 다시 정산하세요 — "
+                            + "그래야 위탁 미결원장이 함께 맞습니다.");
+        }
+        periodLockService.assertNotLocked(sale.getSalesDate());
+
+        int oldQty = sale.getQty();
+        int newQty = (req.qty() != null) ? req.qty() : oldQty;
+        Integer unitPrice = (req.unitPrice() != null) ? req.unitPrice() : sale.getUnitPrice();
+        Integer supplyRate = (req.supplyRate() != null) ? req.supplyRate() : sale.getSupplyRate();
+        Integer discount = (req.discountAmount() != null) ? req.discountAmount() : sale.getDiscountAmount();
+        // 세액은 보낸 값 우선, 없으면 기존 값 유지(자동산출 안 함 — 재무팀 확정).
+        Integer tax = (req.tax() != null) ? req.tax()
+                : ((sale.getTax() == null) ? null : sale.getTax().intValue());
+        if (unitPrice == null || supplyRate == null) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "정가·공급률이 비어 있어 금액을 다시 계산할 수 없습니다: " + sale.getSalesNo());
+        }
+
+        String before = summarizeAmounts(sale);
+        // 면세 상품에 세액이 들어오면 Amounts 가 거부한다(한 곳에서만 판정한다).
+        Amounts amt = Amounts.of(unitPrice, supplyRate, newQty, sale.getProduct().isTaxFree(),
+                tax, discount);
+        sale.applyRevision(newQty, unitPrice, supplyRate, discount,
+                amt.supplyAmount(), amt.tax(), amt.totalAmount(),
+                (req.memo() != null) ? req.memo() : sale.getMemo(),
+                (req.bookRound() != null) ? req.bookRound() : sale.getBookRound(),
+                (req.procType() != null) ? req.procType() : sale.getProcType(),
+                (req.packType() != null) ? req.packType() : sale.getPackType());
+
+        // ‼️from/to 칸은 VARCHAR(30)이라 요약이 안 들어간다(실제로 1406으로 터졌다).
+        //   상태축에는 수량만 넣고, 무엇이 어떻게 바뀌었는지는 사유 칸(500)에 전부 적는다.
+        statusHistoryService.record(StatusEntityType.SALE, sale.getId(), "revised",
+                oldQty + "부", newQty + "부",
+                "매출 수정(" + sale.getSalesNo() + ") " + before + " → " + summarizeAmounts(sale));
+
+        // ★수량이 바뀌면 재고도 차액만큼 보정한다. 안 하면 장부(매출)와 재고가 갈린다.
+        //   ‼️응답을 먼저 만든다 — 보정의 원자적 UPDATE가 영속성 컨텍스트를 비운다(취소와 같은 이유).
+        int stockAdj = stockDelta(sale.getShipmentType(), newQty) - stockDelta(sale.getShipmentType(), oldQty);
+        saleRepository.flush();
+        SaleResponse response = SaleResponse.from(sale, divisionOf(sale));
+        if (stockAdj != 0) {
+            inventoryService.adjustShipment(sale.getSalesNo(), stockAdj,
+                    "매출 수정: 수량 " + oldQty + " → " + newQty);
+        }
+        return response;
+    }
+
+    /** 이력에 남길 금액 요약. 수정 전·후를 같은 형식으로 적어야 나중에 대조된다. */
+    private static String summarizeAmounts(Sale s) {
+        return "수량 " + s.getQty() + " / 정가 " + s.getUnitPrice() + " / 공급률 " + s.getSupplyRate()
+                + " / 공급가 " + s.getSupplyAmount() + " / 세액 " + s.getTax()
+                + " / 총액 " + s.getTotalAmount();
     }
 
     /**

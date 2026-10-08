@@ -46,6 +46,7 @@ import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -377,6 +378,36 @@ public class SaleController {
                                     @Valid @RequestBody(required = false) com.daesung.sales.logistics.dto.ReasonRequest req) {
         saleService.delete(id, com.daesung.sales.logistics.dto.ReasonRequest.reasonOf(req));
         return ApiResponse.success(null);
+    }
+
+    @Operation(summary = "매출 수정(오입력 정정)",
+            description = """
+                    등록한 매출의 **수량·정가·공급률·세액·할인액·메모·회차·성적처리·포장구분**을 고친다.
+                    근거: 9/27 회의 항목 12 「통합매출 우클릭 [수정]」(항목 7·9도 같은 요구).
+
+                    · **보내지 않은 항목은 유지**된다. 수량만 고치려다 메모가 지워지지 않게.
+                    · 금액(공급가액·총금액)은 **항상 다시 계산**된다 — 수량만 바꿔도 따라간다.
+                    · **세액은 자동산출하지 않는다**(재무팀 확정). 보내면 그 값, 안 보내면 기존 값.
+                      면세 상품에 0이 아닌 세액을 보내면 400이다.
+                    · **수량을 바꾸면 재고도 차액만큼 보정**된다. 원 재고이벤트는 고치지 않고
+                      같은 매출번호로 차액 이벤트를 남긴다 — 그래야 과거 수불부를 다시 뽑아도
+                      당시 숫자가 그대로 나온다.
+
+                    ★**매출번호는 바뀌지 않는다.** 거래명세서·작업요청서·DSRE 신청번호·반품
+                    원출고번호가 그 번호에 매달려 있다. (폐기 수정은 반대로 새 전표번호가 나간다 —
+                    폐기는 그런 연결이 없고, 제자리 수정이면 폐기 목록과 요약이 어긋난다.)
+
+                    **바꿀 수 없는 것** — 거래일자 · 거래처 · 도서 · 출고유형 · 창고 · 학교.
+                    그 여섯이 바뀌면 사실상 다른 거래이고 발송 건을 묶는 키가 달라져 이미 나간
+                    작업지시와 어긋난다. 그 경우는 **삭제 후 다시 등록**해야 한다.
+
+                    **400인 경우** — 마감된 달(PERIOD_LOCKED) · 이미 취소된 매출 ·
+                    위탁정산 매출(취소 후 재정산) · 바꿀 항목이 하나도 없음.""")
+    @PatchMapping("/{id:\\d+}")
+    public ApiResponse<SaleResponse> update(
+            @PathVariable Long id,
+            @Valid @RequestBody com.daesung.sales.sale.dto.SaleUpdateRequest req) {
+        return ApiResponse.success(saleService.update(id, req));
     }
 
     @Operation(summary = "매출 취소(논리 취소)",

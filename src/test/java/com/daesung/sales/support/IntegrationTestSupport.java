@@ -101,6 +101,11 @@ public abstract class IntegrationTestSupport {
     }
 
     /** 인증 DELETE → ApiResponse JsonNode 반환. */
+    /** PATCH(부분 수정). 매출·폐기 수정이 이 메서드다. */
+    protected JsonNode patch(String path, Object body) {
+        return exchange(HttpMethod.PATCH, path, body, true);
+    }
+
     protected JsonNode del(String path) {
         return exchange(HttpMethod.DELETE, path, null, true);
     }

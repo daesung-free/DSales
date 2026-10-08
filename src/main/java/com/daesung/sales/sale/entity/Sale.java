@@ -266,6 +266,29 @@ public class Sale extends com.daesung.sales.common.entity.SoftDeletableEntity {
         this.bookRound = bookRound;
     }
 
+    /**
+     * 매출 수정(오입력 정정, 2026-10-08 [A]2). 금액은 호출자가
+     * {@code Amounts} 로 산출한 값을 넘긴다 — <b>금액 계산은 한 곳(Amounts)만</b>이라는 규율이다.
+     *
+     * <p>바꾸지 않을 항목은 호출자가 기존 값을 그대로 넘긴다. 여기서 null 판정을 하지 않는 이유는,
+     * 금액이 수량·정가·공급률·할인액의 함수라 <b>확정된 값 전부</b>를 받아야 산출이 맞기 때문이다.
+     */
+    public void applyRevision(int qty, Integer unitPrice, Integer supplyRate, Integer discountAmount,
+                              long supplyAmount, long tax, long totalAmount,
+                              String memo, Integer bookRound, ProcType procType, PackType packType) {
+        this.qty = qty;
+        this.unitPrice = unitPrice;
+        this.supplyRate = supplyRate;
+        this.discountAmount = discountAmount;
+        this.supplyAmount = supplyAmount;
+        this.tax = tax;
+        this.totalAmount = totalAmount;
+        this.memo = memo;
+        this.bookRound = bookRound;
+        this.procType = procType;
+        this.packType = packType;
+    }
+
     /** 논리 취소. */
     public void cancel() {
         this.canceled = true;

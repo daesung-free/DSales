@@ -170,6 +170,37 @@ public class InventoryService {
     }
 
     /**
+     * 매출 수정으로 바뀐 수량만큼 재고를 보정한다(2026-10-08 [A]2).
+     *
+     * <p>★<b>원 이벤트를 고치지 않는다.</b> {@code inventory_txn} 은 재고의 유일 진실인
+     * <b>이벤트 로그</b>다 — 원 행의 수량을 덮으면 "그날 실제로 몇 개 나갔나"가 사라지고,
+     * 과거 수불부를 다시 뽑았을 때 당시와 다른 숫자가 나온다.
+     * 대신 <b>차액 이벤트</b>를 같은 매출번호로 남긴다. 합계는 수정 후 수량과 같아진다.
+     *
+     * <p>★<b>버킷(txnType·shipmentType)과 거래일자는 원 이벤트를 그대로 따른다.</b>
+     * 차액이 양수라고 반품 버킷에 넣으면 수불부의 반품 칸이 부풀고 매출 칸이 줄지 않는다
+     * (매출취소 역분개가 같은 규칙을 쓴다). 날짜도 원 거래일이어야 그 달 수불부가 맞다.
+     *
+     * @param stockDelta 재고 증감(= 새 부호수량 − 원 부호수량)
+     * @return 보정 후 잔량. 재고를 쓰지 않는 매출(미출고·재고미관리)이면 0
+     */
+    public int adjustShipment(String refNo, int stockDelta, String memo) {
+        if (stockDelta == 0) {
+            return 0;
+        }
+        List<InventoryTxn> origins = inventoryTxnRepository.findShipmentsByRefNo(refNo);
+        if (origins.isEmpty()) {
+            return 0;   // 창고 없는 매출이거나 재고미관리 상품 — 보정할 재고가 애초에 없다
+        }
+        InventoryTxn o = origins.get(0);
+        int balance = applyDelta(o.getProduct(), o.getWarehouse(), stockDelta);
+        inventoryTxnRepository.save(InventoryTxn.shipment(
+                o.getProduct(), o.getWarehouse(), stockDelta,
+                o.getTxnType(), o.getShipmentType(), o.getTradeDate(), refNo, memo));
+        return balance;
+    }
+
+    /**
      * 매출취소 역분개. refNo(매출번호)로 생성된 출고/반품 이벤트를 찾아, 같은 버킷에 반대 부호로 되돌린다.
      * 재고 복구(반대 delta) + 상쇄 이벤트 생성 → 수불부 버킷도 상쇄(net 0). 원출고 없으면(위탁정산 등) no-op.
      * 반드시 호출자 트랜잭션 내에서. 반품 취소로 차감 시 음수재고면 NEGATIVE_STOCK.
@@ -798,6 +829,51 @@ public class InventoryService {
                 "deleted", "false", "true", sb.append("사유: ").append(reason).toString());
 
         softDeleteByRefNo(refNo, actor);
+    }
+
+    /**
+     * 폐기 전표 수정(2026-10-08 [A]2 / 9/27 회의 항목 7·9 「우클릭 수정」).
+     *
+     * <p>★<b>삭제 + 재등록이다</b>(한 트랜잭션). 새 전표번호가 나간다.
+     * 수량을 제자리에서 고치거나 취소+재등록으로 하지 않는 이유는 둘 다 숫자를 틀어 놓기 때문이다 —
+     * <ul>
+     *   <li><b>제자리 수정</b>: 폐기 목록·요약이 {@code inventory_txn} 을 직접 읽는다.
+     *       차액 행을 더하면 한 전표가 두 줄로 보이거나, 줄어든 차액 행(양수)이
+     *       목록에서는 빠지고 요약에는 들어가 <b>상세와 요약이 어긋난다</b>
+     *       (2026-10-01에 바로 그 결함을 고쳤다 — 되돌릴 수 없다).</li>
+     *   <li><b>취소 + 재등록</b>: 취소 역분개는 <b>취소한 달</b>로 잡혀 원 전표의 수량이
+     *       그 기간 합계에 그대로 남는다. 200을 150으로 고쳤는데 합계가 350이 된다.</li>
+     * </ul>
+     * 삭제는 "애초에 없던 일"로 만들므로 기간 합계에 수정 후 수량만 남는다.
+     *
+     * <p>마감 검사는 <b>원 전표의 달과 새 처리일자의 달 둘 다</b>다 — 한쪽만 보면
+     * 마감된 달의 폐기를 열린 달로 옮기거나 그 반대로 밀어 넣을 수 있다.
+     *
+     * <p>이미 취소된 전표는 수정할 수 없다({@link #deleteVoucher} 규칙) — 되돌린 기록이
+     * 장부에 선 뒤라 오입력이 아니다.
+     */
+    @Transactional
+    public DisposalResponse reviseDisposal(String refNo, DisposalRequest req, String actor) {
+        List<InventoryTxn> origins = inventoryTxnRepository.findAllByRefNo(refNo);
+        if (origins.isEmpty()) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "전표가 없습니다: " + refNo);
+        }
+        if (origins.stream().noneMatch(t -> t.getTxnType() == TxnType.DISPOSE)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "폐기 전표가 아닙니다: " + refNo + ". 입고·이고·실사 전표는 이 API로 고칠 수 없습니다.");
+        }
+        periodLockService.assertNotLocked(req.processedDate());   // 옮겨 갈 달
+        // 원 전표의 달은 deleteVoucher 가 검사한다(같은 규칙을 두 곳에 적지 않는다).
+
+        deleteVoucher(refNo, "폐기 수정으로 재등록", actor);
+        DisposalResponse revised = dispose(req);
+
+        // ★어느 전표가 어느 전표로 바뀌었는지 남긴다. 삭제 이력과 등록만 남으면
+        //   나중에 둘이 같은 건이었다는 사실을 아무도 못 잇는다.
+        statusHistoryService.record(StatusEntityType.INVENTORY_VOUCHER,
+                origins.get(0).getId(), "revised", refNo, revised.disposalNo(),
+                "폐기 수정: " + refNo + " → " + revised.disposalNo());
+        return revised;
     }
 
     /**
