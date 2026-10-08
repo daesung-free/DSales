@@ -152,6 +152,64 @@ class TaxInvoiceItemDetailIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("★★#24 수기 보정 — 파생값 위에 얹고, 금액을 고치면 원값을 함께 내린다")
+    void 수기_보정() {
+        String invoiceDate = TO;   // 조회 종료일 = 작성일자(월 단위면 말일)
+
+        // 보정 전: 거래처 마스터 값 그대로
+        JsonNode before = invoice();
+        assertThat(before.path("partnerName").asText()).isEqualTo("홈택스검증거래처");
+        assertThat(before.path("adjusted").asBoolean()).isFalse();
+        long derivedSupply = before.path("supplyTotal").asLong();
+        assertThat(derivedSupply).isPositive();
+
+        // 보정 저장 — 상호·주소·비고 + 금액
+        JsonNode saved = put("/closing/tax-invoices/adjustments", Map.of(
+                "issueDate", invoiceDate, "partnerId", partner, "taxBucket", "FREE",
+                "partnerName", "홈택스검증거래처(신고용 표기)",
+                "address", "서울시 어딘가 1-2",
+                "supplyTotal", 999_000,
+                "receiptType", "01",
+                "memo", "신고용 보정",
+                "reason", "거래처 상호가 사업자등록증과 달라 맞춤"));
+        assertThat(saved.path("success").asBoolean()).as("보정 저장: %s", saved).isTrue();
+
+        JsonNode after = invoice();
+        assertThat(after.path("partnerName").asText()).isEqualTo("홈택스검증거래처(신고용 표기)");
+        assertThat(after.path("partnerAddress").asText()).isEqualTo("서울시 어딘가 1-2");
+        assertThat(after.path("receiptType").asText()).isEqualTo("01");
+        assertThat(after.path("memo").asText()).isEqualTo("신고용 보정");
+        assertThat(after.path("adjusted").asBoolean()).isTrue();
+        assertThat(after.path("supplyTotal").asLong()).isEqualTo(999_000);
+
+        // ‼️장부와 다르다는 사실을 숨기지 않는다 — 보정 전 숫자가 함께 내려간다.
+        assertThat(after.path("originalSupplyTotal").asLong()).isEqualTo(derivedSupply);
+        assertThat(after.path("adjustReason").asText()).contains("사업자등록증");
+        // 합계 검증은 **파생값 기준**이다. 보정 금액으로 검사하면 늘 '맞음'이 되어 의미가 없다.
+        assertThat(after.path("balanced").asBoolean()).isTrue();
+
+        // 보정 해제 → 파생값으로 되돌아온다
+        assertThat(del("/closing/tax-invoices/adjustments?issueDate=" + invoiceDate
+                + "&partnerId=" + partner + "&taxBucket=FREE").path("success").asBoolean()).isTrue();
+        JsonNode reverted = invoice();
+        assertThat(reverted.path("adjusted").asBoolean()).isFalse();
+        assertThat(reverted.path("supplyTotal").asLong()).isEqualTo(derivedSupply);
+        assertThat(reverted.path("partnerName").asText()).isEqualTo("홈택스검증거래처");
+    }
+
+    /** 이 거래처의 면세 계산서 한 장. */
+    private JsonNode invoice() {
+        JsonNode d = data(get("/closing/tax-invoices?fromDate=" + FROM + "&toDate=" + TO
+                + "&partnerId=" + partner));
+        for (JsonNode inv : d.path("invoices")) {
+            if ("FREE".equals(inv.path("taxType").asText())) {
+                return inv;
+            }
+        }
+        throw new AssertionError("면세 계산서가 없다: " + d);
+    }
+
+    @Test
     @DisplayName("★홈택스 파일의 수량·단가는 **비운다** — 기존 프로그램과 같게(2026-09-28 확정)")
     void 파일은_비운다() throws Exception {
         var res = getBytes("/closing/tax-invoices/export?fromDate=" + FROM + "&toDate=" + TO

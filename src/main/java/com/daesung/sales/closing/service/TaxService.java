@@ -1,6 +1,9 @@
 package com.daesung.sales.closing.service;
 
 import com.daesung.sales.closing.config.SupplierProperties;
+import com.daesung.sales.closing.dto.TaxInvoiceAdjustRequest;
+import com.daesung.sales.closing.entity.TaxInvoiceAdjustment;
+import com.daesung.sales.closing.repository.TaxInvoiceAdjustmentRepository;
 import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.closing.dto.InvoiceAdjustmentResponse;
@@ -28,6 +31,8 @@ public class TaxService {
     private final SaleRepository saleRepository;
     private final PartnerRepository partnerRepository;
     private final SupplierProperties supplier;
+    private final TaxInvoiceAdjustmentRepository adjustmentRepository;
+    private final PeriodLockService periodLockService;
     private final TaxInvoiceExcelExporter excelExporter;
 
     /**
@@ -194,6 +199,12 @@ public class TaxService {
             t[0] += num(r[5]); t[1] += num(r[6]);
         }
 
+        // 수기 보정(발주처 1차회신 #24). 작성일자 기준으로 한 번에 읽어 맵으로 쓴다.
+        Map<String, TaxInvoiceAdjustment> adjByKey = new LinkedHashMap<>();
+        for (TaxInvoiceAdjustment a : adjustmentRepository.findByIssueDate(to)) {
+            adjByKey.put(a.getPartner().getId() + "#" + a.getTaxBucket(), a);
+        }
+
         List<TaxInvoiceResponse.Invoice> invoices = new ArrayList<>();
         for (Key key : nameByKey.keySet()) {
             boolean free = "FREE".equals(key.taxBucket());
@@ -202,18 +213,88 @@ public class TaxService {
             long itemSupplySum = items.stream().mapToLong(TaxInvoiceResponse.Item::supply).sum();
 
             Partner p = partnerRepository.findById(key.partnerId()).orElse(null);
+            TaxInvoiceAdjustment adj = adjByKey.get(key.partnerId() + "#" + key.taxBucket());
+
+            // ★보정값이 있으면 그것을, 없으면 마스터/파생값을 쓴다.
+            //   금액은 보정했을 때 **원값을 함께** 내린다 — 장부와 다르다는 사실을 숨기지 않는다.
+            long supplyTotal = (adj != null && adj.getSupplyTotal() != null)
+                    ? adj.getSupplyTotal() : tot[0];
+            long taxTotal = (adj != null && adj.getTaxTotal() != null)
+                    ? adj.getTaxTotal() : tot[1];
+            boolean amountAdjusted = adj != null
+                    && (adj.getSupplyTotal() != null || adj.getTaxTotal() != null);
+
             invoices.add(new TaxInvoiceResponse.Invoice(
                     free ? "05" : "01",
                     key.taxBucket(),
                     supplier.name(), supplier.bizNo(),
                     key.partnerId(),
-                    (p != null) ? p.getName() : nameByKey.get(key),
-                    (p != null) ? p.getBizNo() : null,
-                    (p != null) ? p.getBossName() : null,
-                    items, tot[0], tot[1],
-                    itemSupplySum == tot[0]));
+                    pick(adj == null ? null : adj.getPartnerName(),
+                            (p != null) ? p.getName() : nameByKey.get(key)),
+                    pick(adj == null ? null : adj.getBizNo(), (p != null) ? p.getBizNo() : null),
+                    pick(adj == null ? null : adj.getBossName(), (p != null) ? p.getBossName() : null),
+                    items, supplyTotal, taxTotal,
+                    // ★합계 검증은 **파생값 기준**이다. 보정한 금액으로 검사하면
+                    //   손으로 맞춘 숫자가 늘 '맞음'으로 나와 검증이 의미를 잃는다.
+                    itemSupplySum == tot[0],
+                    pick(adj == null ? null : adj.getAddress(),
+                            (p != null) ? joinAddr(p.getAddr1(), p.getAddr2()) : null),
+                    pick(adj == null ? null : adj.getBizStatus(), (p != null) ? p.getBizStatus() : null),
+                    pick(adj == null ? null : adj.getBizItem(), (p != null) ? p.getBizItem() : null),
+                    pick(adj == null ? null : adj.getEmail1(), (p != null) ? p.getEmail1() : null),
+                    pick(adj == null ? null : adj.getEmail2(), (p != null) ? p.getEmail2() : null),
+                    pick(adj == null ? null : adj.getReceiptType(), "02"),
+                    (adj == null) ? null : adj.getMemo(),
+                    adj != null,
+                    (adj == null) ? null : adj.getReason(),
+                    amountAdjusted ? tot[0] : null,
+                    amountAdjusted ? tot[1] : null));
         }
         return new TaxInvoiceResponse(to, invoices, invoices.size());
+    }
+
+    /** 보정값 우선, 없으면 기본값. 빈 문자열은 "안 적은 것"으로 본다. */
+    private static String pick(String adjusted, String fallback) {
+        return (adjusted == null || adjusted.isBlank()) ? fallback : adjusted;
+    }
+
+    private static String joinAddr(String a1, String a2) {
+        if (a1 == null || a1.isBlank()) {
+            return a2;
+        }
+        return (a2 == null || a2.isBlank()) ? a1 : a1 + " " + a2;
+    }
+
+    /**
+     * 계산서 수기 보정 저장(발주처 1차회신 2026-10-02 #24). 같은 키면 <b>통째로 교체</b>한다.
+     *
+     * <p>★부분 갱신이 아닌 이유: 화면이 폼 전체를 들고 있고 <b>비운 칸은 "보정을 지웠다"</b>는
+     * 뜻이다. null 을 무시하면 한번 넣은 보정을 되돌릴 수 없다.
+     */
+    @Transactional
+    public void saveAdjustment(TaxInvoiceAdjustRequest req) {
+        periodLockService.assertNotLocked(req.issueDate());
+        Partner p = partnerRepository.findById(req.partnerId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                        "거래처가 없습니다. id=" + req.partnerId()));
+        TaxInvoiceAdjustment a = adjustmentRepository
+                .findByIssueDateAndPartnerIdAndTaxBucket(req.issueDate(), req.partnerId(), req.taxBucket())
+                .orElseGet(() -> adjustmentRepository.save(
+                        TaxInvoiceAdjustment.of(req.issueDate(), p, req.taxBucket())));
+        a.replace(req.partnerName(), req.bizNo(), req.bossName(), req.address(),
+                req.bizStatus(), req.bizItem(), req.email1(), req.email2(),
+                req.supplyTotal(), req.taxTotal(), req.receiptType(), req.memo(), req.reason());
+    }
+
+    /** 보정 해제 — 파생값(매출에서 나온 숫자)으로 되돌린다. */
+    @Transactional
+    public void deleteAdjustment(LocalDate issueDate, Long partnerId, String taxBucket) {
+        TaxInvoiceAdjustment a = adjustmentRepository
+                .findByIssueDateAndPartnerIdAndTaxBucket(issueDate, partnerId, taxBucket)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                        "보정이 없습니다: " + issueDate + " / 거래처 " + partnerId + " / " + taxBucket));
+        periodLockService.assertNotLocked(issueDate);
+        adjustmentRepository.delete(a);
     }
 
     /** 계산서 데이터를 홈택스 대량발행 xlsx로 export. 공급받는자 전체 세무정보를 Partner에서 로드. */

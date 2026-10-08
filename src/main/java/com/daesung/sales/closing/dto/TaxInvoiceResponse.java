@@ -25,7 +25,29 @@ public record TaxInvoiceResponse(
             @Schema(description = "품목(도서별)") List<Item> items,
             @Schema(description = "공급가액 합계") long supplyTotal,
             @Schema(description = "세액 합계") long taxTotal,
-            @Schema(description = "합계 검증(품목 합 == 총계)") boolean balanced
+            @Schema(description = "합계 검증(품목 합 == 총계)") boolean balanced,
+
+            @Schema(description = """
+                    공급받는자 사업장주소(보정 가능). 보정이 없으면 거래처 마스터 값.""")
+            String partnerAddress,
+            @Schema(description = "공급받는자 업태(보정 가능)") String partnerBizStatus,
+            @Schema(description = "공급받는자 종목(보정 가능)") String partnerBizItem,
+            @Schema(description = "공급받는자 이메일1(보정 가능)") String partnerEmail1,
+            @Schema(description = "공급받는자 이메일2(보정 가능)") String partnerEmail2,
+            @Schema(description = "영수(01)/청구(02). 보정이 없으면 02") String receiptType,
+            @Schema(description = "비고(보정)") String memo,
+
+            @Schema(description = """
+                    **수기 보정이 걸려 있는가**(발주처 1차회신 #24).
+                    true 면 위 값 중 일부가 매출에서 파생한 값이 아니라 담당자가 넣은 값이다.""")
+            boolean adjusted,
+            @Schema(description = "보정 사유(있으면)") String adjustReason,
+            @Schema(description = """
+                    **보정 전 공급가액**. 금액을 보정했을 때만 값이 있다.
+                    ‼️장부와 다르다는 사실을 숨기지 않으려고 함께 내린다 —
+                    없으면 나중에 세무 소명 때 아무도 설명하지 못한다.""")
+            Long originalSupplyTotal,
+            @Schema(description = "보정 전 세액(금액을 보정했을 때만)") Long originalTaxTotal
     ) {
     }
 

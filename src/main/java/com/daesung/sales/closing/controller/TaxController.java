@@ -197,5 +197,46 @@ public class TaxController {
                         "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"))
                 .body(xlsx);
     }
+    @Operation(summary = "계산서 수기 보정 저장(#24)",
+            description = """
+                    조회된 계산서 한 장에 **담당자가 손댄 값**을 저장한다.
+                    근거: 발주처 1차회신 2026-10-02 #24 — "기본적으로 세팅된 내역에
+                    수정/저장이 가능하도록 요청드린 건입니다.(수기 보정)".
+
+                    ★**계산서 내역 자체는 저장하지 않는다.** 지금처럼 매출에서 파생해 만들고
+                    그 위에 이 값만 얹는다. 내역을 통째로 저장하면 나중에 매출을 고쳤을 때
+                    계산서가 따라가지 않아 **장부와 신고가 조용히 갈린다**.
+
+                    ★키는 **작성일자 · 거래처 · 과세구분**(계산서 한 장의 단위). 월 단위로 조회하면
+                    작성일자가 그 달 말일이라 자연히 "월×거래처×과세구분"이 된다.
+
+                    ★**보낸 값으로 통째 교체**한다. 비운 칸은 "보정을 지웠다"는 뜻이다 —
+                    null 을 무시하면 한번 넣은 보정을 되돌릴 수 없다.
+
+                    ‼️금액을 보정하면 응답에 `adjusted=true` 와 **보정 전 숫자**가 함께 내려간다.
+                    품목·수량이 틀린 것이라면 여기가 아니라 **매출을 고쳐야 한다**(`PATCH /sales/{id}`) —
+                    여기서 덮으면 계산서만 맞고 장부는 틀린 채 남는다.
+
+                    마감된 달은 400(PERIOD_LOCKED).""")
+    @org.springframework.web.bind.annotation.PutMapping("/tax-invoices/adjustments")
+    public ApiResponse<Void> saveAdjustment(
+            @jakarta.validation.Valid @org.springframework.web.bind.annotation.RequestBody
+            com.daesung.sales.closing.dto.TaxInvoiceAdjustRequest req) {
+        taxService.saveAdjustment(req);
+        return ApiResponse.success(null);
+    }
+
+    @Operation(summary = "계산서 수기 보정 해제(#24)",
+            description = "보정을 지우고 **매출에서 파생한 값**으로 되돌린다. 마감된 달은 400.")
+    @org.springframework.web.bind.annotation.DeleteMapping("/tax-invoices/adjustments")
+    public ApiResponse<Void> deleteAdjustment(
+            @Parameter(description = "작성일자", required = true)
+            @RequestParam @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate issueDate,
+            @Parameter(description = "거래처 id", required = true) @RequestParam Long partnerId,
+            @Parameter(description = "과세구분 FREE/TAXABLE", required = true) @RequestParam String taxBucket) {
+        taxService.deleteAdjustment(issueDate, partnerId, taxBucket);
+        return ApiResponse.success(null);
+    }
+
 }
 
