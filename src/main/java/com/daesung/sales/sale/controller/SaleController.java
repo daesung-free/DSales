@@ -449,6 +449,7 @@ public class SaleController {
             @RequestParam(required = false) List<TradeClass> tradeClasses,
             @RequestParam(required = false) String keyword) {
         List<Col> cols = List.of(
+                new Col("분류코드", "catCode"), new Col("분류명", "catName"),
                 new Col("상품코드", "productCode"), new Col("상품명", "productName"),
                 new Col("매출수량", "saleQty"), new Col("매출액", "saleAmount"),
                 new Col("증정수량", "freeQty"), new Col("증정액", "freeAmount"),
@@ -487,10 +488,14 @@ public class SaleController {
             @RequestParam(required = false) String keyword) {
         SalesSummaryResponse r = saleReportService.summary(fromDate, toDate, partnerId,
                 summaryKind, salesType, tradeClasses);
+        // ‼️키워드는 **상세 행만** 거른다. 소계·합계는 거르기 전 기준이라 그대로 둔다 —
+        //   거른 행에 맞춰 소계를 다시 만들면 "검색 결과의 소계"가 되어 신고·대사에 쓸 수 없다.
+        //   화면이 키워드를 쓰는 순간은 "그 도서를 찾는" 때지 "그 범위로 집계하는" 때가 아니다.
         return ApiResponse.success(new SalesSummaryResponse(r.fromDate(), r.toDate(),
                 Keywords.filter(r.rows(), keyword,
-                        x -> new Object[]{x.productCode(), x.productName()}),
-                r.total()));
+                        x -> new Object[]{x.productCode(), x.productName(),
+                                x.catCode(), x.catName()}),
+                r.total(), r.categorySubtotals()));
     }
 
     @Operation(summary = "콘텐츠구분 순매출 조회",

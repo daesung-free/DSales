@@ -132,8 +132,8 @@ class AuthSecurityIntegrationTest extends IntegrationTestSupport {
         String logis = loginToken("rbac-logis");
 
         // 마감/세무: 재무 WRITE, 물류 NONE(비노출이라 조회도 막힌다)
-        assertThat(status(HttpMethod.GET, "/closing/revenue-report", null, finance)).isEqualTo(200);
-        assertThat(status(HttpMethod.GET, "/closing/revenue-report", null, logis)).isEqualTo(403);
+        assertThat(status(HttpMethod.GET, "/closing/revenue-report?taxType=FREE", null, finance)).isEqualTo(200);
+        assertThat(status(HttpMethod.GET, "/closing/revenue-report?taxType=FREE", null, logis)).isEqualTo(403);
 
         // 매출등록(쓰기): 영업 WRITE, 재무는 READ라 막힌다
         //   — 발주처 확정 "재무×매출관리는 조회만, 편집은 관리자 계정으로".

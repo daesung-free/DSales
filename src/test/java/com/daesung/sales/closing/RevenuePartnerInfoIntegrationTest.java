@@ -61,7 +61,7 @@ class RevenuePartnerInfoIntegrationTest extends IntegrationTestSupport {
     }
 
     private JsonNode row() {
-        JsonNode d = data(get("/closing/revenue-report?fromDate=" + FROM + "&toDate=" + TO
+        JsonNode d = data(get("/closing/revenue-report?taxType=TAXABLE&fromDate=" + FROM + "&toDate=" + TO
                 + "&keyword=" + CODE));
         assertThat(d.path("rows")).as("키워드로 우리 거래처만 남는다").hasSize(1);
         return d.path("rows").get(0);
@@ -85,7 +85,7 @@ class RevenuePartnerInfoIntegrationTest extends IntegrationTestSupport {
     @DisplayName("코드·사업자번호·대표자로도 검색된다 — 표에 보이는 값으로 찾을 수 있어야 한다")
     void 검색된다() {
         for (String kw : List.of(CODE, BIZ_NO, BOSS)) {
-            JsonNode d = data(get("/closing/revenue-report?fromDate=" + FROM + "&toDate=" + TO
+            JsonNode d = data(get("/closing/revenue-report?taxType=TAXABLE&fromDate=" + FROM + "&toDate=" + TO
                     + "&keyword=" + kw));
             assertThat(d.path("rows")).as("키워드 '%s'", kw).hasSize(1);
         }
@@ -94,7 +94,7 @@ class RevenuePartnerInfoIntegrationTest extends IntegrationTestSupport {
     @Test
     @DisplayName("합계행은 식별정보를 비운다 — 채우면 그 거래처 신고분으로 읽힌다")
     void 합계행은_비운다() {
-        JsonNode total = data(get("/closing/revenue-report?fromDate=" + FROM + "&toDate=" + TO))
+        JsonNode total = data(get("/closing/revenue-report?taxType=TAXABLE&fromDate=" + FROM + "&toDate=" + TO))
                 .path("total");
         assertThat(total.path("partnerName").asText()).isEqualTo("합계");
         // ‼️Jackson 전역 NON_NULL 이라 null 필드는 아예 사라진다 — hasNonNull 로 본다.
@@ -106,7 +106,7 @@ class RevenuePartnerInfoIntegrationTest extends IntegrationTestSupport {
     @Test
     @DisplayName("엑셀에도 세 컬럼이 나간다 — 화면만 고치면 다운로드가 또 빈칸이 된다")
     void 엑셀에도_나간다() throws Exception {
-        var res = getBytes("/closing/revenue-report/export?fromDate=" + FROM + "&toDate=" + TO);
+        var res = getBytes("/closing/revenue-report/export?taxType=TAXABLE&fromDate=" + FROM + "&toDate=" + TO);
         assertThat(res.getStatusCode().value()).isEqualTo(200);
         assertThat(res.getBody()).isNotNull();
 

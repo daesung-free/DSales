@@ -196,7 +196,7 @@ class ExcelExportIntegrationTest extends IntegrationTestSupport {
     @Test
     @DisplayName("마감·세무 리포트 — 헤더·값이 채워진다")
     void 마감_세무() {
-        var rev = read("/closing/revenue-report/export?fromDate=" + YEAR + "-01-01&toDate=" + YEAR + "-12-31");
+        var rev = read("/closing/revenue-report/export?taxType=TAXABLE&fromDate=" + YEAR + "-01-01&toDate=" + YEAR + "-12-31");
         assertHeader(rev, "수익신고", "거래처명");
         assertFilled(rev, "수익신고", 3);
 

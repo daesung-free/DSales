@@ -406,6 +406,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
      */
     @Query(value = """
             SELECT s.product_id, p.code, p.name,
+              p.cat_code, p.cat_name,
               COALESCE(SUM(CASE WHEN s.sales_category='SALE' THEN s.qty ELSE 0 END),0) AS sale_qty,
               COALESCE(SUM(CASE WHEN s.sales_category='SALE' THEN s.supply_amount ELSE 0 END),0) AS sale_amt,
               COALESCE(SUM(CASE WHEN s.sales_category='FREE' AND s.shipment_type='GIFT' THEN s.qty ELSE 0 END),0) AS free_qty,
@@ -430,8 +431,8 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
               -- ★거래분류 **다중선택**(2026-10-08). 기존 summaryKind 는 한 번에 하나뿐이라
               --   "무상+반품만" 같은 조합을 화면이 전체를 받아 걸러 쓰고 있었다.
               AND (:anyCategory = TRUE OR s.sales_category IN (:categories))
-            GROUP BY s.product_id, p.code, p.name
-            ORDER BY p.code
+            GROUP BY s.product_id, p.code, p.name, p.cat_code, p.cat_name
+            ORDER BY p.cat_code, p.code
             """, nativeQuery = true)
     List<Object[]> salesSummary(@Param("anyCategory") boolean anyCategory,
                                 @Param("categories") Collection<String> categories,

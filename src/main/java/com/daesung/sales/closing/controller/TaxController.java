@@ -36,15 +36,27 @@ public class TaxController {
     private final ExcelExportUtil excel;
 
     @Operation(summary = "수익신고 조회",
-            description = "거래처×월 순매출(공급가)/세액 집계 + 거래처 소계 + 전체 합계. 취소 제외, 반품 차감. "
-                    + "taxType=FREE(면세)/TAXABLE(과세)/미지정(전체). 기간 미지정 시 올해 1/1~오늘.")
+            description = """
+                    거래처×월 순매출(공급가)/세액 집계 + 거래처 소계 + 전체 합계. 취소 제외, 반품 차감.
+                    기간 미지정 시 올해 1/1~오늘.
+
+                    ★**`taxType` 은 필수다** — `TAXABLE`(과세) 또는 `FREE`(면세).
+                    '전체'는 발주처 1차회신(2026-10-02 #11)으로 **없앴다**: "과세/비과세 양식이 달라
+                    실익이 없어 철회… 기존처럼 과세랑 비과세 나눠서만 조회".
+                    ‼️기본값을 조용히 한쪽으로 주지 않는다 — 신고용 표라 담당자가 어느 쪽을 보고
+                    있는지 모른 채 제출하면 양식이 어긋난다. 미지정이면 400이다.
+
+                    ★월별은 거래처 1행 안의 `months` 배열이다 — 화면이 **가로로 펼쳐** 쓴다
+                    (#11 "월별 구분은 옆으로 펼친 표로 기존대로 사용").""")
     @GetMapping("/revenue-report")
     public ApiResponse<RevenueReportResponse> revenueReport(
             @Parameter(description = "시작일(yyyy-MM-dd, 미지정 시 올해 1/1)") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
             @Parameter(description = "종료일(yyyy-MM-dd, 미지정 시 오늘)") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
-            @Parameter(description = "과세구분(FREE=면세/TAXABLE=과세/미지정=전체)") @RequestParam(required = false) String taxType,
+            @Parameter(description = "과세구분 **필수** — FREE(면세) / TAXABLE(과세). '전체'는 없다",
+                    required = true)
+            @RequestParam String taxType,
             @Parameter(description = "키워드 — 코드·명칭을 함께 훑는다(부분일치)")
             @RequestParam(required = false) String keyword) {
         RevenueReportResponse r = taxService.revenueReport(fromDate, toDate, taxType);
@@ -55,12 +67,14 @@ public class TaxController {
                 r.total()));
     }
 
-    @Operation(summary = "수익신고 엑셀 다운로드", description = "드라이브 '수익신고' 형식(거래처별 총건수·순매출·세액).")
+    @Operation(summary = "수익신고 엑셀 다운로드",
+            description = "드라이브 '수익신고' 형식(거래처별 총건수·순매출·세액). "
+                    + "조회와 같이 **taxType 필수**(과세/면세 양식이 다르다 — 발주처 1차회신 #11).")
     @GetMapping("/revenue-report/export")
     public ResponseEntity<byte[]> revenueReportExport(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
-            @RequestParam(required = false) String taxType) {
+            @RequestParam String taxType) {
         List<Col> cols = List.of(
                 new Col("거래처코드", "partnerCode"), new Col("거래처명", "partnerName"),
                 new Col("사업자번호", "bizNo"), new Col("대표자성명", "bossName"),

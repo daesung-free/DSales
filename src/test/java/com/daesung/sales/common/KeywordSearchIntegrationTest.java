@@ -121,7 +121,7 @@ class KeywordSearchIntegrationTest extends IntegrationTestSupport {
     @DisplayName("★거래처 기준 리포트 — 미수금현황·수익신고·매출대비표·수금")
     void 거래처_기준() {
         좁혀진다("/closing/ar-status" + RANGE, HIT, HIT, MISS);
-        좁혀진다("/closing/revenue-report" + RANGE, HIT, HIT, MISS);
+        좁혀진다("/closing/revenue-report?taxType=FREE&" + RANGE.substring(1), HIT, HIT, MISS);
         좁혀진다("/sales/yoy-comparison" + RANGE, HIT, HIT, MISS);
         좁혀진다("/closing/collections" + RANGE + "&size=100", HIT, HIT, MISS);
     }

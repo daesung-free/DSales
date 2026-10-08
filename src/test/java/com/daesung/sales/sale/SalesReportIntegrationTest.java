@@ -405,7 +405,7 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
     @Test
     @DisplayName("수익신고 — 거래처×월 순매출/세액(MySQL DATE_FORMAT 회귀 방어)")
     void 수익신고() {
-        JsonNode d = data(get("/closing/revenue-report?fromDate=2026-06-01&toDate=2026-06-30"));
+        JsonNode d = data(get("/closing/revenue-report?taxType=TAXABLE&fromDate=2026-06-01&toDate=2026-06-30"));
         JsonNode total = d.path("total");
         assertThat(total.path("totalNetSupply").asLong()).isEqualTo(185_000);  // 195k−10k
         assertThat(total.path("totalNetTax").asLong()).isEqualTo(18_500);

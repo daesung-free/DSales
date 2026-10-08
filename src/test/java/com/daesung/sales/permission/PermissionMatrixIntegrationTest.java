@@ -81,14 +81,14 @@ class PermissionMatrixIntegrationTest extends IntegrationTestSupport {
         long closingId = screenId("CLOSING");
 
         // 처음엔 물류가 마감을 못 본다(–)
-        assertThat(status(HttpMethod.GET, "/closing/revenue-report", null, logisToken)).isEqualTo(403);
+        assertThat(status(HttpMethod.GET, "/closing/revenue-report?taxType=FREE", null, logisToken)).isEqualTo(403);
 
         // 관리자가 조회 권한을 연다
         put("/permissions/screens", Map.of(
                 "role", "LOGISTICS", "screenId", closingId, "permission", "READ"));
 
         // ‼️같은 토큰·같은 요청인데 결과가 달라진다 — 재로그인도, 배포도 없다
-        assertThat(status(HttpMethod.GET, "/closing/revenue-report", null, logisToken)).isEqualTo(200);
+        assertThat(status(HttpMethod.GET, "/closing/revenue-report?taxType=FREE", null, logisToken)).isEqualTo(200);
 
         // 조회만 열었으니 쓰기는 여전히 막힌다(◐와 ○의 구분)
         assertThat(status(HttpMethod.POST, "/closing/periods/lock",
@@ -97,7 +97,7 @@ class PermissionMatrixIntegrationTest extends IntegrationTestSupport {
         // 되돌린다
         put("/permissions/screens", Map.of(
                 "role", "LOGISTICS", "screenId", closingId, "permission", "NONE"));
-        assertThat(status(HttpMethod.GET, "/closing/revenue-report", null, logisToken)).isEqualTo(403);
+        assertThat(status(HttpMethod.GET, "/closing/revenue-report?taxType=FREE", null, logisToken)).isEqualTo(403);
     }
 
     @Test

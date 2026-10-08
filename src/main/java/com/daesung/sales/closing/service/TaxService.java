@@ -39,6 +39,16 @@ public class TaxService {
         LocalDate from = (fromDate != null) ? fromDate : LocalDate.now().withDayOfYear(1);
         LocalDate to = (toDate != null) ? toDate : LocalDate.now();
         String filter = normalizeTaxType(taxType);
+        // ★'전체' 조회를 없앴다(발주처 1차회신 2026-10-02 #11) — 원문:
+        //   "'전체' 조회는 과세/비과세 양식이 달라 실익이 없어 철회하겠습니다.
+        //    '전체' 조회 기능은 삭제해주시고, 기존처럼 과세랑 비과세 나눠서만 조회할 수 있도록".
+        //   ‼️조용히 한쪽으로 기본값을 주지 않는다. 신고용 표라 담당자가 어느 쪽을 보고 있는지
+        //     모른 채 제출하면 양식이 어긋난다 — 고르게 만든다.
+        if ("ALL".equals(filter)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "수익신고는 과세/면세를 나눠서 조회합니다. taxType 에 TAXABLE(과세) 또는 "
+                            + "FREE(면세)를 지정하세요. (두 양식이 달라 '전체'는 쓰지 않습니다)");
+        }
 
         Map<Long, List<RevenueReportResponse.MonthEntry>> monthsByPartner = new LinkedHashMap<>();
         // 거래처 식별정보(코드·거래처명·사업자번호·대표자)를 한 묶음으로 들고 간다.

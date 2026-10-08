@@ -95,8 +95,8 @@ public class SaleReportService {
             if (categories.isEmpty()) {
                 // 입고·폐기만 골랐다 — 매출 집계로는 한 건도 안 나오는 것이 맞다.
                 return new SalesSummaryResponse(from, to, List.of(),
-                        new SalesSummaryRow(null, null, "합계", kind, type,
-                                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0));
+                        new SalesSummaryRow(null, null, null, null, "합계", kind, type,
+                                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0), List.of());
             }
         }
         boolean anyCategory = categories.isEmpty();
@@ -104,20 +104,59 @@ public class SaleReportService {
                 anyCategory ? List.of("\u0000") : categories,
                 from, to, partnerId, categoryOf(kind),
                 kindShipment(kind), typeShipment(type))) {
-            long saleQty = num(r[3]), saleAmt = num(r[4]), freeQty = num(r[5]), freeAmt = num(r[6]),
-                    tchQty = num(r[7]), tchAmt = num(r[8]), retQty = num(r[9]), retAmt = num(r[10]),
-                    tax = num(r[11]), total = num(r[12]);
+            // ‼️인덱스는 SELECT 순서다 — 0 상품id / 1 코드 / 2 명 / 3 분류코드 / 4 분류명 / 5~ 버킷.
+            //   분류 두 칸을 앞에 넣으면서 여기를 안 옮겨 집계가 통째로 0이 됐다(테스트가 잡았다).
+            long saleQty = num(r[5]), saleAmt = num(r[6]), freeQty = num(r[7]), freeAmt = num(r[8]),
+                    tchQty = num(r[9]), tchAmt = num(r[10]), retQty = num(r[11]), retAmt = num(r[12]),
+                    tax = num(r[13]), total = num(r[14]);
             rows.add(new SalesSummaryRow(
-                    num(r[0]), (String) r[1], (String) r[2], kind, type,
+                    num(r[0]), (String) r[3], (String) r[4], (String) r[1], (String) r[2], kind, type,
                     saleQty, saleAmt, freeQty, freeAmt, tchQty, tchAmt, retQty, retAmt,
                     saleQty - retQty, saleAmt - retAmt, tax, total));
             tSaleQ += saleQty; tSaleA += saleAmt; tFreeQ += freeQty; tFreeA += freeAmt;
             tTchQ += tchQty; tTchA += tchAmt; tRetQ += retQty; tRetA += retAmt; tTax += tax; tTotal += total;
         }
-        SalesSummaryRow total = new SalesSummaryRow(null, "합계", null, kind, type,
+        SalesSummaryRow total = new SalesSummaryRow(null, null, null, "합계", null, kind, type,
                 tSaleQ, tSaleA, tFreeQ, tFreeA, tTchQ, tTchA, tRetQ, tRetA,
                 tSaleQ - tRetQ, tSaleA - tRetA, tTax, tTotal);
-        return new SalesSummaryResponse(from, to, rows, total);
+        return new SalesSummaryResponse(from, to, rows, total, subtotalsByCategory(rows, kind, type));
+    }
+
+    /**
+     * 분류별 소계(발주처 1차회신 2026-10-02 #8 — "분류명에 따른 소계, 분류코드에 따른 분류 계, 총계").
+     *
+     * <p>★<b>묶는 키는 분류코드다.</b> 회신 문장은 소계(분류명)와 분류계(분류코드)를 따로 적었지만,
+     * 우리 마스터에서 분류코드와 분류명은 1:1이라 두 축이 같은 묶음을 만든다. 둘을 따로 내면
+     * 같은 숫자가 두 줄로 나와 담당자가 "뭐가 다른가"를 되묻게 된다 —
+     * 코드로 묶고 이름을 함께 실어, 화면이 어느 쪽으로 보여주든 한 숫자를 쓰게 한다.
+     * ‼️이름이 같고 코드가 다른 분류가 생기면 <b>코드 기준이 맞다</b>(코드가 식별자다).
+     *
+     * <p>소계행은 상품 자리를 비운다 — 채우면 특정 도서의 숫자로 읽힌다(합계행과 같은 규칙).
+     */
+    private static List<SalesSummaryRow> subtotalsByCategory(List<SalesSummaryRow> rows,
+                                                             String kind, String type) {
+        record Acc(long[] v, String name) {
+        }
+        java.util.Map<String, Acc> byCat = new java.util.LinkedHashMap<>();
+        for (SalesSummaryRow r : rows) {
+            String code = (r.catCode() == null || r.catCode().isBlank()) ? "(미분류)" : r.catCode();
+            Acc a = byCat.computeIfAbsent(code, k -> new Acc(new long[10], r.catName()));
+            long[] v = a.v();
+            v[0] += r.saleQty();     v[1] += r.saleAmount();
+            v[2] += r.freeQty();     v[3] += r.freeAmount();
+            v[4] += r.teacherQty();  v[5] += r.teacherAmount();
+            v[6] += r.returnQty();   v[7] += r.returnAmount();
+            v[8] += r.tax();         v[9] += r.total();
+        }
+        List<SalesSummaryRow> out = new ArrayList<>(byCat.size());
+        for (var e : byCat.entrySet()) {
+            long[] v = e.getValue().v();
+            out.add(new SalesSummaryRow(null, e.getKey(), e.getValue().name(), null, "소계",
+                    kind, type,
+                    v[0], v[1], v[2], v[3], v[4], v[5], v[6], v[7],
+                    v[0] - v[6], v[1] - v[7], v[8], v[9]));
+        }
+        return out;
     }
 
     /**

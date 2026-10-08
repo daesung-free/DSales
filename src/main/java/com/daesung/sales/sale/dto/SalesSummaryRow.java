@@ -7,7 +7,9 @@ import io.swagger.v3.oas.annotations.media.Schema;
  * 순매출수량 = 매출수량 − 반품수량, 순매출액 = 매출액 − 반품액. 근거: 레거시 순매출조회.
  */
 public record SalesSummaryRow(
-        @Schema(description = "상품 id(합계행은 null)") Long productId,
+        @Schema(description = "상품 id(합계행·소계행은 null)") Long productId,
+        @Schema(description = "분류코드. 발주처 1차회신 #8 확정 컬럼") String catCode,
+        @Schema(description = "분류명") String catName,
         @Schema(description = "상품코드(합계행은 '합계')") String productCode,
         @Schema(description = "상품명") String productName,
 

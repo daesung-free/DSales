@@ -176,6 +176,54 @@ class ClientReply1002IntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("★#8 매출액정리 분류 소계 — 상세 합과 소계가 같아야 한다")
+    void 매출액정리_소계() {
+        sell(schoolMega, 4);   // 분류 C2105A01 하나뿐인 데이터
+
+        JsonNode d = data(get("/sales/summary" + RANGE + "&partnerId=" + partner));
+        JsonNode rows = d.path("rows");
+        JsonNode subs = d.path("categorySubtotals");
+
+        assertThat(rows).isNotEmpty();
+        assertThat(subs).as("분류 소계가 내려와야 한다").isNotEmpty();
+
+        // 행에 분류코드·분류명이 실린다(발주처 확정 컬럼: 분류코드·분류명·도서코드·도서명·…).
+        assertThat(rows.get(0).path("catCode").asText()).isEqualTo("C2105A01");
+        assertThat(rows.get(0).path("catName").asText()).isEqualTo("회신검증분류");
+
+        long detail = 0;
+        for (JsonNode r : rows) {
+            detail += r.path("saleQty").asLong();
+        }
+        long sub = 0;
+        for (JsonNode r : subs) {
+            sub += r.path("saleQty").asLong();
+            // 소계행은 상품 자리를 비운다 — 채우면 특정 도서의 숫자로 읽힌다.
+            assertThat(r.hasNonNull("productId")).isFalse();
+            assertThat(r.path("productName").asText()).isEqualTo("소계");
+        }
+        assertThat(sub).as("소계 합 = 상세 합 — 갈리면 둘 다 못 믿는다").isEqualTo(detail);
+        assertThat(d.path("total").path("saleQty").asLong()).as("총계도 같다").isEqualTo(detail);
+    }
+
+    @Test
+    @DisplayName("★#11 수익신고 '전체'는 없앴다 — 어느 양식인지 모른 채 제출하면 안 된다")
+    void 수익신고_전체_삭제() {
+        // 미지정이면 파라미터 단계에서 막힌다.
+        JsonNode missing = get("/closing/revenue-report" + RANGE);
+        assertThat(missing.path("success").asBoolean()).isFalse();
+        assertThat(missing.path("error").path("message").asText()).contains("taxType");
+
+        // 'ALL'을 **명시해도** 막는다. 여기를 안 막으면 예전 화면이 그대로 전체를 본다.
+        JsonNode all = get("/closing/revenue-report" + RANGE + "&taxType=ALL");
+        assertThat(all.path("success").asBoolean()).isFalse();
+        assertThat(all.path("error").path("message").asText()).contains("과세/면세를 나눠서");
+
+        assertThat(get("/closing/revenue-report" + RANGE + "&taxType=FREE")
+                .path("success").asBoolean()).as("나눠서 고르면 된다").isTrue();
+    }
+
+    @Test
     @DisplayName("#5 공급자 전화가 거래명세서에 실린다 — 비어 있으면 거래처 서류에 빈칸이 나간다")
     void 공급자_전화() {
         sell(schoolMega, 3);

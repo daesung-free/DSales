@@ -131,7 +131,7 @@ class ExcelHeadingIntegrationTest extends IntegrationTestSupport {
                 "/sales/net-summary/export?fromDate=2026-01-01&toDate=2026-06-30").getBody()), 0, 0))
                 .isEqualTo("순매출조회");
         assertThat(str(sheetOf(getBytes(
-                "/closing/revenue-report/export?fromDate=2026-01-01&toDate=2026-06-30").getBody()), 0, 0))
+                "/closing/revenue-report/export?taxType=FREE&fromDate=2026-01-01&toDate=2026-06-30").getBody()), 0, 0))
                 .isEqualTo("수익신고");
     }
 }
