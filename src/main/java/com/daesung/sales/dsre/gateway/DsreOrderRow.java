@@ -32,6 +32,11 @@ public record DsreOrderRow(
 
         @Schema(description = "담당 선생님") String teacher,
         @Schema(description = "연락처") String tel,
+        @Schema(description = "담당자 이메일(2026-10-08 추가)") String email,
+        @Schema(description = """
+                발송구분 원본값 — `H`(화물) / `T`(택배). 주문 등록 때 '택배 발송'을 고른 값이다.
+                작업요청서의 발송구분·수령인 자동 입력에 쓴다(2026-10-08).""")
+        String deliveryGubun,
         @Schema(description = "주소") String address,
         @Schema(description = "비고") String memo,
 
@@ -71,7 +76,7 @@ public record DsreOrderRow(
     public DsreOrderRow withSalesNos(java.util.List<String> nos) {
         return new DsreOrderRow(reqCd, reqDate, stateCode, stateName, custCode, custName,
                 custFullName, cityName, mgrCode, mgrName, productName, detailName, grade,
-                inwon, classCount, procYn, teacher, tel, address, memo,
+                inwon, classCount, procYn, teacher, tel, email, deliveryGubun, address, memo,
                 totalQty, itemCount, estimatedAmount, nos);
     }
 }

@@ -178,7 +178,8 @@ public class TaxService {
             Long unitPrice = (num(r[8]) == 1L) ? num(r[9]) : null;
             itemsByKey.computeIfAbsent(key, k -> new ArrayList<>())
                     .add(new TaxInvoiceResponse.Item((String) r[3], num(r[5]), num(r[6]),
-                            num(r[7]), unitPrice));
+                            num(r[7]), unitPrice,
+                            (String) r[10], (String) r[11], (String) r[12]));
             long[] t = totalByKey.computeIfAbsent(key, k -> new long[2]);
             t[0] += num(r[5]); t[1] += num(r[6]);
         }

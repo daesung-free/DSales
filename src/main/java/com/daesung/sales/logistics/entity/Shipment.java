@@ -203,6 +203,39 @@ public class Shipment extends BaseEntity {
     }
 
     /**
+     * 주문의 배송구분·담당자를 <b>비어 있을 때만</b> 채운다(2026-10-08 프론트 요청 [A]4).
+     *
+     * <p>근거: 정본 26p "'택배' 선택 시 담당자 정보가 노출" + 주문 등록 화면의 「택배 발송」 체크.
+     * 주문에 이미 들어 있는 값(LGS_GN·담당자·연락처)을 물류가 작업요청서에서 다시 치고 있었다.
+     *
+     * <p>★<b>이미 들어 있는 값은 덮지 않는다.</b> 발송구분은 "물류가 거래명세서를 보고 판단"하는
+     * 항목이고(26p), 한 발송 건에 여러 주문이 묶일 수 있다. 나중 주문이 앞 주문의 판단이나
+     * 물류가 손으로 고친 수령인을 덮으면 <b>택배가 엉뚱한 사람에게 간다</b>.
+     *
+     * @return 한 항목이라도 채웠으면 true
+     */
+    public boolean fillDeliveryIfBlank(DeliveryType type, String name, String phone) {
+        boolean changed = false;
+        if (this.deliveryType == null && type != null) {
+            this.deliveryType = type;
+            changed = true;
+        }
+        if (isBlank(this.receiverName) && name != null && !name.isBlank()) {
+            this.receiverName = name.trim();
+            changed = true;
+        }
+        if (isBlank(this.receiverPhone) && phone != null && !phone.isBlank()) {
+            this.receiverPhone = phone.trim();
+            changed = true;
+        }
+        return changed;
+    }
+
+    private static boolean isBlank(String v) {
+        return v == null || v.isBlank();
+    }
+
+    /**
      * 송장 기록(수기·엑셀 일괄). null인 항목은 건드리지 않는다.
      *
      * <p>택배사 API를 부르지 않는다 — 연동 여부가 아직 미확정이라(물류팀 인터뷰 대기)

@@ -44,7 +44,16 @@ public record TaxInvoiceResponse(
                     ‼️**한 품목이 여러 매출 라인의 합**이라 단가가 라인마다 다르면 하나로 정할 수 없다.
                     그럴 때는 <b>비운다</b>(null) — 아무 값이나 넣으면 단가×수량이 공급가액과
                     어긋나 신고 파일이 틀린 것으로 보인다. 홈택스에서 단가는 선택 항목이다.""")
-            Long unitPrice
+            Long unitPrice,
+
+            @Schema(description = """
+                    분류코드(2026-10-08 추가). 품목을 **상품군으로 묶는 축**이다.
+                    ‼️'상품군 4종'의 정의를 아직 못 받아 서버가 묶지 않는다 —
+                    임의 기준으로 묶으면 신고 숫자가 틀어지므로 묶을 수 있는 값만 내려준다.""")
+            String catCode,
+            @Schema(description = "분류명") String catName,
+            @Schema(description = "세부구분(모의고사/교재/기타고사/특강/기타). 우리가 가진 분류는 5종이다")
+            String salesDivision
     ) {
     }
 }

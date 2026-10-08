@@ -182,4 +182,23 @@ public interface DsreGateway {
     int countOrders(java.time.LocalDate from, java.time.LocalDate to,
                     OrderState state, String custCode,
                     java.util.Collection<String> custCodes, LogisMode mode);
+
+    /**
+     * 도서(상품코드)·시행(DTL_CD)·상품연도 조건까지 받는 주문 조회(2026-10-08 프론트 요청).
+     * 없던 동안 화면이 기간 전체를 받아 걸러 쓰고 있었다.
+     */
+    java.util.List<DsreOrderRow> findOrders(java.time.LocalDate from, java.time.LocalDate to,
+                                            OrderState state, String custCode,
+                                            java.util.Collection<String> custCodes,
+                                            LogisMode mode,
+                                            java.util.Collection<String> prodCodes,
+                                            java.util.Collection<Integer> dtlCds,
+                                            Integer productYear, int offset, int limit);
+
+    /** 위와 같은 조건의 건수. ‼️목록과 조건이 어긋나면 총건수만 틀어져 빈 페이지가 생긴다. */
+    int countOrders(java.time.LocalDate from, java.time.LocalDate to,
+                    OrderState state, String custCode,
+                    java.util.Collection<String> custCodes, LogisMode mode,
+                    java.util.Collection<String> prodCodes,
+                    java.util.Collection<Integer> dtlCds, Integer productYear);
 }

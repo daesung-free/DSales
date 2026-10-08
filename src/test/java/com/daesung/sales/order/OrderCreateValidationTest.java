@@ -48,7 +48,8 @@ class OrderCreateValidationTest {
         service = new OrderService(gateway, history, auditor,
                 mock(com.daesung.sales.sale.repository.SaleRepository.class),
                 mock(com.daesung.sales.product.repository.ProductRepository.class),
-                mock(com.daesung.sales.sale.service.SaleService.class));
+                mock(com.daesung.sales.sale.service.SaleService.class),
+                mock(com.daesung.sales.logistics.service.ShipmentService.class));
     }
 
     private OrderCreateRequest req(OrderCreateRequest.ClassLine... classes) {
@@ -181,6 +182,7 @@ class OrderCreateValidationTest {
     private static com.daesung.sales.dsre.gateway.DsreOrderRow order(String stateCode) {
         return new com.daesung.sales.dsre.gateway.DsreOrderRow(
                 79069, "20260918", stateCode, null, null, null, null, null, null, null,
-                null, null, null, null, null, null, null, null, null, null, 0L, 0, null, null);
+                null, null, null, null, null, null, null, null, null, null, null, null,
+                0L, 0, null, null);
     }
 }

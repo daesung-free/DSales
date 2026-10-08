@@ -7,6 +7,7 @@ import com.daesung.sales.common.exception.BusinessException;
 import com.daesung.sales.common.exception.ErrorCode;
 import com.daesung.sales.logistics.dto.ShippingUpdateRequest;
 import com.daesung.sales.logistics.dto.TrackingUploadResponse;
+import com.daesung.sales.logistics.entity.DeliveryType;
 import com.daesung.sales.logistics.entity.Shipment;
 import com.daesung.sales.logistics.repository.ShipmentRepository;
 import com.daesung.sales.sale.entity.Sale;
@@ -56,6 +57,45 @@ public class ShipmentService {
                 .orElseGet(() -> shipmentRepository.save(Shipment.of(
                         tradeClass, sale.getSalesDate(), sale.getPartner(),
                         sale.getSchoolCode(), sale.getSchoolName(), null)));
+    }
+
+    /**
+     * 주문의 「택배 발송」·담당자를 그 매출의 작업요청서에 <b>자동 입력</b>한다
+     * (2026-10-08 프론트 요청 [A]4 / 9/27 회의 1·20번).
+     *
+     * <p>DSRE 배송구분 {@code LGS_GN} 을 우리 발송구분으로 옮긴다 — <b>T=택배 / H=화물</b>.
+     * 두 축은 원래 별개(DSRE는 "지사로 보내나 학교로 보내나", 우리는 "무엇으로 보내나")지만,
+     * 운영상 학교·학원 직송이 택배이고 지사 묶음이 화물이라 값이 1:1로 대응한다.
+     *
+     * <p>비어 있는 항목만 채운다({@link Shipment#fillDeliveryIfBlank}) — 이유는 그쪽 주석 참고.
+     * 알 수 없는 구분값이면 발송구분은 건드리지 않고 담당자만 채운다.
+     *
+     * @param deliveryGubun DSRE {@code LGS_GN}(H/T). null·기타값이면 발송구분 미설정
+     */
+    @Transactional
+    public void autoFillDelivery(Sale sale, String deliveryGubun, String teacher, String tel) {
+        DeliveryType type = deliveryTypeOf(deliveryGubun);
+        if (type == null && (teacher == null || teacher.isBlank())
+                && (tel == null || tel.isBlank())) {
+            return;   // 채울 것이 없다
+        }
+        shipmentRepository.findKey(sale.getSalesDate(), sale.getPartner().getId(),
+                        sale.getSchoolCode(), sale.getProduct().getSalesDivision())
+                .ifPresent(s -> s.fillDeliveryIfBlank(type, teacher, tel));
+    }
+
+    /** DSRE 배송구분(H/T) → 우리 발송구분. 모르는 값은 null(미지정) — 임의로 한쪽에 넣지 않는다. */
+    private static DeliveryType deliveryTypeOf(String lgsGn) {
+        if (lgsGn == null || lgsGn.isBlank()) {
+            return null;
+        }
+        // ★대소문자 변환 없이 값을 그대로 본다. 한 글자 코드라 변환할 이유가 없고,
+        //   변환 후 비교는 로케일에 따라 결과가 달라진다(정적분석 IMPROPER_UNICODE).
+        return switch (lgsGn.trim()) {
+            case "T", "t" -> DeliveryType.COURIER;
+            case "H", "h" -> DeliveryType.FREIGHT;
+            default -> null;
+        };
     }
 
     /**

@@ -82,6 +82,7 @@ class TaxInvoiceItemDetailIntegrationTest extends IntegrationTestSupport {
         b.put("supplyRate", 70);
         b.put("catCode", "T2095A01");
         b.put("catName", "홈택스검증");
+        b.put("salesDivision", "교재");
         b.put("taxFree", true);   // 면세 → '05' 시트
         return createId("/masters/products", b);
     }
@@ -134,6 +135,20 @@ class TaxInvoiceItemDetailIntegrationTest extends IntegrationTestSupport {
                 .as("단가가 10,000/12,000 로 갈려 하나로 못 정한다 — 임의값을 넣으면 "
                         + "단가×수량이 공급가액과 어긋난다").isFalse();
         assertThat(mixed.path("qty").asLong()).as("수량은 합산된다").isEqualTo(10);
+    }
+
+    @Test
+    @DisplayName("★품목에 분류 정보가 실린다 — 상품군 묶기는 화면·담당자 몫(2026-10-08)")
+    void 품목에_분류정보() {
+        JsonNode it = itemOf("단일단가");
+        assertThat(it).isNotNull();
+
+        assertThat(it.path("catCode").asText()).isEqualTo("T2095A01");
+        assertThat(it.path("catName").asText()).isEqualTo("홈택스검증");
+        assertThat(it.path("salesDivision").asText()).isEqualTo("교재");
+        // ‼️서버가 '상품군 4종'으로 묶지 않는다 — 4종의 정의를 아직 못 받았다.
+        //   임의 기준으로 묶으면 신고 담당자가 틀린 묶음을 그대로 제출한다.
+        //   묶을 수 있는 축만 내려주고, 묶는 것은 정의를 받은 뒤다.
     }
 
     @Test

@@ -610,6 +610,11 @@ public class JdbcDsreGateway implements DsreGateway {
                    req.PROC_YN                                  proc_yn,
                    req.TEACHER                                  teacher,
                    req.TEL                                      tel,
+                   -- ★담당자 이메일·발송구분(2026-10-08 프론트 요청).
+                   --   이메일은 주문 조회 화면이 그대로 쓰고,
+                   --   LGS_GN 은 작업요청서 발송구분(화물 H / 택배 T) 자동 입력에 쓴다.
+                   req.EMAIL                                    email,
+                   req.LGS_GN                                   lgs_gn,
                    req.ADDRESS                                  address,
                    req.BIGO                                     bigo,
                    -- 과목신청 수량 + 간편신청 인원. 한 주문은 둘 중 하나로만 채워진다.
@@ -655,6 +660,10 @@ public class JdbcDsreGateway implements DsreGateway {
                --   IN 절 조립 대신 쉼표 문자열 하나를 바인딩한다(게이트규칙).
                AND (? IS NULL OR FIND_IN_SET(req.CUST_CD, ?) > 0)
                AND (? IS NULL OR req.APPLY_GN = ?)
+               -- ★도서(상품)·시행·상품연도 조건(2026-10-08). 없던 동안 화면이 전체를 받아 걸렀다.
+               AND (? IS NULL OR FIND_IN_SET(dtl.PROD_CD, ?) > 0)
+               AND (? IS NULL OR FIND_IN_SET(req.DTL_CD, ?) > 0)
+               AND (? IS NULL OR prod.YEAR = ?)
              ORDER BY req.REQ_DATE DESC, req.REQ_CD DESC
             """;
 
@@ -681,6 +690,8 @@ public class JdbcDsreGateway implements DsreGateway {
                 procLabel(trim(rs.getString("proc_yn"))),
                 rs.getString("teacher"),
                 rs.getString("tel"),
+                rs.getString("email"),
+                trim(rs.getString("lgs_gn")),
                 rs.getString("address"),
                 rs.getString("bigo"),
                 rs.getLong("total_qty"),
@@ -691,44 +702,103 @@ public class JdbcDsreGateway implements DsreGateway {
 
     private static final String ORDER_PAGE_SQL = ORDER_LIST_SQL + " LIMIT ? OFFSET ?";
 
-    /** 같은 WHERE 로 건수만. 저장함수·파생테이블을 안 타 목록보다 훨씬 싸다. */
+    /**
+     * 같은 WHERE 로 건수만. 저장함수·파생테이블을 안 타 목록보다 훨씬 싸다.
+     *
+     * <p>‼️<b>목록과 조건이 하나라도 어긋나면 안 된다.</b> 총건수만 틀리면 화면은
+     * 있지도 않은 페이지를 만들고, 담당자는 마지막 장이 비어 있는 것을 보고 자료가 빠졌다고 읽는다.
+     * 도서·시행·연도 조건을 목록에 더하면서 여기에도 같은 조인·같은 조건을 넣었다(2026-10-08).
+     */
     private static final String ORDER_COUNT_SQL = """
             SELECT COUNT(*)
               FROM tbl_request_info req
+              LEFT JOIN tbl_product_dtl  dtl  ON dtl.DTL_CD  = req.DTL_CD
+              LEFT JOIN tbl_product_info prod ON prod.PROD_CD = dtl.PROD_CD
              WHERE req.REQ_DATE BETWEEN ? AND ?
                AND (? IS NULL OR req.STATE = ?)
                AND (? IS NULL OR req.CUST_CD = ?)
                AND (? IS NULL OR FIND_IN_SET(req.CUST_CD, ?) > 0)
                AND (? IS NULL OR req.APPLY_GN = ?)
+               AND (? IS NULL OR FIND_IN_SET(dtl.PROD_CD, ?) > 0)
+               AND (? IS NULL OR FIND_IN_SET(req.DTL_CD, ?) > 0)
+               AND (? IS NULL OR prod.YEAR = ?)
             """;
 
     @Override
     public List<DsreOrderRow> findOrders(LocalDate from, LocalDate to, OrderState state,
                                          String custCode, java.util.Collection<String> custCodes,
                                          LogisMode mode, int offset, int limit) {
-        String stateCode = (state == null) ? null : state.code();
-        String cust = (custCode == null || custCode.isBlank()) ? null : custCode.trim();
-        String custList = csv(custCodes);
-        String applyGn = (mode == null) ? null : mode.applyGnValue();
+        return findOrders(from, to, state, custCode, custCodes, mode, null, null, null,
+                offset, limit);
+    }
 
-        return dsreJdbcTemplate.query(ORDER_PAGE_SQL, ORDER_MAPPER,
-                from.format(YYYYMMDD), to.format(YYYYMMDD),
-                stateCode, stateCode, cust, cust, custList, custList, applyGn, applyGn,
-                Math.max(1, limit), Math.max(0, offset));
+    @Override
+    public List<DsreOrderRow> findOrders(LocalDate from, LocalDate to, OrderState state,
+                                         String custCode, java.util.Collection<String> custCodes,
+                                         LogisMode mode, java.util.Collection<String> prodCodes,
+                                         java.util.Collection<Integer> dtlCds, Integer productYear,
+                                         int offset, int limit) {
+        Object[] base = orderArgs(from, to, state, custCode, custCodes, mode,
+                prodCodes, dtlCds, productYear);
+        Object[] args = java.util.Arrays.copyOf(base, base.length + 2);
+        args[base.length] = Math.max(1, limit);
+        args[base.length + 1] = Math.max(0, offset);
+        return dsreJdbcTemplate.query(ORDER_PAGE_SQL, ORDER_MAPPER, args);
     }
 
     @Override
     public int countOrders(LocalDate from, LocalDate to, OrderState state,
                            String custCode, java.util.Collection<String> custCodes, LogisMode mode) {
+        return countOrders(from, to, state, custCode, custCodes, mode, null, null, null);
+    }
+
+    @Override
+    public int countOrders(LocalDate from, LocalDate to, OrderState state,
+                           String custCode, java.util.Collection<String> custCodes, LogisMode mode,
+                           java.util.Collection<String> prodCodes,
+                           java.util.Collection<Integer> dtlCds, Integer productYear) {
+        Integer n = dsreJdbcTemplate.queryForObject(ORDER_COUNT_SQL, Integer.class,
+                orderArgs(from, to, state, custCode, custCodes, mode, prodCodes, dtlCds, productYear));
+        return (n == null) ? 0 : n;
+    }
+
+    /**
+     * 목록·건수가 <b>같은 조건·같은 순서</b>로 바인딩되게 한 곳에서 만든다.
+     * 두 곳에 따로 적어 두면 조건을 더할 때 한쪽을 빠뜨려 총건수만 틀어진다
+     * (화면은 있지도 않은 페이지를 만들고, 담당자는 자료가 빠졌다고 읽는다).
+     */
+    private Object[] orderArgs(LocalDate from, LocalDate to, OrderState state,
+                               String custCode, java.util.Collection<String> custCodes,
+                               LogisMode mode, java.util.Collection<String> prodCodes,
+                               java.util.Collection<Integer> dtlCds, Integer productYear) {
         String stateCode = (state == null) ? null : state.code();
         String cust = (custCode == null || custCode.isBlank()) ? null : custCode.trim();
         String custList = csv(custCodes);
         String applyGn = (mode == null) ? null : mode.applyGnValue();
-
-        Integer n = dsreJdbcTemplate.queryForObject(ORDER_COUNT_SQL, Integer.class,
+        String prodList = csv(prodCodes);
+        String dtlList = csvNum(dtlCds);
+        return new Object[]{
                 from.format(YYYYMMDD), to.format(YYYYMMDD),
-                stateCode, stateCode, cust, cust, custList, custList, applyGn, applyGn);
-        return (n == null) ? 0 : n;
+                stateCode, stateCode, cust, cust, custList, custList, applyGn, applyGn,
+                prodList, prodList, dtlList, dtlList, productYear, productYear};
+    }
+
+    /** 숫자 목록을 FIND_IN_SET 용 CSV 로. 비면 null(조건 미적용). */
+    private static String csvNum(java.util.Collection<Integer> values) {
+        if (values == null || values.isEmpty()) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder();
+        for (Integer v : values) {
+            if (v == null) {
+                continue;
+            }
+            if (sb.length() > 0) {
+                sb.append(',');
+            }
+            sb.append(v);
+        }
+        return sb.length() == 0 ? null : sb.toString();
     }
 
     @Override

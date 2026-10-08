@@ -590,7 +590,8 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     /**
      * 계산서신고: 거래처×상품×과세구분 집계(품목 라인). 취소 제외, 반품 차감.
      * tax_bucket: 'FREE'(면세, tax=0) / 'TAXABLE'(과세). 순매출 0인 품목은 제외.
-     * 반환 Object[]: [partnerId, partnerName, productId, productName, taxBucket, supply, tax].
+     * 반환 Object[]: [partnerId, partnerName, productId, productName, taxBucket, supply, tax,
+     * qty, priceKinds, unitPrice, catCode, catName, salesDivision].
      *
      * <p>★<b>과세구분 필터는 WHERE에서 건다</b>('ALL'이면 미적용).
      * 다 읽어 온 뒤 자바에서 거르면 계산서 장수·합계는 걸러진 것으로 나오는데
@@ -607,7 +608,11 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
               COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN -s.qty ELSE s.qty END),0) AS qty,
               -- 단가가 라인마다 다르면 하나로 정할 수 없다. 서로 다른 값의 가짓수를 함께 센다.
               COUNT(DISTINCT s.unit_price) AS price_kinds,
-              MIN(s.unit_price) AS unit_price
+              MIN(s.unit_price) AS unit_price,
+              -- ★품목의 분류 정보(2026-10-08 프론트 요청 [B]15). 신고 담당자가 품목을
+              --   상품군으로 묶을 때 쓴다. ‼️'상품군 4종'의 정의는 아직 못 받았으므로
+              --   우리가 묶지 않고 **묶을 수 있는 축을 함께 내려준다**(임의로 묶으면 신고가 틀어진다).
+              p.cat_code, p.cat_name, p.sales_division
             FROM sales s
               JOIN partners pt ON pt.id = s.partner_id
               JOIN products p ON p.id = s.product_id
@@ -616,7 +621,8 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
               AND (CAST(:partnerId AS SIGNED) IS NULL OR s.partner_id = :partnerId)
               AND (:taxType = 'ALL'
                    OR CASE WHEN s.tax = 0 THEN 'FREE' ELSE 'TAXABLE' END = :taxType)
-            GROUP BY s.partner_id, pt.name, s.product_id, p.name, CASE WHEN s.tax = 0 THEN 'FREE' ELSE 'TAXABLE' END
+            GROUP BY s.partner_id, pt.name, s.product_id, p.name, p.cat_code, p.cat_name,
+                     p.sales_division, CASE WHEN s.tax = 0 THEN 'FREE' ELSE 'TAXABLE' END
             HAVING COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN -s.supply_amount ELSE s.supply_amount END),0) <> 0
             ORDER BY pt.name, s.partner_id, tax_bucket, p.name
             """, nativeQuery = true)

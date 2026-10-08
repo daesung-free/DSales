@@ -261,7 +261,14 @@ public class OrderController {
                     단건 `custCode` 와 함께 주면 **교집합**이다.""")
             @RequestParam(required = false) java.util.List<String> custCodes,
             @Parameter(description = "구분 ALL/NORMAL(정상)/ACCIDENT(사고). 미지정=전체")
-            @RequestParam(required = false, defaultValue = "ALL") LogisMode mode) {
+            @RequestParam(required = false, defaultValue = "ALL") LogisMode mode,
+            @Parameter(description = """
+                    도서(상품코드) **다중 선택**. 쉼표로 여러 개. 미지정=전체.
+                    ⚠️DSRE2 상품코드라 우리 도서코드와 다른 체계다(주문 응답의 상품명 축).""")
+            @RequestParam(required = false) java.util.List<String> prodCodes,
+            @Parameter(description = "시행(DTL_CD) **다중 선택**. 쉼표로 여러 개. 미지정=전체")
+            @RequestParam(required = false) java.util.List<Integer> dtlCds,
+            @Parameter(description = "상품 연도(미지정=전체)") @RequestParam(required = false) Integer productYear) {
         // ★날짜를 필수로 두었더니 화면이 못 불렀다(파라미터를 안 실어 400).
         //   다른 조회 API는 이미 기간을 생략하면 올해로 잡는다 — /orders만 예외였다.
         LocalDate from = (fromDate != null) ? fromDate : LocalDate.now().withDayOfYear(1);
@@ -274,8 +281,10 @@ public class OrderController {
         int sz = Math.min(Math.max(1, size), 500);
         return ApiResponse.success(com.daesung.sales.common.response.PageResponse.of(
                 orderService.withSalesNos(
-                        dsreGateway.findOrders(from, to, state, custCode, custCodes, mode, p * sz, sz)),
-                p, sz, dsreGateway.countOrders(from, to, state, custCode, custCodes, mode)));
+                        dsreGateway.findOrders(from, to, state, custCode, custCodes, mode,
+                                prodCodes, dtlCds, productYear, p * sz, sz)),
+                p, sz, dsreGateway.countOrders(from, to, state, custCode, custCodes, mode,
+                        prodCodes, dtlCds, productYear)));
     }
 
     @Operation(summary = "주문·진행상태 엑셀 다운로드")
@@ -286,7 +295,10 @@ public class OrderController {
             @RequestParam(required = false) OrderState state,
             @RequestParam(required = false) String custCode,
             @RequestParam(required = false) java.util.List<String> custCodes,
-            @RequestParam(required = false, defaultValue = "ALL") LogisMode mode) {
+            @RequestParam(required = false, defaultValue = "ALL") LogisMode mode,
+            @RequestParam(required = false) java.util.List<String> prodCodes,
+            @RequestParam(required = false) java.util.List<Integer> dtlCds,
+            @RequestParam(required = false) Integer productYear) {
         List<Col> cols = List.of(
                 new Col("신청번호", "reqCd"), new Col("신청일", "reqDate"),
                 new Col("진행상태", "stateName"),
@@ -298,10 +310,13 @@ public class OrderController {
                 new Col("총수량", "totalQty"), new Col("품목건수", "itemCount"),
                 new Col("예상금액", "estimatedAmount"),
                 new Col("성적처리", "procYn"), new Col("담당선생님", "teacher"),
-                new Col("연락처", "tel"), new Col("주소", "address"), new Col("비고", "memo"));
+                new Col("연락처", "tel"), new Col("이메일", "email"),
+                new Col("발송구분", "deliveryGubun"),
+                new Col("주소", "address"), new Col("비고", "memo"));
         byte[] xlsx = excel.toXlsx("주문진행상태", cols,
                 orderService.withSalesNos(
-                        dsreGateway.findOrders(fromDate, toDate, state, custCode, custCodes, mode, 0, Integer.MAX_VALUE)));
+                        dsreGateway.findOrders(fromDate, toDate, state, custCode, custCodes, mode,
+                                prodCodes, dtlCds, productYear, 0, Integer.MAX_VALUE)));
         return excel.asDownload(xlsx, "주문_진행상태.xlsx");
     }
 }

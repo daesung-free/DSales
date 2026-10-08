@@ -47,6 +47,7 @@ public class OrderService {
     private final com.daesung.sales.sale.repository.SaleRepository saleRepository;
     private final ProductRepository productRepository;
     private final SaleService saleService;
+    private final com.daesung.sales.logistics.service.ShipmentService shipmentService;
 
     /**
      * 거래명세서 발급 처리 → 발송준비중(W).
@@ -315,7 +316,12 @@ public class OrderService {
         String no = res.items().isEmpty() ? null : res.items().get(0).salesNo();
         // 주문 목록이 "이 주문이 무슨 매출이 됐나"를 되짚는다(매출일괄등록과 같은 연결).
         if (no != null) {
-            saleRepository.findBySalesNo(no).ifPresent(x -> x.linkOrder(reqCd));
+            saleRepository.findBySalesNo(no).ifPresent(x -> {
+                x.linkOrder(reqCd);
+                // ★주문의 「택배 발송」·담당자를 작업요청서에 그대로 내린다(2026-10-08 [A]4).
+                //   없던 동안 물류가 주문에 이미 있는 값을 작업요청서에서 다시 쳤다.
+                shipmentService.autoFillDelivery(x, req.deliveryGubun(), req.teacher(), req.tel());
+            });
         }
         return no;
     }

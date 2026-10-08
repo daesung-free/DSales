@@ -51,6 +51,7 @@ class OrderWithSaleTest {
     private ProductRepository productRepository;
     private SaleService saleService;
     private SaleRepository saleRepository;
+    private com.daesung.sales.logistics.service.ShipmentService shipmentService;
     private OrderService service;
 
     @BeforeEach
@@ -65,8 +66,9 @@ class OrderWithSaleTest {
         when(gateway.createOrder(any(), anyString())).thenReturn(777);
         when(saleRepository.findBySalesNo(anyString())).thenReturn(Optional.empty());
 
+        shipmentService = mock(com.daesung.sales.logistics.service.ShipmentService.class);
         service = new OrderService(gateway, history, auditor, saleRepository,
-                productRepository, saleService);
+                productRepository, saleService, shipmentService);
     }
 
     /** 간편신청 두 반 = 인원 30 + 20 → 총 50. */
@@ -85,6 +87,29 @@ class OrderWithSaleTest {
                         com.daesung.sales.salestype.entity.SalesCategory.SALE,
                         10, 84_000L, 0L, 84_000L, 0)),
                 List.of()));
+    }
+
+    /** 담당자·택배까지 실은 주문. 그 값이 작업요청서로 내려가는지 보는 용도. */
+    private OrderCreateRequest reqWithContact(OrderCreateRequest.SaleLine sale) {
+        return new OrderCreateRequest(90001, "70501", "10001", null, null, null,
+                "김선생", "010-1111-2222", "t@example.com", null, null, null, "T", sale,
+                List.of(new OrderCreateRequest.ClassLine("1반", "S", 30, null, null, null)));
+    }
+
+    @Test
+    @DisplayName("★택배 발송·담당자가 작업요청서로 내려간다 — 물류가 다시 치지 않도록(2026-10-08)")
+    void 택배_담당자_자동입력() {
+        givenSaleOk();
+        when(productRepository.findByCode("90001")).thenReturn(Optional.of(mock(Product.class)));
+        com.daesung.sales.sale.entity.Sale sale = mock(com.daesung.sales.sale.entity.Sale.class);
+        when(saleRepository.findBySalesNo("I-20960501-1")).thenReturn(Optional.of(sale));
+
+        service.create(reqWithContact(new OrderCreateRequest.SaleLine(
+                5L, 42L, LocalDate.of(2096, 5, 1), 9L, 12_000, 70, 120, 0, null)));
+
+        // 주문의 신청번호 연결과 함께, 배송구분·담당자가 그대로 발송 건으로 넘어간다.
+        verify(sale).linkOrder(777);
+        verify(shipmentService).autoFillDelivery(sale, "T", "김선생", "010-1111-2222");
     }
 
     @Test
