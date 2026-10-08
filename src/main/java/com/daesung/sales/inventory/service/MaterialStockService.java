@@ -59,6 +59,8 @@ public class MaterialStockService {
     private final SequenceService sequenceService;
     /** 잔량 증감 규칙(원자적 UPDATE·음수 허용)은 재고 엔진 한 곳에만 둔다 — 두 벌이 되면 언젠가 갈린다. */
     private final InventoryService inventoryService;
+    private final com.daesung.sales.product.repository.ProductRepository productRepository;
+    private final com.daesung.sales.material.repository.MaterialBomRepository materialBomRepository;
 
     /** 자재 입고. 품목마다 (1) 재고이벤트 INBOUND 기록 + (2) 잔량 가산을 한 트랜잭션으로. */
     @Transactional
@@ -68,6 +70,9 @@ public class MaterialStockService {
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                         "거래처가 없습니다. id=" + req.supplierClientId()));
 
+        // ★도서 단위 입고(발주처 #2 "도서 선택 → 하위 자재 수량 입력"). 도서를 주면 검사한다.
+        java.util.Set<Long> allowed = assertProductAllows(req);
+
         // 전표번호는 도서 입고와 같은 채번(IN-)을 쓴다. 되돌릴 때 "무슨 전표냐"를 한 곳에서 찾는다.
         String inboundNo = "IN-" + req.processedDate().format(YYYYMMDD) + "-"
                 + sequenceService.next(SequenceService.SEQ_INBOUND);
@@ -75,6 +80,11 @@ public class MaterialStockService {
         List<MaterialInboundResponse.Line> lines = new ArrayList<>();
         for (MaterialInboundRequest.Item item : req.items()) {
             Material material = material(item.materialId());
+            if (allowed != null && !allowed.contains(material.getId())) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT,
+                        "그 도서의 구성 자재가 아닙니다: " + material.getCode()
+                                + ". 도서를 바꿨다면 자재 목록을 다시 불러오세요.");
+            }
 
             inventoryTxnRepository.save(InventoryTxn.materialInbound(material, warehouse,
                     item.qty(), item.unitCost(), req.inboundType(), req.processedDate(),
@@ -85,6 +95,43 @@ public class MaterialStockService {
                     material.getName(), item.qty(), currentQty));
         }
         return new MaterialInboundResponse(inboundNo, warehouse.getId(), warehouse.getName(), lines);
+    }
+
+    /**
+     * 도서 단위 입고일 때의 사전 검사(발주처 1차회신 2026-10-02 #2).
+     *
+     * <p>★<b>DSRE 병행 상품은 막는다.</b> 회신 원문 — "DSRE 병행 상품은 조회만
+     * (DSRE 병행 상품의 자재 입출고는 DSRE에서 그대로 관리) / 매출프로그램 단독 상품은
+     * 이 프로그램에서 자재 단위로 입고 등록". 판정 기준은 #1 이 정한 <b>단가노출</b>이다
+     * (단독관리=Y / 병행=N).
+     *
+     * <p>‼️여기서 안 막으면 <b>같은 자재 재고가 우리와 DSRE 두 곳에서 따로 움직인다</b> —
+     * 둘 다 맞아 보이지만 실물과는 둘 다 다르다. 이 프로젝트가 레거시에서 겪은 결함 그대로다.
+     *
+     * @return 허용 자재 id 집합. 도서를 안 줬으면 null(검사 없음)
+     */
+    private java.util.Set<Long> assertProductAllows(MaterialInboundRequest req) {
+        if (req.productId() == null) {
+            return null;
+        }
+        var product = productRepository.findById(req.productId())
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                        "도서가 없습니다. id=" + req.productId()));
+        if (!product.isPriceVisible()) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "DSRE 병행 상품의 자재는 여기서 입고할 수 없습니다: " + product.getCode()
+                            + ". 병행 상품의 자재 입출고는 DSRE에서 관리합니다(발주처 확정 2026-10-02). "
+                            + "단독관리로 바꾸려면 도서관리에서 단가노출을 켜세요.");
+        }
+        java.util.Set<Long> ids = new java.util.HashSet<>();
+        materialBomRepository.findBySet(product.getId())
+                .forEach(b -> ids.add(b.getMaterial().getId()));
+        if (ids.isEmpty()) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "그 도서에 등록된 구성 자재가 없습니다: " + product.getCode()
+                            + ". 도서관리 > 자재관리에서 먼저 구성을 등록하세요.");
+        }
+        return ids;
     }
 
     /**

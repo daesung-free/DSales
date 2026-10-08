@@ -37,6 +37,22 @@ public record MaterialInboundRequest(
                 example = "NORMAL")
         InboundType inboundType,
 
+        @Schema(description = """
+                **도서(세트) id**. 발주처 1차회신 2026-10-02 #2 확정 흐름 —
+                "도서 선택 → 하위 자재 수량 입력(DSRE식)".
+
+                주면 두 가지를 서버가 검사한다 —
+                · ★**DSRE 병행 상품이면 거부**한다. #1·#2 회신: "단독관리 상품=Y / 기존시스템(DSRE)
+                  병행 상품=N", "DSRE 병행 상품은 조회만(자재 입출고는 DSRE에서 그대로 관리)".
+                  판정은 도서의 **단가노출**(`priceVisible`)이다 — N 이면 DSRE 소관이라 막는다.
+                  ‼️안 막으면 같은 자재 재고가 우리와 DSRE 두 곳에서 따로 움직인다.
+                · 품목의 자재가 **그 도서의 구성 자재**인지. 아니면 거부한다 — 화면이 도서를 바꾼 뒤
+                  이전 도서의 자재를 그대로 보내는 오입력을 막는다.
+
+                비우면 예전처럼 자재를 직접 지정하는 입고다(검사 없음).""",
+                example = "1")
+        Long productId,
+
         @Schema(description = "입고 품목 목록", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotEmpty @Valid List<Item> items
 ) {

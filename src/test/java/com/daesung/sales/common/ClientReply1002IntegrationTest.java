@@ -224,6 +224,67 @@ class ClientReply1002IntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("★★#2 자재 입고 — DSRE 병행 상품은 막는다(재고가 두 곳에서 움직이면 안 된다)")
+    void 자재입고_병행상품_차단() {
+        Long wh = createId("/masters/warehouses",
+                Map.of("code", "CRMW" + SFX, "name", "자재검증창고", "type", "MAIN"));
+        Long mat = createId("/masters/materials", Map.of("code", "CRMT" + SFX, "name", "자재검증 문제지",
+                        "materialType", "EXAM_PAPER", "unit", "부"));
+
+        // 단독관리(단가노출 Y) 도서 + 구성 자재
+        Long solo = product("CRSL" + SFX, "단독관리 세트", true);
+        post("/masters/products/" + solo + "/materials",
+                Map.of("materialId", mat, "qtyPerSet", 1));
+
+        JsonNode ok = post("/stock/materials/inbound", Map.of(
+                "processedDate", DATE, "supplierClientId", supplier,
+                "destinationWarehouseId", wh, "productId", solo,
+                "items", List.of(Map.of("materialId", mat, "qty", 500))));
+        assertThat(ok.path("success").asBoolean()).as("단독관리 도서: %s", ok).isTrue();
+
+        // 병행(단가노출 N) 도서 — DSRE 가 자재를 관리한다. 여기서 받으면 재고가 두 곳이 된다.
+        Long dual = product("CRDU" + SFX, "DSRE 병행 세트", false);
+        post("/masters/products/" + dual + "/materials",
+                Map.of("materialId", mat, "qtyPerSet", 1));
+
+        JsonNode blocked = post("/stock/materials/inbound", Map.of(
+                "processedDate", DATE, "supplierClientId", supplier,
+                "destinationWarehouseId", wh, "productId", dual,
+                "items", List.of(Map.of("materialId", mat, "qty", 500))));
+        assertThat(blocked.path("success").asBoolean()).isFalse();
+        assertThat(blocked.path("error").path("message").asText())
+                .contains("DSRE 병행 상품");
+
+        // 도서를 바꾼 뒤 이전 도서의 자재를 그대로 보내는 오입력도 막는다.
+        Long other = product("CROT" + SFX, "다른 세트", true);
+        Long otherMat = createId("/masters/materials", Map.of("code", "CROM" + SFX, "name", "다른 자재",
+                        "materialType", "OMR", "unit", "부"));
+        post("/masters/products/" + other + "/materials",
+                Map.of("materialId", otherMat, "qtyPerSet", 1));
+
+        JsonNode wrong = post("/stock/materials/inbound", Map.of(
+                "processedDate", DATE, "supplierClientId", supplier,
+                "destinationWarehouseId", wh, "productId", other,
+                "items", List.of(Map.of("materialId", mat, "qty", 10))));
+        assertThat(wrong.path("success").asBoolean()).isFalse();
+        assertThat(wrong.path("error").path("message").asText()).contains("구성 자재가 아닙니다");
+    }
+
+    /** 단가노출로 단독/병행을 가른다(발주처 #1 확정 기준). */
+    private Long product(String code, String name, boolean priceVisible) {
+        Map<String, Object> b = new HashMap<>();
+        b.put("code", code);
+        b.put("name", name);
+        b.put("contentType", "SELF");
+        b.put("price", 10000);
+        b.put("supplyRate", 70);
+        b.put("catCode", "C2105B01");
+        b.put("catName", "자재검증분류");
+        b.put("priceVisible", priceVisible);
+        return createId("/masters/products", b);
+    }
+
+    @Test
     @DisplayName("#5 공급자 전화가 거래명세서에 실린다 — 비어 있으면 거래처 서류에 빈칸이 나간다")
     void 공급자_전화() {
         sell(schoolMega, 3);
