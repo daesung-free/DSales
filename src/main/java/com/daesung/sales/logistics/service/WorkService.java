@@ -33,6 +33,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class WorkService {
 
     private final ShipmentRepository shipmentRepository;
+    private final com.daesung.sales.consignment.repository.ConsignmentOutRepository consignmentOutRepository;
     private final SaleRepository saleRepository;
     private final CurrentAuditor currentAuditor;
 
@@ -112,6 +113,18 @@ public class WorkService {
                     .add(new WorkOrderResponse.Line(a.getCatCode(), a.getProductCode(), a.getProductName(),
                             a.getBookRound(), a.getUnitPrice(), a.getSupplyRate(),
                             a.getQty(), a.getAmount() == null ? 0 : a.getAmount()));
+        }
+
+        // ★위탁출고 지시도 같은 키로 합친다(검수피드백 2026-09-30 p.12).
+        //   위탁출고는 매출이 없어(미결로 나간다) 매출 기반 목록엔 안 잡힌다 —
+        //   그동안 위탁 건은 작업요청서에 **빈 목록**으로 떠서 물류가 뭘 싸야 할지 몰랐다.
+        for (var c : consignmentOutRepository.workOrderLines(from, to)) {
+            linesByKey.computeIfAbsent(
+                            key(c.getTradeDate(), c.getPartnerId(), c.getSchoolCode(), c.getTradeClass()),
+                            k -> new ArrayList<>())
+                    .add(new WorkOrderResponse.Line(c.getCatCode(), c.getProductCode(),
+                            c.getProductName(), null, c.getUnitPrice(), c.getSupplyRate(),
+                            c.getQty() == null ? 0 : c.getQty(), 0));
         }
 
         // 발송 건별 신청번호(2026-10-01). 한 발송에 신청이 여럿일 수 있어 목록으로 모은다.

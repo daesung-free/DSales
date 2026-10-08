@@ -68,6 +68,8 @@ public class ConsignmentService {
     private final PeriodLockService periodLockService;
     private final SettlementDraftService settlementDraftService;
     private final StatusHistoryService statusHistoryService;
+    private final com.daesung.sales.school.repository.SchoolRepository schoolRepository;
+    private final com.daesung.sales.logistics.service.ShipmentService shipmentService;
 
     /** 위탁출고. 품목마다 물류→위탁 이고 + 미결(OPEN) 생성. 한 트랜잭션. 매출 미발생. */
     @Transactional
@@ -84,6 +86,16 @@ public class ConsignmentService {
         Warehouse to = warehouseRepository.findById(req.toWarehouseId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                         "도착 창고가 없습니다. id=" + req.toWarehouseId()));
+
+        // 학교명은 안 보내도 된다 — 코드만 주면 마스터에서 찾는다.
+        // ‼️못 찾아도 막지 않는다. 마스터에 아직 없는 학교로 나가는 건이 실제로 있고,
+        //   거기서 거부하면 출고 자체를 못 한다(이름은 나중에 조회로 보완된다).
+        String schoolName = req.schoolName();
+        if ((schoolName == null || schoolName.isBlank())
+                && req.schoolCode() != null && !req.schoolCode().isBlank()) {
+            schoolName = schoolRepository.findBySchoolCode(req.schoolCode())
+                    .map(com.daesung.sales.school.entity.School::getSchoolName).orElse(null);
+        }
 
         String datePart = req.processedDate().format(YYYYMMDD);
         List<ConsignmentOutResponse.Line> lines = new ArrayList<>();
@@ -115,7 +127,14 @@ public class ConsignmentService {
             String outNo = "OUT-" + datePart + "-" + sequenceService.next(SequenceService.SEQ_CONSIGNMENT);
             ConsignmentOut co = consignmentOutRepository.save(
                     ConsignmentOut.create(outNo, product, partner, item.qty(), outLeg,
-                            unitPrice, supplyRate, discount));
+                            unitPrice, supplyRate, discount,
+                            req.processedDate(), req.schoolCode(), schoolName));
+
+            // ★위탁출고도 작업요청서를 만든다(검수피드백 p.12). 실제로 물건이 나가므로
+            //   물류 지시가 있어야 한다 — 없던 동안 위탁 건은 작업목록에서 통째로 빠져 있었다.
+            //   분류(세부구분)가 품목마다 다를 수 있어 품목별로 확보한다(발송 묶음 키에 분류가 들어간다).
+            shipmentService.ensureForConsignment(req.processedDate(), partner,
+                    req.schoolCode(), schoolName, product.getSalesDivision());
 
             lines.add(new ConsignmentOutResponse.Line(
                     co.getId(), outNo, product.getId(), product.getCode(), item.qty(),
@@ -144,6 +163,18 @@ public class ConsignmentService {
     /** 거래처별 미결(잔여>0) 조회. */
     @Transactional(readOnly = true)
     public ConsignPendingResponse findPending(Long partnerId) {
+        return findPending(partnerId, null);
+    }
+
+    /**
+     * 미결 조회. 거래처를 비우면 전체, 학교코드를 주면 그 <b>세부거래처 몫만</b> 본다.
+     *
+     * <p>★학교 축이 필요한 이유: 발주처 요구가 "위탁 미결 매출 확정 시에도 <b>세부거래처별로
+     * 나누어 확정</b>"이다(검수피드백 p.12). 한 거래처가 여러 학교에 위탁으로 깔아 두면
+     * 거래처 단위 목록으로는 어느 학교 몫을 확정하는지 고를 수 없다.
+     */
+    @Transactional(readOnly = true)
+    public ConsignPendingResponse findPending(Long partnerId, String schoolCode) {
         // ★거래처를 안 주면 전 거래처 미결을 본다(2026-10-08).
         //   화면이 전체 조회를 기간 데이터로 흉내 내고 있었다.
         Partner partner = (partnerId == null) ? null
@@ -157,11 +188,18 @@ public class ConsignmentService {
 
         List<ConsignPendingResponse.Line> lines = new ArrayList<>();
         for (ConsignmentOut co : pending) {
+            // 학교 조건은 메모리에서 거른다 — 미결은 화면 한 장 분량이고,
+            // 쿼리를 둘로 늘리면 전체·거래처별 두 경로와 조건이 어긋날 여지가 생긴다.
+            if (schoolCode != null && !schoolCode.isBlank()
+                    && !schoolCode.equals(co.getSchoolCode())) {
+                continue;
+            }
             Product p = co.getProduct();
             lines.add(new ConsignPendingResponse.Line(
                     co.getId(),
                     co.getPartner().getId(), co.getPartner().getCode(), co.getPartner().getName(),
-                    co.getSourceOutNo(), p.getId(), p.getCode(), p.getName(),
+                    co.getSourceOutNo(), co.getTradeDate(), co.getSchoolCode(), co.getSchoolName(),
+                    p.getId(), p.getCode(), p.getName(),
                     co.getOriginalQty(), co.getTotalQty(), co.getReturnedQty(),
                     co.getSettledQty(), co.getRemainingQty(), co.getStatus(),
                     co.getUnitPrice(), co.getSupplyRate(), co.getDiscountAmount(),

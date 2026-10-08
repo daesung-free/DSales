@@ -10,6 +10,7 @@ import com.daesung.sales.logistics.dto.TrackingUploadResponse;
 import com.daesung.sales.logistics.entity.DeliveryType;
 import com.daesung.sales.logistics.entity.Shipment;
 import com.daesung.sales.logistics.repository.ShipmentRepository;
+import com.daesung.sales.partner.entity.Partner;
 import com.daesung.sales.sale.entity.Sale;
 import java.io.IOException;
 import java.time.LocalDateTime;
@@ -132,6 +133,25 @@ public class ShipmentService {
             case "H", "h" -> DeliveryType.FREIGHT;
             default -> null;
         };
+    }
+
+    /**
+     * 위탁출고용 발송 건 확보(2026-09-30 검수피드백 p.12 — "위탁출고도 실제 출고가 발생하므로
+     * 작업요청서에 포함되어야 합니다").
+     *
+     * <p>★<b>{@link #ensureFor(Sale)} 를 못 쓴다.</b> 그쪽은 매출 행에서 키를 뽑는데
+     * 위탁출고는 <b>매출이 아직 없다</b>(미결 상태로 나가고 정산 때 매출이 선다).
+     * 그래서 같은 키(일자·거래처·학교·분류)를 직접 받아 만든다.
+     *
+     * <p>묶는 단위가 같으므로 <b>같은 날 같은 학교로 정상출고와 위탁출고가 함께 나가면
+     * 한 발송 건이 된다</b> — 물류는 그것을 한 상자에 싣는다. 그게 맞다.
+     */
+    @Transactional
+    public Shipment ensureForConsignment(java.time.LocalDate tradeDate, Partner partner,
+                                         String schoolCode, String schoolName, String tradeClass) {
+        return shipmentRepository.findKey(tradeDate, partner.getId(), schoolCode, tradeClass)
+                .orElseGet(() -> shipmentRepository.save(
+                        Shipment.of(tradeClass, tradeDate, partner, schoolCode, schoolName, null)));
     }
 
     /**

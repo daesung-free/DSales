@@ -61,8 +61,16 @@ public class ConsignmentController {
     @GetMapping("/pending")
     public ApiResponse<ConsignPendingResponse> pending(
             @Parameter(description = "위탁 거래처 id. **비우면 전체**", example = "1")
-            @RequestParam(required = false) Long partnerId) {
-        return ApiResponse.success(consignmentService.findPending(partnerId));
+            @RequestParam(required = false) Long partnerId,
+            @Parameter(description = """
+                    학교/학원 코드. 주면 그 **세부거래처 몫만** 본다.
+                    근거: 검수피드백 2026-09-30 p.12 "★위탁 미결 매출 확정 시에도
+                    **세부거래처별로 나누어 확정**할 수 있어야 합니다★".
+                    한 거래처가 여러 학교에 위탁으로 깔아 두면 거래처 단위 목록으로는
+                    어느 학교 몫을 확정하는지 고를 수 없다.""",
+                    example = "S001")
+            @RequestParam(required = false) String schoolCode) {
+        return ApiResponse.success(consignmentService.findPending(partnerId, schoolCode));
     }
 
     @Operation(summary = "위탁 미결정산",

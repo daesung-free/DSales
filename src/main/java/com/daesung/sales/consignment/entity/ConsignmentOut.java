@@ -93,9 +93,34 @@ public class ConsignmentOut extends BaseEntity {
     @JoinColumn(name = "origin_txn_id")
     private InventoryTxn originTxn;
 
+    /**
+     * 출고일. 미결 조회가 "언제 나간 물건인가"를 보여주려면 필요하다(2026-09-30 검수피드백).
+     * 원출고 재고이벤트의 거래일과 같다 — 거기서 읽지 않고 복사해 두는 이유는
+     * 미결 목록이 수천 행일 때 행마다 이벤트를 따라가면 느려지기 때문이다.
+     */
+    @Column(name = "trade_date")
+    private java.time.LocalDate tradeDate;
+
+    /**
+     * 학교/학원 코드. 근거: 검수피드백 p.12 —
+     * "개념만 위탁이라 위탁창고로 빠지는 것뿐이지 <b>실제 출고건과 동일하게 해당 학교/학원에
+     * 출고가 되어야</b>" + "★위탁 미결 매출 확정 시에도 <b>세부거래처별로 나누어 확정</b>★".
+     *
+     * <p>★<b>출고 전표가 아니라 이 행에 둔다.</b> 확정(정산)이 행 단위로 일어나기 때문이다 —
+     * 전표에만 달면 "A학교 몫 70부만 확정"을 표현할 수 없다. 행이 학교별로 갈려 있으면
+     * 학교별 확정이 그냥 된다(정산 로직을 고칠 필요가 없다).
+     */
+    @Column(name = "school_code", length = 30)
+    private String schoolCode;
+
+    @Column(name = "school_name", length = 100)
+    private String schoolName;
+
     public static ConsignmentOut create(String sourceOutNo, Product product, Partner partner,
                                         int totalQty, InventoryTxn originTxn,
-                                        Integer unitPrice, Integer supplyRate, Integer discountAmount) {
+                                        Integer unitPrice, Integer supplyRate, Integer discountAmount,
+                                        java.time.LocalDate tradeDate,
+                                        String schoolCode, String schoolName) {
         ConsignmentOut c = new ConsignmentOut();
         c.sourceOutNo = sourceOutNo;
         c.product = product;
@@ -110,6 +135,9 @@ public class ConsignmentOut extends BaseEntity {
         c.unitPrice = unitPrice;
         c.supplyRate = supplyRate;
         c.discountAmount = discountAmount;
+        c.tradeDate = tradeDate;
+        c.schoolCode = schoolCode;
+        c.schoolName = schoolName;
         return c;
     }
 

@@ -57,4 +57,57 @@ public interface ConsignmentOutRepository extends JpaRepository<ConsignmentOut, 
     /** 미결 잔여수량 합. {@link #countPending}과 짝. */
     @Query("select coalesce(sum(c.remainingQty), 0) from ConsignmentOut c where c.remainingQty > 0")
     long sumPendingQty();
+
+    /**
+     * 발송 단위(일자·거래처·학교·분류)의 <b>위탁출고</b> 도서별 지시 목록.
+     *
+     * <p>근거: 검수피드백 2026-09-30 p.12 — "위탁출고 등록 시 물류 [작업요청서] 내역에
+     * 반영되지 않는 문제가 있습니다. <b>위탁출고도 실제 출고가 발생하므로</b> 작업요청서에
+     * 포함되어야 합니다".
+     *
+     * <p>★<b>매출 쪽 {@code workOrderLines} 로는 못 잡는다.</b> 위탁출고 시점엔 매출이 없다 —
+     * 미결로 나가고 정산할 때 비로소 매출이 선다. 그래서 미결원장에서 따로 뽑아 합친다.
+     *
+     * <p>★<b>원출고 수량({@code originalQty})을 쓴다.</b> 물류 지시는 "몇 개를 싸서 보내라"이고
+     * 그건 나갈 때 수량이다 — 나중에 정산·반품으로 잔여가 줄어도 이미 나간 상자는 그대로다.
+     */
+    @org.springframework.data.jpa.repository.Query("""
+            select c.tradeDate as tradeDate, c.partner.id as partnerId,
+                   coalesce(c.schoolCode, '') as schoolCode,
+                   coalesce(p.salesDivision, '') as tradeClass,
+                   p.catCode as catCode, p.code as productCode, p.name as productName,
+                   c.unitPrice as unitPrice, c.supplyRate as supplyRate,
+                   sum(c.originalQty) as qty
+              from ConsignmentOut c join c.product p
+             where c.tradeDate between :from and :to
+             group by c.tradeDate, c.partner.id, coalesce(c.schoolCode, ''),
+                      coalesce(p.salesDivision, ''), p.catCode, p.code, p.name,
+                      c.unitPrice, c.supplyRate
+            """)
+    java.util.List<ConsignWorkOrderLine> workOrderLines(
+            @org.springframework.data.repository.query.Param("from") java.time.LocalDate from,
+            @org.springframework.data.repository.query.Param("to") java.time.LocalDate to);
+
+    /** 작업요청서에 실을 위탁출고 한 줄. */
+    interface ConsignWorkOrderLine {
+        java.time.LocalDate getTradeDate();
+
+        Long getPartnerId();
+
+        String getSchoolCode();
+
+        String getTradeClass();
+
+        String getCatCode();
+
+        String getProductCode();
+
+        String getProductName();
+
+        Integer getUnitPrice();
+
+        Integer getSupplyRate();
+
+        Long getQty();
+    }
 }

@@ -23,6 +23,21 @@ public record ConsignmentOutRequest(
         @Schema(description = "도착(위탁) 창고 id", example = "2", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotNull Long toWarehouseId,
 
+        @Schema(description = """
+                학교/학원 코드(선택). 근거: 검수피드백 2026-09-30 p.12 —
+                "위탁창고 선택뿐 아니라 **하위 학교/학원까지 선택 가능**해야 하고,
+                 개념만 위탁이라 위탁창고로 빠지는 것뿐이지 실제 출고건과 동일하게
+                 해당 학교/학원에 출고가 되어야 한다".
+
+                ★주면 **미결원장이 학교별로 갈린다** — 그래야 "A학교 몫만 확정"이 된다
+                (발주처 요구: 위탁 미결 매출 확정도 세부거래처별로).
+                ★작업요청서도 이 학교 기준으로 만들어진다(발송 단위가 학교다).""",
+                example = "S001")
+        String schoolCode,
+
+        @Schema(description = "학교/학원명(선택). 미지정이면 학교 마스터에서 찾는다")
+        String schoolName,
+
         @Schema(description = "위탁출고 품목", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotEmpty @Valid List<Item> items
 ) {

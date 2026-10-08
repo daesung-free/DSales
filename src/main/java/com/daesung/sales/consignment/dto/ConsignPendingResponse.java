@@ -21,6 +21,16 @@ public record ConsignPendingResponse(
             @Schema(description = "거래처코드") String partnerCode,
             @Schema(description = "거래처명") String partnerName,
             @Schema(description = "위탁출고번호", example = "OUT-20260608-1") String sourceOutNo,
+            @Schema(description = """
+                    출고일(2026-09-30 검수피드백). 언제 나간 물건인지 없으면
+                    담당자가 어느 건을 먼저 확정할지 판단할 수 없다. 이 컬럼 도입 전 미결은 null.""")
+            java.time.LocalDate tradeDate,
+            @Schema(description = """
+                    학교/학원 코드. ★**세부거래처별 확정의 단위**다(검수피드백 p.12) —
+                    미결 행이 학교별로 갈려 있어야 "A학교 몫 70부만 확정"이 된다.
+                    학교를 지정하지 않고 나간 건은 null.""")
+            String schoolCode,
+            @Schema(description = "학교/학원명") String schoolName,
             @Schema(description = "상품 id") Long productId,
             @Schema(description = "상품코드") String productCode,
             @Schema(description = "상품명") String productName,
@@ -56,13 +66,16 @@ public record ConsignPendingResponse(
     ) {
         /** 코드에서 한글명을 채워 생성 — 화면이 매번 매핑표를 들고 있지 않게. */
         public Line(Long consignmentOutId, Long partnerId, String partnerCode, String partnerName,
-                    String sourceOutNo, Long productId, String productCode,
+                    String sourceOutNo, java.time.LocalDate tradeDate,
+                    String schoolCode, String schoolName,
+                    Long productId, String productCode,
                     String productName, int originalQty, int totalQty, int returnedQty,
                     int settledQty, int remainingQty, ConsignmentStatus status,
                     Integer unitPrice, Integer supplyRate, Integer discountAmount,
                     Long remainingSupplyAmount) {
             this(consignmentOutId, partnerId, partnerCode, partnerName,
-                    sourceOutNo, productId, productCode, productName,
+                    sourceOutNo, tradeDate, schoolCode, schoolName,
+                    productId, productCode, productName,
                     originalQty, totalQty, returnedQty, settledQty, remainingQty, status,
                     status == null ? null : status.label(),
                     unitPrice, supplyRate, discountAmount, remainingSupplyAmount);
