@@ -224,10 +224,16 @@ public class SaleReportService {
         for (Object[] r : inventoryTxnRepository.purchaseInboundByProduct(from, to)) {
             inbound.put(num(r[0]), num(r[1]));
         }
+        // 매입반품(기간) — 수량·금액. 쿼리가 부호를 뒤집어 양수로 준다.
+        Map<Long, long[]> purchaseReturn = new HashMap<>();
+        for (Object[] r : inventoryTxnRepository.purchaseReturnByProduct(from, to)) {
+            purchaseReturn.put(num(r[0]), new long[]{num(r[1]), num(r[2])});
+        }
 
         List<NetSalesResponse.Row> rows = new ArrayList<>();
         long tSaleQ = 0, tSaleA = 0, tSaleTax = 0, tFreeQ = 0, tFreeA = 0;
         long tRetQ = 0, tRetA = 0, tRetTax = 0, tPurch = 0, tInQ = 0;
+        long tPrQ = 0, tPrA = 0;   // 매입반품 수량·금액
         boolean anyExternal = false;
         for (Object[] r : saleRepository.netSalesByProduct(
                 com.daesung.sales.common.query.MultiSelect.isAny(partnerIds),
@@ -249,11 +255,19 @@ public class SaleReportService {
             long netTax = saleTax - retTax;
 
             Long inQty = null, unitCost = null, purchase = null, profit = null;
+            Long prQty = null, prAmt = null;
             Double margin = null;
             if ("EXTERNAL".equals(ct)) {
                 anyExternal = true;
                 inQty = inbound.getOrDefault(pid, 0L);
+                long[] pr = purchaseReturn.getOrDefault(pid, new long[]{0L, 0L});
+                prQty = pr[0];
+                prAmt = pr[1];
+                tPrQ += pr[0];
+                tPrA += pr[1];
                 unitCost = avgCost.getOrDefault(pid, 0L);
+                // ‼️매입액에서 매입반품을 빼지 않는다 — 매입액은 "판 물건의 원가"(단가×순매출수량)이고
+                //   매입반품은 재고 흐름이다. 빼면 반품한 달의 이익률이 실제와 달라진다.
                 purchase = unitCost * netQty;
                 profit = netAmt - purchase;
                 margin = (netAmt != 0) ? Math.round((double) profit / netAmt * 100 * 10) / 10.0 : null;
@@ -265,7 +279,7 @@ public class SaleReportService {
                     saleQty, saleAmt, freeQty, freeAmt, freeQty, freeAmt,
                     retQty, returnRate(retQty, saleQty), retAmt,
                     netQty, netAmt, netTax, netAmt + netTax,
-                    inQty, unitCost, purchase, profit, margin));
+                    inQty, prQty, prAmt, unitCost, purchase, profit, margin));
             tSaleQ += saleQty; tSaleA += saleAmt; tSaleTax += saleTax;
             tFreeQ += freeQty; tFreeA += freeAmt;
             tRetQ += retQty; tRetA += retAmt; tRetTax += retTax;
@@ -280,7 +294,9 @@ public class SaleReportService {
                 tSaleQ, tSaleA, tFreeQ, tFreeA, tFreeQ, tFreeA,
                 tRetQ, returnRate(tRetQ, tSaleQ), tRetA,
                 tSaleQ - tRetQ, tNetAmt, tNetTax, tNetAmt + tNetTax,
-                anyExternal ? tInQ : null, null, totalPurchase, totalProfit, totalMargin);
+                anyExternal ? tInQ : null,
+                anyExternal ? tPrQ : null, anyExternal ? tPrA : null,
+                null, totalPurchase, totalProfit, totalMargin);
         return new NetSalesResponse(from, to, filter, rows, total);
     }
 

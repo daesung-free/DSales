@@ -74,6 +74,10 @@ public record SaleResponse(
         boolean canceled,
         @Schema(description = "출고 창고 id") Long warehouseId,
         @Schema(description = "출고 창고명(7p 재고위치). 이 컬럼 도입 전 매출은 비어 있다") String warehouseName,
+        @Schema(description = """
+                판매채널(레거시 `schDataDT.type1`). **학교 마스터에서 붙인다** — 매출 원장엔 없다.
+                학교코드가 없거나 마스터에 그 학교가 없으면 null.""")
+        String salesChannel,
         String memo
 ) {
     /**
@@ -108,6 +112,14 @@ public record SaleResponse(
     public static SaleResponse from(Sale s, SalesDivision division,
                                     com.daesung.sales.school.entity.SchoolType schoolType,
                                     String schoolNameFallback, boolean couponCount) {
+        return from(s, division, schoolType, schoolNameFallback, null, couponCount);
+    }
+
+    /** 판매채널까지 붙인 조회용(2026-10-02 발주처 회신 — 레거시 조회화면 콤보). */
+    public static SaleResponse from(Sale s, SalesDivision division,
+                                    com.daesung.sales.school.entity.SchoolType schoolType,
+                                    String schoolNameFallback, String salesChannel,
+                                    boolean couponCount) {
         MajorCategory major = (division == null) ? null : division.getMajorCategory();
         String schoolName = (s.getSchoolName() != null && !s.getSchoolName().isBlank())
                 ? s.getSchoolName() : schoolNameFallback;
@@ -138,6 +150,7 @@ public record SaleResponse(
                 s.isCanceled(),
                 (s.getWarehouse() == null) ? null : s.getWarehouse().getId(),
                 (s.getWarehouse() == null) ? null : s.getWarehouse().getName(),
+                salesChannel,
                 s.getMemo());
     }
 }

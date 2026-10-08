@@ -80,18 +80,26 @@ public class InventoryService {
         String inboundNo = "IN-" + req.processedDate().format(YYYYMMDD) + "-"
                 + sequenceService.next(SequenceService.SEQ_INBOUND);
 
+        // ★매입반품은 **부호가 반대**다 — 사 온 물건을 공급처로 되돌려 보내므로 재고가 준다.
+        //   화면은 다른 입고와 같이 양수로 입력하고 여기서 뒤집는다(폐기와 같은 규칙).
+        //   근거: 발주처 1차회신 2026-10-02 #6 "매입반품 실제 발생".
+        int sign = (req.inboundType() == InboundType.PURCHASE_RETURN) ? -1 : 1;
+
         List<InboundResponse.Line> lines = new ArrayList<>();
         for (InboundRequest.InboundItem item : req.items()) {
             Product product = productRepository.findById(item.productId())
                     .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                             "상품이 없습니다. id=" + item.productId()));
 
-            InventoryTxn txn = InventoryTxn.inbound(product, warehouse, item.qty(),
+            int delta = sign * item.qty();
+            InventoryTxn txn = InventoryTxn.inbound(product, warehouse, delta,
                     item.unitCost(), req.inboundType(), req.processedDate(), supplier, item.memo(), inboundNo);
             txn.applyLogisCostTarget(Boolean.TRUE.equals(req.logisCostTarget()));   // 물류작업비 대상(8p)
             inventoryTxnRepository.save(txn);
-            int currentQty = applyDelta(product, warehouse, item.qty());
+            int currentQty = applyDelta(product, warehouse, delta);
 
+            // 응답 수량은 **입력한 그대로**(양수) 돌려준다 — 화면이 되돌려 보여주는 값이라
+            // 여기서 음수로 바뀌면 담당자는 자기가 친 숫자와 다른 것을 본다.
             lines.add(new InboundResponse.Line(
                     product.getId(), product.getCode(), item.qty(), currentQty));
         }

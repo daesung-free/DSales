@@ -357,6 +357,16 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
             + "and (:anyPair = true "
             + "     or concat(s.partner.id, ':', coalesce(s.schoolCode, '')) in :pairs "
             + "     or concat(s.partner.id, ':*') in :pairs) "
+            // ★판매채널(레거시 `조회.Designer.vb:365` 콤보). 값은 **학교 마스터**에 있다
+            //   (schDataDT.type1 — 우리 School.salesChannel). 매출 행에는 없으므로 학교코드로 되짚는다.
+            //   ‼️'미분류'는 레거시가 별도 분기로 처리한다(조회.vb:1205 `type1 is null or ''`) —
+            //     목록에 넣어 비교하면 값이 NULL 이라 영원히 안 걸린다.
+            + "and (:anyChannel = true "
+            + "     or (:unclassified = true and not exists ("
+            + "            select 1 from School uc where uc.schoolCode = s.schoolCode "
+            + "              and uc.salesChannel is not null and uc.salesChannel <> '')) "
+            + "     or exists (select 1 from School sc where sc.schoolCode = s.schoolCode "
+            + "                  and sc.salesChannel in :channels)) "
             // 키워드는 담당자가 화면에서 치는 값이다 — 거래처명·도서명·도서코드·매출번호·학교명을 함께 훑는다.
             // 어느 칸에 쳤는지 기억하고 고르게 하면 실무에서 안 쓴다.
             + "and (:keyword is null or lower(s.partner.name) like :keyword "
@@ -381,6 +391,9 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
                       @Param("productIds") Collection<Long> productIds,
                       @Param("anyPair") boolean anyPair,
                       @Param("pairs") Collection<String> pairs,
+                      @Param("anyChannel") boolean anyChannel,
+                      @Param("unclassified") boolean unclassified,
+                      @Param("channels") Collection<String> channels,
                       @Param("keyword") String keyword,
                       @Param("includeCanceled") boolean includeCanceled,
                       Pageable pageable);

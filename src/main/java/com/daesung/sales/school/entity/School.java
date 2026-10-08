@@ -98,6 +98,20 @@ public class School extends BaseEntity {
     @Column(name = "client_category", length = 30)
     private String clientCategory;
 
+    /**
+     * 판매채널. 근거: 레거시 {@code 조회.Designer.vb:365}(콤보 라벨 "판매채널") +
+     * {@code CommonDB.vb:475} {@code SELECT type1 FROM schDataDT GROUP BY type1}.
+     *
+     * <p>★<b>학교 단위 값이다</b> — 거래처가 아니라 그 학교가 어느 채널로 들어왔는지다.
+     * 레거시 {@code schDataDT} 는 학교코드·type1·type2 세 칸뿐이고, 짝인 type2 는 이미
+     * 우리 '학교구분'으로 들어와 있다({@code 조회.vb:1528}).
+     *
+     * <p>★<b>자유문자열이다.</b> 레거시가 코드표 없이 학교 행의 값을 모아 목록을 만든다 —
+     * 고정 enum 으로 바꾸면 채널이 하나 늘 때마다 배포해야 한다.
+     */
+    @Column(name = "sales_channel", length = 20)
+    private String salesChannel;
+
     @Column(length = 500)
     private String memo;
 
@@ -112,7 +126,7 @@ public class School extends BaseEntity {
 
     public static School create(String schoolCode, String custCode, String custName, String city, String region,
                                 String schoolName, boolean isSchool, SchoolType schoolType,
-                                String clientCategory, String memo) {
+                                String clientCategory, String salesChannel, String memo) {
         School s = new School();
         s.schoolCode = schoolCode;
         s.custCode = (custCode == null) ? "" : custCode;
@@ -123,13 +137,15 @@ public class School extends BaseEntity {
         s.isSchool = isSchool;
         s.schoolType = (schoolType == null) ? SchoolType.SCHOOL : schoolType;
         s.clientCategory = clientCategory;
+        s.salesChannel = salesChannel;
         s.memo = memo;
         return s;
     }
 
     /** 수정(학교코드 불변). */
     public void update(String custCode, String custName, String city, String region, String schoolName,
-                       boolean isSchool, SchoolType schoolType, String clientCategory, String memo) {
+                       boolean isSchool, SchoolType schoolType, String clientCategory,
+                       String salesChannel, String memo) {
         this.custCode = (custCode == null) ? "" : custCode;
         this.custName = custName;
         this.city = city;
@@ -138,6 +154,7 @@ public class School extends BaseEntity {
         this.isSchool = isSchool;
         this.schoolType = (schoolType == null) ? SchoolType.SCHOOL : schoolType;
         this.clientCategory = clientCategory;
+        this.salesChannel = salesChannel;
         this.memo = memo;
     }
 

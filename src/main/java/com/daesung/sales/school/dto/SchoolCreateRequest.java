@@ -2,6 +2,7 @@ package com.daesung.sales.school.dto;
 
 import com.daesung.sales.school.entity.SchoolType;
 import io.swagger.v3.oas.annotations.media.Schema;
+import jakarta.validation.constraints.Size;
 import jakarta.validation.constraints.NotBlank;
 
 /** 학교 등록 요청(35p). 학교코드=거래처코드 동일값. */
@@ -18,6 +19,13 @@ public record SchoolCreateRequest(
         @Schema(description = "학교 Y/N(기본 true)", example = "true") Boolean isSchool,
         @Schema(description = "학교/학원구분(SCHOOL/HAKWON, 기본 SCHOOL)", example = "SCHOOL") SchoolType schoolType,
         @Schema(description = "거래처구분(특약점/기타학원/B2B 등)", example = "특약점") String clientCategory,
+
+        @Schema(description = """
+                판매채널(레거시 schDataDT.type1). 자유문자열 — 코드표를 두지 않는다.
+                조회화면의 판매채널 목록은 등록된 값들을 모아 만든다
+                (`GET /masters/schools/sales-channels`).""",
+                example = "자체몰")
+        @Size(max = 20) String salesChannel,
         @Schema(description = "메모") String memo,
 
         // ── 학교/학원검색(29p) 축 — DSRE 동기화가 주지 않아 수기로 받는다 ──

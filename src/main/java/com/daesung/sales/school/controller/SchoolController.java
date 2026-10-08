@@ -128,6 +128,24 @@ public class SchoolController {
         return ApiResponse.success(schoolService.search(schoolCode, schoolName, region, partnerName));
     }
 
+    @Operation(summary = "판매채널 목록",
+            description = """
+                    매출·출고조회의 **판매채널 콤보**에 넣을 값 목록.
+
+                    ★<b>코드표가 아니다.</b> 등록된 학교들의 판매채널 값을 모아서 만든다 —
+                    레거시가 똑같이 한다({@code CommonDB.vb:475}
+                    `SELECT type1 FROM schDataDT GROUP BY type1`). 고정 목록으로 두면
+                    채널이 하나 늘 때마다 배포해야 한다.
+
+                    · 값은 **학교 마스터**에 있다(레거시 `schDataDT.type1`). 거래처가 아니라
+                      그 학교가 어느 채널로 들어왔는지다.
+                    · 화면은 여기에 `< 전체 >`·`< 미분류 >` 를 앞에 붙여 쓴다(레거시와 같다).
+                      조회 시 `salesChannels=미분류` 를 보내면 채널이 비어 있는 학교만 걸린다.""")
+    @GetMapping("/sales-channels")
+    public ApiResponse<java.util.List<String>> salesChannels() {
+        return ApiResponse.success(schoolService.salesChannels());
+    }
+
     @Operation(summary = "학교/학원검색 엑셀 다운로드",
             description = "조회와 같은 조건. 특약점 3축(대표·모의고사·IC)까지 담는다.")
     @GetMapping("/search/export")

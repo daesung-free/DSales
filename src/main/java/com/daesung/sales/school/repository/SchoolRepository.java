@@ -14,6 +14,18 @@ import org.springframework.data.repository.query.Param;
 public interface SchoolRepository extends JpaRepository<School, Long> {
     Optional<School> findBySchoolCode(String schoolCode);
 
+    /**
+     * 등록된 <b>판매채널 목록</b>. 근거: 레거시 {@code CommonDB.vb:475}
+     * {@code SELECT type1 FROM schDataDT GROUP BY type1} — 코드표가 아니라
+     * <b>학교 행에 적힌 값을 모아</b> 조회화면 콤보를 만든다. 우리도 같게 둔다.
+     */
+    @org.springframework.data.jpa.repository.Query("""
+            select distinct s.salesChannel from School s
+             where s.salesChannel is not null and s.salesChannel <> ''
+             order by s.salesChannel
+            """)
+    java.util.List<String> findSalesChannels();
+
     /** 매출 목록이 학교/학원 구분을 붙일 때 쓴다 — 코드를 모아 한 번에(N+1 방지). */
     List<School> findBySchoolCodeIn(java.util.Collection<String> schoolCodes);
 

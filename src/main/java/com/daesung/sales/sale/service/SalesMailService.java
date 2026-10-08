@@ -101,7 +101,7 @@ public class SalesMailService {
 
         List<SaleResponse> rows = saleService.search(fromDate, toDate,
                         salesCategories, tradeClasses, shipmentTypes,
-                        partnerIds, warehouseIds, schoolCodes, null, null, null,
+                        partnerIds, warehouseIds, schoolCodes, null, null, null, null,
                         keyword, couponCount, false,
                         PageRequest.of(0, MAX_ROWS))
                 .getContent();

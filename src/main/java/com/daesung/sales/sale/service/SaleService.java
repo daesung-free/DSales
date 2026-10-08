@@ -608,6 +608,31 @@ public class SaleService {
         inventoryService.softDeleteByRefNo(sale.getSalesNo(), currentAuditor.username());
     }
 
+    /** 판매채널 조건에 '미분류'가 섞여 있나. 레거시가 별도 분기로 처리하는 값이다(조회.vb:1205). */
+    private static boolean hasUnclassifiedChannel(List<String> channels) {
+        return channels != null && channels.stream().anyMatch(SaleService::isUnclassified);
+    }
+
+    /**
+     * '미분류'를 뺀 실제 채널명만. 섞어서 {@code in} 에 넣으면 영원히 안 걸린다 —
+     * 미분류는 값이 <b>NULL·공백</b>이라 같다고 비교할 대상이 없다.
+     */
+    private static List<String> namedChannels(List<String> channels) {
+        if (channels == null) {
+            return null;
+        }
+        List<String> named = channels.stream().filter(c -> !isUnclassified(c)).toList();
+        return named.isEmpty() ? null : named;
+    }
+
+    private static boolean isUnclassified(String c) {
+        if (c == null || c.isBlank()) {
+            return true;
+        }
+        String v = c.trim();
+        return "미분류".equals(v) || "< 미분류 >".equals(v);
+    }
+
     /**
      * {@code group_concat} 결과를 목록으로 푼다. 값이 없으면 <b>빈 목록</b>이다 —
      * null 을 내리면 전역 {@code NON_NULL} 설정 때문에 키 자체가 사라져,
@@ -657,6 +682,7 @@ public class SaleService {
                                              List<String> divisionCodes,
                                              List<Long> productIds,
                                              List<String> partnerSchools,
+                                             List<String> salesChannels,
                                              String keyword,
                                              boolean couponCount,
                                              boolean includeCanceled, Pageable pageable) {
@@ -707,12 +733,16 @@ public class SaleService {
                 MultiSelect.orPlaceholder(productIds, 0L),
                 MultiSelect.isAny(partnerSchools),
                 MultiSelect.orPlaceholder(normalizePairs(partnerSchools), "\u0000"),
+                MultiSelect.isAny(salesChannels),
+                hasUnclassifiedChannel(salesChannels),
+                MultiSelect.orPlaceholder(namedChannels(salesChannels), "\u0000"),
                 kw, includeCanceled, pageable);
         // ★학교/학원 구분은 매출 원장에 없다 — 학교 마스터에서 붙인다.
         //   페이지 안의 학교코드만 모아 **한 번에** 조회한다(행마다 조회하면 N+1이다).
         //   ‼️마스터에 없는 코드는 그냥 null 로 둔다. 거기서 막으면 과거 매출이 조회에서 사라진다.
         Map<String, com.daesung.sales.school.entity.SchoolType> schoolTypes = schoolTypesOf(page);
         Map<String, String> schoolNames = schoolNamesOf(page);
+        Map<String, String> channels = salesChannelsOf(page);
         return PageResponse.of(page.map(s -> SaleResponse.from(
                 s, divisions.get(s.getProduct().getSalesDivision()),
                 // ‼️학교코드가 없는 매출이 흔하다(학교 없이 거래처로만 나가는 건).
@@ -721,6 +751,8 @@ public class SaleService {
                 (s.getSchoolCode() == null) ? null : schoolTypes.get(s.getSchoolCode()),
                 // 학교명 보완(항목 13-③) · 쿠폰 카운트(항목 13-⑤)
                 (s.getSchoolCode() == null) ? null : schoolNames.get(s.getSchoolCode()),
+                // 판매채널도 학교 마스터 값이다(레거시 schDataDT.type1).
+                (s.getSchoolCode() == null) ? null : channels.get(s.getSchoolCode()),
                 couponCount)));
     }
 
@@ -768,6 +800,26 @@ public class SaleService {
         schoolRepository.findBySchoolCodeIn(codes)
                 .forEach(sc -> names.putIfAbsent(sc.getSchoolCode(), sc.getSchoolName()));
         return names;
+    }
+
+    /** 페이지에 실린 학교코드의 <b>판매채널</b>을 한 번에 가져온다(N+1 방지). */
+    private Map<String, String> salesChannelsOf(Page<Sale> page) {
+        java.util.Set<String> codes = new java.util.HashSet<>();
+        page.forEach(s -> {
+            if (s.getSchoolCode() != null && !s.getSchoolCode().isBlank()) {
+                codes.add(s.getSchoolCode());
+            }
+        });
+        if (codes.isEmpty()) {
+            return Map.of();
+        }
+        Map<String, String> out = new HashMap<>();
+        schoolRepository.findBySchoolCodeIn(codes).forEach(sc -> {
+            if (sc.getSalesChannel() != null && !sc.getSalesChannel().isBlank()) {
+                out.putIfAbsent(sc.getSchoolCode(), sc.getSalesChannel());
+            }
+        });
+        return out;
     }
 
     /** 페이지에 실린 학교코드의 학교/학원 구분을 한 번에 가져온다(N+1 방지). */

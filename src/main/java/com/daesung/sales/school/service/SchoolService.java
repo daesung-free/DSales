@@ -99,7 +99,7 @@ public class SchoolService {
         });
         School school = School.create(req.schoolCode(), req.custCode(), req.custName(), req.city(), req.region(),
                 req.schoolName(), req.isSchool() == null || req.isSchool(), req.schoolType(),
-                req.clientCategory(), req.memo());
+                req.clientCategory(), req.salesChannel(), req.memo());
         // 학교/학원검색(29p) 축 — DSRE가 주지 않는 값이라 등록 시 함께 받는다.
         school.applySearchFields(req.cityCode(), req.partnerLoc(),
                 req.mockPartnerCode(), req.mockPartnerName(),
@@ -107,11 +107,21 @@ public class SchoolService {
         return SchoolResponse.from(schoolRepository.save(school));
     }
 
+    /**
+     * 등록된 판매채널 목록(조회화면 콤보). 레거시 {@code CommonDB.vb:475} 와 같은 방식 —
+     * 코드표 없이 학교 행에 적힌 값을 모은다.
+     */
+    @Transactional(readOnly = true)
+    public java.util.List<String> salesChannels() {
+        return schoolRepository.findSalesChannels();
+    }
+
     @Transactional
     public SchoolResponse update(Long id, SchoolUpdateRequest req) {
         School school = getOrThrow(id);
         school.update(req.custCode(), req.custName(), req.city(), req.region(), req.schoolName(),
-                req.isSchool() == null || req.isSchool(), req.schoolType(), req.clientCategory(), req.memo());
+                req.isSchool() == null || req.isSchool(), req.schoolType(), req.clientCategory(),
+                req.salesChannel(), req.memo());
         return SchoolResponse.from(school);
     }
 
@@ -161,7 +171,8 @@ public class SchoolService {
             School school = schoolRepository.findByCustCodeAndSchoolCode(custCode, row.schoolCode()).orElse(null);
             if (school == null) {
                 School created = School.create(row.schoolCode(), custCode, row.custName(), row.city(), row.region(),
-                        row.schoolName(), row.school(), null, null, null).fromDsre();
+                        // 판매채널은 DSRE가 주지 않는 수기 필드다 — 동기화로 덮지 않는다.
+                        row.schoolName(), row.school(), null, null, null, null).fromDsre();
                 // 담당 특약점(매출코드)도 DSRE2가 준다 — 레거시 학교관리.vb:86과 같다.
                 created.applyDsrePartnerCodes(row.machulCode(), row.partnerLabel());
                 schoolRepository.save(created);

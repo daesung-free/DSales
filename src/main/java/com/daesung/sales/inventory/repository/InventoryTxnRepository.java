@@ -53,6 +53,30 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
                                             @Param("toDate") LocalDate toDate);
 
     /**
+     * 상품별 <b>매입반품</b>(기간). 근거: 발주처 1차회신 2026-10-02 #6 "매입반품 실제 발생".
+     *
+     * <p>‼️정본 16p 인터뷰(2026-07-25)가 "연말 일괄, 연중 반품 없음"으로 닫아 두었던 항목이다.
+     * 그 근거로 칸을 안 만들었는데 발주처가 직접 뒤집었다.
+     *
+     * <p>저장은 <b>음수</b>다(재고가 준다). 화면이 쓰는 값은 양수라 여기서 부호를 뒤집어 돌려준다 —
+     * 폐기 목록과 같은 규칙이다. 뒤집지 않으면 화면이 "-120부 반품"을 그리게 된다.
+     *
+     * <p>반환 Object[]: [productId, returnQty(양수), returnAmount(양수)].
+     */
+    @Query(value = """
+            SELECT product_id, COALESCE(SUM(-qty), 0),
+                   COALESCE(SUM(-qty * COALESCE(unit_cost, 0)), 0)
+            FROM inventory_txn
+            WHERE deleted_at IS NULL
+              AND product_id IS NOT NULL
+              AND txn_type = 'INBOUND' AND inbound_type = 'PURCHASE_RETURN'
+              AND trade_date BETWEEN :fromDate AND :toDate
+            GROUP BY product_id
+            """, nativeQuery = true)
+    List<Object[]> purchaseReturnByProduct(@Param("fromDate") LocalDate fromDate,
+                                           @Param("toDate") LocalDate toDate);
+
+    /**
      * 폐기 내역(10p 조회). 재고이벤트 DISPOSE를 최근순으로.
      *
      * <p>★<b>{@code qty < 0} — 역분개 행은 뺀다</b>(2026-10-01 프론트 실측 지적).

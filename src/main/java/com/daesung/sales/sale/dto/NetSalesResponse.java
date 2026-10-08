@@ -12,9 +12,10 @@ import java.util.List;
  * {@code 상품분류/도서명, 매출(수량/공급가액), 교사용(증정용포함), 반품(수량/반품률/공급가액),
  * 순매출(수량/공급가액/세액/총금액), [외부콘텐츠] 입고/매입액, 이익금액/이익률}.
  *
- * <p>★<b>매입반품 칸은 두지 않았다</b>. 정본 16p 인터뷰(2026-07-25)가
- * "매입반품은 연중이 아니라 <b>연말에 이감과 일괄 계약</b>(원가×반품개수 단순 차감)"으로 닫았다 —
- * 기간 집계에 매달 채울 값이 아니라서, 칸만 만들면 늘 0이 찍혀 "반품이 없었다"로 읽힌다.
+ * <p>★<b>매입반품 칸이 있다</b>(2026-10-02 발주처 1차회신 #6 "매입반품 실제 발생").
+ * ‼️예전엔 두지 않았다 — 정본 16p 인터뷰(2026-07-25)가 "연중이 아니라 <b>연말에 이감과 일괄 계약</b>"으로
+ * 닫았기 때문이다. 발주처가 직접 뒤집었으므로 그 판단은 더 이상 유효하지 않다.
+ * 입력 경로는 입고등록의 구분값 {@code PURCHASE_RETURN} 이다(매입의 역이라 같은 축에 둔다).
  */
 public record NetSalesResponse(
         @Schema(description = "집계 시작일") LocalDate fromDate,
@@ -55,6 +56,15 @@ public record NetSalesResponse(
             @Schema(description = "순매출 세액(매출세액−반품세액)") long netTax,
             @Schema(description = "순매출 총금액(순매출액+순매출세액)") long netTotal,
             @Schema(description = "매입 입고수량(기간 내 매입입고, 외부콘텐츠만)") Long inboundQty,
+            @Schema(description = """
+                    매입반품 수량(기간, 외부콘텐츠만). **양수로 준다** — 원장에는 음수로 적힌다
+                    (재고가 줄기 때문). 정본 16p "입고 / 매입반품 / 매입액" 중 가운데 칸이다.""")
+            Long purchaseReturnQty,
+            @Schema(description = """
+                    매입반품 금액(원가 기준, 양수).
+                    ‼️**매입액·이익에서 빼지 않는다.** 매입액은 "판 물건을 얼마에 사 왔나"(단가×순매출수량)이고
+                    매입반품은 재고 흐름이다. 섞으면 반품한 달의 이익률이 실제와 달라진다.""")
+            Long purchaseReturnAmount,
             @Schema(description = "매입단가(입고원가 평균, 외부콘텐츠만)") Long purchaseUnitCost,
             @Schema(description = "매입액(매입단가×순매출수량, 외부콘텐츠만)") Long purchaseAmount,
             @Schema(description = "이익(순매출액−매입액, 외부콘텐츠만)") Long profit,

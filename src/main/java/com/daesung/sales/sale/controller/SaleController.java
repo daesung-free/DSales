@@ -194,6 +194,15 @@ public class SaleController {
                     ★거래처목록·학교목록을 따로 거는 것으로는 "A는 전체 + B는 그 학교만"을
                     표현할 수 없어(학교 조건이 A에도 걸린다) 별도 축으로 받는다.""")
             @RequestParam(required = false) List<String> partnerSchools,
+            @Parameter(description = """
+                    판매채널 **다중선택**(레거시 조회화면 콤보). 값은 **학교 마스터**에 있다
+                    (레거시 `schDataDT.type1`). 선택 가능한 목록은
+                    `GET /masters/schools/sales-channels` 로 받는다 — 코드표가 아니라
+                    등록된 값을 모아 만든다(레거시 `CommonDB.vb:475` 와 같은 방식).
+
+                    ★`미분류` 를 넣으면 **판매채널이 비어 있는 학교**의 매출을 뜻한다
+                    (레거시 `< 미분류 >`, `조회.vb:1205`). 다른 채널명과 함께 보낼 수 있다.""")
+            @RequestParam(required = false) List<String> salesChannels,
             @Parameter(description = "키워드 — 거래처명·도서명·도서코드·매출번호·학교명을 한 번에 훑는다(부분일치)")
             @RequestParam(required = false) String keyword,
             @Parameter(description = "취소건 포함 여부(기본 false)") @RequestParam(defaultValue = "false") boolean includeCanceled,
@@ -204,7 +213,7 @@ public class SaleController {
                 MultiSelect.merge(shipmentType, shipmentTypes),
                 MultiSelect.merge(partnerId, partnerIds),
                 MultiSelect.merge(warehouseId, warehouseIds),
-                schoolCodes, divisions, productIds, partnerSchools, keyword, couponCount,
+                schoolCodes, divisions, productIds, partnerSchools, salesChannels, keyword, couponCount,
                 includeCanceled, pageReq.toPageable(SALE_SORTS)));
     }
 
@@ -254,6 +263,8 @@ public class SaleController {
             @RequestParam(required = false) List<Long> productIds,
             @Parameter(description = "거래처×학교 조합(조회와 동일)")
             @RequestParam(required = false) List<String> partnerSchools,
+            @Parameter(description = "판매채널 **다중선택**(조회와 동일). '미분류' 가능")
+            @RequestParam(required = false) List<String> salesChannels,
             @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "false") boolean includeCanceled) {
         List<Col> cols = List.of(
@@ -272,6 +283,7 @@ public class SaleController {
                 new Col("할인액", "discountAmount"), new Col("수량", "qty"),
                 new Col("공급가액", "supplyAmount"), new Col("세액", "tax"),
                 new Col("총금액", "totalAmount"),
+                new Col("판매채널", "salesChannel"),
                 new Col("취소", "canceled"), new Col("메모", "memo"));
 
         // ★페이징 없이 전량. PageRequestDto 상한(200)에 걸리지 않도록 서비스에 직접 큰 페이지를 준다.
@@ -281,7 +293,7 @@ public class SaleController {
                 MultiSelect.merge(shipmentType, shipmentTypes),
                 MultiSelect.merge(partnerId, partnerIds),
                 MultiSelect.merge(warehouseId, warehouseIds),
-                schoolCodes, divisions, productIds, partnerSchools, keyword, couponCount,
+                schoolCodes, divisions, productIds, partnerSchools, salesChannels, keyword, couponCount,
                 includeCanceled,
                 org.springframework.data.domain.PageRequest.of(0, EXPORT_MAX));
         // ★고른 거래처 수를 머리말에 남긴다(2026-09-28 화면 정리안).
@@ -533,6 +545,8 @@ public class SaleController {
                 new Col("순매출수량", "netQty"), new Col("순매출 공급가액", "netAmount"),
                 new Col("순매출 세액", "netTax"), new Col("순매출 총금액", "netTotal"),
                 new Col("매입 입고수량", "inboundQty"),
+                new Col("매입반품수량", "purchaseReturnQty"),
+                new Col("매입반품액", "purchaseReturnAmount"),
                 new Col("매입단가", "purchaseUnitCost"), new Col("매입액", "purchaseAmount"),
                 new Col("이익", "profit"), new Col("이익률(%)", "marginPct"));
         byte[] xlsx = excel.toXlsx("순매출조회", cols,

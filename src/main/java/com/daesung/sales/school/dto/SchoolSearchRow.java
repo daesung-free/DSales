@@ -28,6 +28,7 @@ public record SchoolSearchRow(
         String mockPartnerName,
         @Schema(description = "특약점(IC). 모의고사와 같은 이유로 따로 든다") String icPartnerName,
         @Schema(description = "학교/학원 구분") String clientCategory,
+        @Schema(description = "판매채널(레거시 schDataDT.type1)") String salesChannel,
         @Schema(description = "비고") String memo
 ) {
     public static SchoolSearchRow from(School s) {
@@ -38,7 +39,7 @@ public record SchoolSearchRow(
                 s.getSchoolCode(), s.getSchoolName(), s.getCityCode(), s.getCity(),
                 loc, name, locName,
                 s.getMockPartnerName(), s.getIcPartnerName(),
-                s.getClientCategory(), s.getMemo());
+                s.getClientCategory(), s.getSalesChannel(), s.getMemo());
     }
 
     private static String blankToNull(String v) {

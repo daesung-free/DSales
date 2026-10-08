@@ -1,0 +1,201 @@
+package com.daesung.sales.common;
+
+import static org.assertj.core.api.Assertions.assertThat;
+
+import com.daesung.sales.support.IntegrationTestSupport;
+import com.fasterxml.jackson.databind.JsonNode;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestInstance;
+
+/**
+ * 발주처 1차회신(2026-10-02) 반영분 — #5 공급자 전화 · #6 매입반품 · 판매채널.
+ *
+ * <p>★<b>#6 은 이전 판단을 뒤집은 것이다.</b> 정본 16p 인터뷰(2026-07-25)가
+ * "매입반품은 연중이 아니라 연말에 이감과 일괄 계약"으로 닫아 두어 칸을 만들지 않았는데,
+ * 발주처가 직접 <b>"매입반품 실제 발생"</b>으로 답했다. 낡은 정본을 근거로 기능을 빼면
+ * 이렇게 된다는 기록을 겸해 여기 고정한다.
+ *
+ * <p>★<b>판매채널은 물어볼 것이 아니었다.</b> 프론트가 「클라이언트 답 후」로 올려 둔 항목이지만
+ * 레거시에 정의가 다 있다 — {@code 조회.Designer.vb:365}(콤보 라벨 "판매채널"),
+ * {@code CommonDB.vb:475}(목록 = {@code SELECT type1 FROM schDataDT GROUP BY type1}),
+ * {@code 조회.vb:1203~}(필터 규칙, '미분류'는 별도 분기).
+ */
+@TestInstance(TestInstance.Lifecycle.PER_CLASS)
+@DisplayName("발주처 1차회신 반영(2026-10-02)")
+class ClientReply1002IntegrationTest extends IntegrationTestSupport {
+
+    private static final String SFX = "-CR" + (System.nanoTime() % 1_000_000L);
+    private static final String DATE = "2105-06-15";
+    private static final String RANGE = "?fromDate=2105-01-01&toDate=2105-12-31";
+
+    private Long partner;
+    private Long supplier;
+    private Long warehouse;
+    private Long external;          // 외부콘텐츠(매입 대상)
+    private String schoolMega;      // 판매채널 = 메가스터디
+    private String schoolNone;      // 판매채널 미지정
+
+    @BeforeAll
+    void seed() {
+        token();
+        supplier = createId("/masters/clients",
+                Map.of("code", "CRS" + SFX, "name", "매입처", "type", "NORMAL"));
+        partner = createId("/masters/clients",
+                Map.of("code", "CRP" + SFX, "name", "회신검증거래처", "type", "NORMAL"));
+        warehouse = createId("/masters/warehouses",
+                Map.of("code", "CRW" + SFX, "name", "회신검증창고", "type", "MAIN"));
+
+        Map<String, Object> b = new HashMap<>();
+        b.put("code", "CRB" + SFX);
+        b.put("name", "회신검증 매입교재");
+        b.put("contentType", "EXTERNAL");   // 외부콘텐츠라야 매입 칸이 나온다
+        b.put("price", 10000);
+        b.put("supplyRate", 70);
+        b.put("catCode", "C2105A01");
+        b.put("catName", "회신검증분류");
+        external = createId("/masters/products", b);
+
+        schoolMega = "CRM" + SFX;
+        schoolNone = "CRN" + SFX;
+        school(schoolMega, "메가스터디");
+        school(schoolNone, null);
+    }
+
+    private void school(String code, String channel) {
+        Map<String, Object> s = new HashMap<>();
+        s.put("schoolCode", code);
+        s.put("custCode", "CRP" + SFX);
+        s.put("custName", "회신검증거래처");
+        s.put("schoolName", code + " 학교");
+        s.put("city", "서울");
+        s.put("salesChannel", channel);
+        JsonNode r = post("/masters/schools", s);
+        assertThat(r.path("success").asBoolean()).as("학교 등록: %s", r).isTrue();
+    }
+
+    private void inbound(String inboundType, int qty, int unitCost) {
+        JsonNode r = post("/stock/inbound", Map.of(
+                "processedDate", DATE, "supplierClientId", supplier,
+                "destinationWarehouseId", warehouse, "inboundType", inboundType,
+                "items", List.of(Map.of("productId", external, "unitCost", unitCost, "qty", qty))));
+        assertThat(r.path("success").asBoolean()).as("%s: %s", inboundType, r).isTrue();
+    }
+
+    private void sell(String schoolCode, int qty) {
+        Map<String, Object> item = new HashMap<>();
+        item.put("productId", external);
+        item.put("shipmentType", "NORMAL_SHIP");
+        item.put("unitPrice", 10000);
+        item.put("supplyRate", 70);
+        item.put("qty", qty);
+        item.put("schoolCode", schoolCode);
+        JsonNode r = post("/sales/entries", Map.of(
+                "salesDate", DATE, "partnerId", partner, "warehouseId", warehouse,
+                "items", List.of(item)));
+        assertThat(r.path("success").asBoolean()).as("매출: %s", r).isTrue();
+    }
+
+    @Test
+    @DisplayName("★★#6 매입반품 — 재고는 줄고, 매입액·이익에는 섞이지 않는다")
+    void 매입반품() {
+        inbound("PURCHASE", 1000, 500);          // 매입입고 1,000부 @500
+        inbound("PURCHASE_RETURN", 120, 500);    // 매입반품 120부 — 공급처로 되돌려 보냄
+
+        JsonNode row = null;
+        for (JsonNode r : data(get("/sales/net-summary" + RANGE + "&productIds=" + external))
+                .path("rows")) {
+            if (r.path("productId").asLong() == external) {
+                row = r;
+            }
+        }
+        // 매출이 없어도 매입 흐름은 잡혀야 한다 — 없으면 합계행으로라도 확인한다.
+        if (row == null) {
+            sell(schoolMega, 10);
+            for (JsonNode r : data(get("/sales/net-summary" + RANGE + "&productIds=" + external))
+                    .path("rows")) {
+                if (r.path("productId").asLong() == external) {
+                    row = r;
+                }
+            }
+        }
+        assertThat(row).as("순매출 행").isNotNull();
+
+        assertThat(row.path("inboundQty").asLong()).as("매입 입고수량").isEqualTo(1000);
+        assertThat(row.path("purchaseReturnQty").asLong()).as("매입반품 수량은 **양수**로 준다")
+                .isEqualTo(120);
+        assertThat(row.path("purchaseReturnAmount").asLong()).as("120 × 500").isEqualTo(60_000);
+
+        // ‼️매입액은 "판 물건의 원가"(단가×순매출수량)다 — 매입반품을 빼지 않는다.
+        //   빼면 반품한 달의 이익률이 실제와 달라진다.
+        long netQty = row.path("netQty").asLong();
+        assertThat(row.path("purchaseAmount").asLong())
+                .as("매입단가 × 순매출수량 — 매입반품과 무관").isEqualTo(500 * netQty);
+
+        // 재고는 실제로 줄어든다(원장에는 음수로 적힌다).
+        JsonNode ledger = data(get("/stock/ledger" + RANGE + "&size=200&productId=" + external))
+                .path("content").get(0);
+        assertThat(ledger.path("inbound").asLong()).as("1,000 − 120 = 880(순입고)").isEqualTo(880);
+    }
+
+    @Test
+    @DisplayName("★판매채널 — 목록은 등록된 값에서 모으고, '미분류'는 별도 분기다")
+    void 판매채널() {
+        sell(schoolMega, 5);
+        sell(schoolNone, 7);
+
+        assertThat(data(get("/masters/schools/sales-channels")))
+                .as("코드표가 아니라 등록된 값을 모은다")
+                .anySatisfy(v -> assertThat(v.asText()).isEqualTo("메가스터디"));
+
+        JsonNode mega = data(get("/sales" + RANGE + "&size=200&partnerIds=" + partner
+                + "&salesChannels=메가스터디")).path("content");
+        assertThat(mega).isNotEmpty();
+        for (JsonNode r : mega) {
+            assertThat(r.path("schoolCode").asText()).isEqualTo(schoolMega);
+            assertThat(r.path("salesChannel").asText()).isEqualTo("메가스터디");
+        }
+
+        // ‼️'미분류'를 목록에 섞어 비교하면 영원히 안 걸린다 — 값이 NULL 이라 같을 대상이 없다.
+        //   레거시도 별도 분기로 처리한다(조회.vb:1205 `type1 is null or ''`).
+        JsonNode none = data(get("/sales" + RANGE + "&size=200&partnerIds=" + partner
+                + "&salesChannels=미분류")).path("content");
+        assertThat(none).isNotEmpty();
+        for (JsonNode r : none) {
+            assertThat(r.path("schoolCode").asText()).isEqualTo(schoolNone);
+        }
+
+        // 둘을 함께 고르면 합집합이다.
+        assertThat(data(get("/sales" + RANGE + "&size=200&partnerIds=" + partner
+                + "&salesChannels=메가스터디,미분류")).path("content"))
+                .as("합집합").hasSize(mega.size() + none.size());
+    }
+
+    @Test
+    @DisplayName("#5 공급자 전화가 거래명세서에 실린다 — 비어 있으면 거래처 서류에 빈칸이 나간다")
+    void 공급자_전화() {
+        sell(schoolMega, 3);
+
+        JsonNode tel = data(get("/sales/transaction-statement" + RANGE + "&partnerId=" + partner))
+                .path("provider").path("tel");
+        // ‼️운영값(02-812-8001, 발주처 1차회신 #5)은 application.yml 에 있고, 통합테스트는
+        //   IntegrationTestSupport 가 더미로 덮는다. 여기서 고정할 수 있는 것은
+        //   "설정한 값이 거래명세서까지 실려 나가는가"다 — 그 경로가 끊기면 거래처 서류에 빈칸이 나간다.
+        assertThat(tel.asText()).as("공급자 전화가 비어 있으면 안 된다").isNotBlank();
+    }
+
+    @Test
+    @DisplayName("★#5 운영 설정에 실제 번호가 들어 있다 — 비워 두면 아무도 모르게 빈칸이 인쇄된다")
+    void 운영_설정의_전화번호() throws Exception {
+        // 설정 파일을 직접 읽는다. 테스트 컨텍스트는 더미로 덮여 있어 그 값으로는 확인할 수 없고,
+        // 이 값은 **거래처마다 인쇄되어 나가는 값**이라 비는 순간을 테스트로 잡아야 한다.
+        String yml = java.nio.file.Files.readString(
+                java.nio.file.Path.of("src/main/resources/application.yml"));
+        assertThat(yml).as("발주처 1차회신(2026-10-02) #5 확정값")
+                .contains("tel: \"02-812-8001\"");
+    }
+}
