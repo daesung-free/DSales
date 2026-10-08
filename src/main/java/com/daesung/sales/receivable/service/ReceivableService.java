@@ -482,7 +482,9 @@ public class ReceivableService {
             ArLedgerResponse led = arLedger(r.partnerId(), fromDate, toDate);
             // '신고내역이 있는' = 그 기간에 매출·반품·수금 중 하나라도 움직인 거래처.
             // 이월만 있고 기간 거래가 없는 곳은 보낼 내역서가 없다.
-            if (onlyReportable && led.lines().isEmpty()) {
+            // ‼️**명세행(DETAIL)으로 센다.** 이월·일계 같은 집계행이 생긴 뒤로 lines 는 늘 비지 않는다 —
+            //   isEmpty() 로 보면 거래가 없는 거래처에도 0원짜리 명세서가 메일로 나간다.
+            if (onlyReportable && led.lines().stream().noneMatch(l -> "DETAIL".equals(l.rowType()))) {
                 continue;
             }
             out.add(led);
@@ -529,7 +531,7 @@ public class ReceivableService {
             boolean isSale = cat == SalesCategory.SALE;
 
             long amount = isReturn ? -total : (isSale || isTeacher ? total : 0L);
-            entries.add(new Entry(s.getSalesDate(), 0, new ArLedgerResponse.Line(
+            entries.add(new Entry(s.getSalesDate(), 0, ArLedgerResponse.Line.detail(
                     s.getSalesDate(), saleKind(s), s.getSalesNo(),
                     s.getProduct().getCatCode(), s.getProduct().getCatName(),
                     s.getProduct().getCode(), bookLabel(s),
@@ -541,7 +543,7 @@ public class ReceivableService {
         }
 
         for (Collection c : collectionRepository.findLedgerLines(partnerId, from, to)) {
-            entries.add(new Entry(c.getCollDate(), 1, new ArLedgerResponse.Line(
+            entries.add(new Entry(c.getCollDate(), 1, ArLedgerResponse.Line.detail(
                     c.getCollDate(), "수금", c.getCollectionNo(),
                     null, null, null, collLabel(c.getCollType()), null,
                     null, null, null, null, null, null, null,
@@ -551,17 +553,71 @@ public class ReceivableService {
 
         List<ArLedgerResponse.Line> lines = new ArrayList<>();
         long running = opening;
+
+        // ★이월 금액 행. 특약점에 나가는 PDF 첫 줄이 이것이다(SALES_*.pdf 실물) —
+        //   없으면 받는 쪽이 "왜 잔액이 0에서 시작하지 않나"를 알 수 없다.
+        lines.add(ArLedgerResponse.Line.aggregate("OPENING", "이월 금액", null,
+                null, null, null, null, null, null, null, null, opening));
+
+        // 일계·월계·누계 누적기. 누계는 **이월을 포함한** 수량·금액이다(인쇄물과 같은 규칙).
+        long[] day = new long[6];
+        long[] month = new long[6];
+        long[] run = new long[6];
+        LocalDate curDay = null;
+        java.time.YearMonth curMonth = null;
+
         for (Entry e : entries) {
+            LocalDate d = e.date();
+            java.time.YearMonth ym = java.time.YearMonth.from(d);
+
+            // 날짜가 바뀌면 그 전 날의 일계를, 달이 바뀌면 월계·누계를 끼워 넣는다.
+            if (curDay != null && !curDay.equals(d)) {
+                lines.add(agg("DAY_SUBTOTAL", "일 계", curDay, day, running));
+                java.util.Arrays.fill(day, 0L);
+            }
+            if (curMonth != null && !curMonth.equals(ym)) {
+                lines.add(agg("MONTH_SUBTOTAL", "월 계", curDay, month, running));
+                lines.add(agg("RUNNING_TOTAL", "누 계", curDay, run, running));
+                java.util.Arrays.fill(month, 0L);
+            }
+            curDay = d;
+            curMonth = ym;
+
             running += e.amount();
             ArLedgerResponse.Line l = e.line();
             // 누계는 정렬이 끝난 뒤에야 정해지므로 여기서 채운다.
-            lines.add(new ArLedgerResponse.Line(l.date(), l.kind(), l.refNo(),
+            lines.add(ArLedgerResponse.Line.detail(l.date(), l.kind(), l.refNo(),
                     l.catCode(), l.catName(), l.productCode(), l.productName(), l.supplyRate(),
                     l.saleQty(), l.saleAmount(), l.tax(),
                     l.teacherQty(), l.teacherAmount(), l.returnQty(), l.returnAmount(),
                     l.collectAmount(), l.amount(), running));
+            accumulate(day, l);
+            accumulate(month, l);
+            accumulate(run, l);
+        }
+        if (curDay != null) {
+            lines.add(agg("DAY_SUBTOTAL", "일 계", curDay, day, running));
+            lines.add(agg("MONTH_SUBTOTAL", "월 계", curDay, month, running));
+            lines.add(agg("RUNNING_TOTAL", "누 계", curDay, run, running));
         }
         return new ArLedgerResponse(partner.getId(), partner.getName(), from, to, opening, running, lines);
+    }
+
+    /** 집계 버킷에 명세행을 더한다. 순서: 매출수량·매출액·세액·교사용수량·교사용액·반품수량. */
+    private static void accumulate(long[] acc, ArLedgerResponse.Line l) {
+        acc[0] += nz(l.saleQty());
+        acc[1] += nz(l.saleAmount());
+        acc[2] += nz(l.tax());
+        acc[3] += nz(l.teacherQty());
+        acc[4] += nz(l.teacherAmount());
+        acc[5] += nz(l.returnQty());
+    }
+
+    /** 집계행 한 줄. 반품금액·수금액은 버킷에 안 담으므로 비운다(인쇄물도 그렇다). */
+    private static ArLedgerResponse.Line agg(String rowType, String label, LocalDate date,
+                                             long[] acc, long balance) {
+        return ArLedgerResponse.Line.aggregate(rowType, label, date,
+                acc[0], acc[1], acc[2], acc[3], acc[4], acc[5], null, null, balance);
     }
 
     /**

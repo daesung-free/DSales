@@ -336,9 +336,16 @@ public class ReceivableController {
         ArLedgerResponse r = receivableService.arLedger(partnerId, fromDate, toDate);
         // ‼️이월·마감(opening/closing)은 그대로 둔다. 걸러진 줄만으로 다시 계산하면
         //   러닝밸런스가 원장과 어긋나 "검색했더니 잔액이 달라졌다"가 된다.
+        // ‼️키워드를 주면 **집계행(이월·일계·월계·누계)은 뺀다.** 그 숫자는 원장 전체 기준이라
+        //   걸러진 명세 옆에 두면 "이 검색 결과의 합"으로 읽힌다 — 실제로는 전혀 다른 수다.
+        //   키워드가 없으면 그대로 다 내려간다(PDF 인쇄물과 같은 모양).
+        boolean searching = keyword != null && !keyword.isBlank();
+        var lines = searching
+                ? r.lines().stream().filter(l -> "DETAIL".equals(l.rowType())).toList()
+                : r.lines();
         return ApiResponse.success(new ArLedgerResponse(r.partnerId(), r.partnerName(),
                 r.fromDate(), r.toDate(), r.opening(), r.closing(),
-                Keywords.filter(r.lines(), keyword,
+                Keywords.filter(lines, keyword,
                         x -> new Object[]{x.refNo(), x.catCode(), x.catName(),
                                 x.productCode(), x.productName()})));
     }
@@ -423,7 +430,8 @@ public class ReceivableController {
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate) {
         List<Col> cols = List.of(
-                new Col("일자", "date"), new Col("구분", "kind"), new Col("전표번호", "refNo"),
+                new Col("일자", "date"), new Col("집계", "label"),
+                new Col("구분", "kind"), new Col("전표번호", "refNo"),
                 new Col("분류코드", "catCode"), new Col("분류명", "catName"),
                 new Col("도서코드", "productCode"), new Col("도서명", "productName"),
                 new Col("공급률", "supplyRate"),

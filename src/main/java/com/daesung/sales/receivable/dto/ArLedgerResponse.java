@@ -30,6 +30,19 @@ public record ArLedgerResponse(
 ) {
     @Schema(name = "ArLedgerLine")
     public record Line(
+            @Schema(description = """
+                    행 종류 — `DETAIL`(명세) / `OPENING`(이월 금액) /
+                    `DAY_SUBTOTAL`(일 계) / `MONTH_SUBTOTAL`(월 계) / `RUNNING_TOTAL`(누 계).
+
+                    ★근거: 특약점 배포용 PDF 실물(`SALES_*.pdf`, 2026-10-02 수신)과
+                    레거시 외상매출장조회 화면이 **이 네 종류 집계행을 함께 인쇄**한다.
+                    없으면 화면이 직접 더해야 하는데, 그러면 서버 숫자와 화면 숫자가 갈린다.
+
+                    ‼️더프원장(`DuffLedgerResponse`)과 **같은 방식**이다 — 두 장부가 다른 구조면
+                    화면이 매번 다른 코드를 써야 한다.""")
+            String rowType,
+            @Schema(description = "집계행 표시명('이월 금액'·'일 계'·'월 계'·'누 계'). 명세행은 null")
+            String label,
             @Schema(description = "거래일자") LocalDate date,
             @Schema(description = "구분(매출/교사용/증정/반품/수금)") String kind,
             @Schema(description = "전표번호(매출번호 또는 수금번호)") String refNo,
@@ -61,5 +74,32 @@ public record ArLedgerResponse(
             @Schema(description = "채권 증감(매출·교사용 +, 반품·수금 −)") long amount,
             @Schema(description = "누계(러닝밸런스)") long balance
     ) {
+
+        /** 명세행. */
+        public static Line detail(LocalDate date, String kind, String refNo, String catCode,
+                                  String catName, String productCode, String productName,
+                                  Integer supplyRate, Long saleQty, Long saleAmount, Long tax,
+                                  Long teacherQty, Long teacherAmount, Long returnQty,
+                                  Long returnAmount, Long collectAmount, long amount, long balance) {
+            return new Line("DETAIL", null, date, kind, refNo, catCode, catName,
+                    productCode, productName, supplyRate, saleQty, saleAmount, tax,
+                    teacherQty, teacherAmount, returnQty, returnAmount, collectAmount,
+                    amount, balance);
+        }
+
+        /**
+         * 집계행(이월·일계·월계·누계). 분류·도서 칸은 비운다 —
+         * 채우면 특정 도서의 숫자로 읽힌다(레거시 인쇄물도 비어 있다).
+         */
+        public static Line aggregate(String rowType, String label, LocalDate date,
+                                     Long saleQty, Long saleAmount, Long tax,
+                                     Long teacherQty, Long teacherAmount,
+                                     Long returnQty, Long returnAmount,
+                                     Long collectAmount, long balance) {
+            return new Line(rowType, label, date, null, null, null, null, null, null, null,
+                    saleQty, saleAmount, tax, teacherQty, teacherAmount,
+                    returnQty, returnAmount, collectAmount, 0L, balance);
+        }
+
     }
 }

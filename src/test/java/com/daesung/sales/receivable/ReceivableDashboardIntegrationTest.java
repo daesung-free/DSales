@@ -127,6 +127,11 @@ class ReceivableDashboardIntegrationTest extends IntegrationTestSupport {
         JsonNode teacher = null;
         JsonNode gift = null;
         for (JsonNode l : lines) {
+            // ‼️집계행(이월·일계·월계·누계)도 saleQty 를 갖는다 — 명세행만 본다.
+            //   안 거르면 마지막 '누 계' 행이 매출 행으로 잡혀 분류명이 빈 걸 보게 된다.
+            if (!"DETAIL".equals(l.path("rowType").asText())) {
+                continue;
+            }
             if (l.hasNonNull("saleQty")) {
                 sale = l;
             } else if (l.hasNonNull("teacherQty")) {
@@ -145,6 +150,27 @@ class ReceivableDashboardIntegrationTest extends IntegrationTestSupport {
         assertThat(sale.path("tax").asLong()).isEqualTo(7_500);
         // 도서명에 회차·학교가 붙는다 — 같은 책이 여러 줄 나오므로 이름만으로는 못 가린다
         assertThat(sale.path("productName").asText()).contains("[3회]").contains("<강남대성학원>");
+
+        // ★집계행(특약점 배포 PDF 실물 SALES_*.pdf 와 같은 구성) — 이월·일계·월계·누계.
+        //   없으면 화면이 직접 더해야 하고, 그러면 서버 숫자와 화면 숫자가 갈린다.
+        java.util.List<String> types = new java.util.ArrayList<>();
+        long detailSaleQty = 0;
+        JsonNode running = null;
+        for (JsonNode l : lines) {
+            types.add(l.path("rowType").asText());
+            if ("DETAIL".equals(l.path("rowType").asText())) {
+                detailSaleQty += l.path("saleQty").asLong(0);
+            }
+            if ("RUNNING_TOTAL".equals(l.path("rowType").asText())) {
+                running = l;
+            }
+        }
+        assertThat(types.get(0)).as("첫 줄은 이월 금액이다").isEqualTo("OPENING");
+        assertThat(types).contains("DAY_SUBTOTAL", "MONTH_SUBTOTAL", "RUNNING_TOTAL");
+        assertThat(running).isNotNull();
+        assertThat(running.path("saleQty").asLong())
+                .as("누계 매출수량 = 명세 합 — 갈리면 둘 다 못 믿는다").isEqualTo(detailSaleQty);
+        assertThat(running.path("label").asText()).isEqualTo("누 계");
 
         // 교사용 행: 무가 중 공급률이 있는 것만
         assertThat(teacher).isNotNull();

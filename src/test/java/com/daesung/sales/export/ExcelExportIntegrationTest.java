@@ -132,9 +132,16 @@ class ExcelExportIntegrationTest extends IntegrationTestSupport {
     private void assertFilled(List<List<Object>> table, String path, int minFilled) {
         int h = headerRow(table);
         assertThat(table.size()).as("데이터 행 없음 %s", path).isGreaterThan(h + 1);
-        List<Object> first = table.get(h + 1);
-        long filled = first.stream().filter(java.util.Objects::nonNull).count();
-        assertThat(filled).as("데이터 행이 대부분 비어 있음 %s → %s", path, first)
+        // ★**가장 많이 찬 행**으로 본다. 첫 행만 보면 장부류가 걸린다 —
+        //   외상매출장은 첫 줄이 '이월 금액' 집계행이라 칸이 거의 비어 있는 게 정상이다
+        //   (특약점에 나가는 PDF 실물도 그렇다). 검사 의도는 "값이 실제로 실리는가"지
+        //   "첫 줄이 명세행인가"가 아니다.
+        List<Object> best = table.subList(h + 1, table.size()).stream()
+                .max(java.util.Comparator.comparingLong(
+                        r -> r.stream().filter(java.util.Objects::nonNull).count()))
+                .orElseThrow();
+        long filled = best.stream().filter(java.util.Objects::nonNull).count();
+        assertThat(filled).as("데이터 행이 대부분 비어 있음 %s → %s", path, best)
                 .isGreaterThanOrEqualTo(minFilled);
     }
 
