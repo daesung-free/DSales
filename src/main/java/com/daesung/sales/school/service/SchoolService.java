@@ -41,6 +41,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class SchoolService {
 
     private final SchoolRepository schoolRepository;
+    private final com.daesung.sales.partner.repository.PartnerRepository partnerRepository;
     private final StatusHistoryService statusHistoryService;
 
     /** DSRE 연동은 daesung.dsre.enabled=true일 때만 빈이 존재 → 없을 수 있으므로 Provider로 주입. */
@@ -76,9 +77,27 @@ public class SchoolService {
     @Transactional(readOnly = true)
     public java.util.List<com.daesung.sales.school.dto.SchoolSearchRow> search(
             String schoolCode, String schoolName, String region, String partnerName) {
-        return schoolRepository.search(nullIfBlank(schoolCode), nullIfBlank(schoolName),
-                        nullIfBlank(region), nullIfBlank(partnerName)).stream()
-                .map(com.daesung.sales.school.dto.SchoolSearchRow::from)
+        var rows = schoolRepository.search(nullIfBlank(schoolCode), nullIfBlank(schoolName),
+                nullIfBlank(region), nullIfBlank(partnerName));
+
+        // ★거래처명1(상호)·거래처명2(풀네임)는 **거래처 마스터에만** 있다(발주처 #18 확정 컬럼).
+        //   학교 마스터엔 거래처명이 한 칸뿐이라 둘로 나눌 수 없다.
+        //   거래처코드를 모아 **한 번에** 읽는다 — 행마다 조회하면 전국 학교 목록에서 N+1이 된다.
+        java.util.Set<String> codes = new java.util.HashSet<>();
+        rows.forEach(r -> {
+            if (r.getCustCode() != null && !r.getCustCode().isBlank()) {
+                codes.add(r.getCustCode());
+            }
+        });
+        java.util.Map<String, com.daesung.sales.partner.entity.Partner> partners =
+                new java.util.HashMap<>();
+        if (!codes.isEmpty()) {
+            partnerRepository.findByCodeIn(codes)
+                    .forEach(p -> partners.putIfAbsent(p.getCode(), p));
+        }
+        return rows.stream()
+                .map(r -> com.daesung.sales.school.dto.SchoolSearchRow.from(
+                        r, partners.get(r.getCustCode())))
                 .toList();
     }
 

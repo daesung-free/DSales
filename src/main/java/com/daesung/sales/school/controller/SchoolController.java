@@ -155,8 +155,14 @@ public class SchoolController {
             @RequestParam(required = false) String region,
             @RequestParam(required = false) String partnerName) {
         java.util.List<Col> cols = java.util.List.of(
+                // 발주처 1차회신 #18 확정 7컬럼이 앞에 온다 —
+                // 학교코드·학교명·지역코드·지역명·도시명·거래처명1·거래처명2.
+                // ‼️예전엔 '지역명' 라벨에 **도시명 값**(cityName)이 들어가 있었다.
+                //   둘은 다른 축이라(지역=서울관할 / 도시=강남) 라벨만 보고 쓰면 틀린 값을 옮긴다.
                 new Col("학교코드", "schoolCode"), new Col("학교/학원명", "schoolName"),
-                new Col("지역코드", "cityCode"), new Col("지역명", "cityName"),
+                new Col("지역코드", "cityCode"), new Col("지역명", "regionName"),
+                new Col("도시명", "cityName"),
+                new Col("거래처명1", "partnerName1"), new Col("거래처명2", "partnerName2"),
                 new Col("관할", "partnerLoc"), new Col("특약점", "partnerName"),
                 new Col("관할명", "partnerLocName"),
                 new Col("특약점(모의고사)", "mockPartnerName"),

@@ -72,7 +72,8 @@ class ClientReply1002IntegrationTest extends IntegrationTestSupport {
         s.put("custCode", "CRP" + SFX);
         s.put("custName", "회신검증거래처");
         s.put("schoolName", code + " 학교");
-        s.put("city", "서울");
+        s.put("city", "서울");          // 도시명
+        s.put("region", "서울관할");     // 지역명 — 도시명과 다른 축이다
         s.put("salesChannel", channel);
         JsonNode r = post("/masters/schools", s);
         assertThat(r.path("success").asBoolean()).as("학교 등록: %s", r).isTrue();
@@ -282,6 +283,27 @@ class ClientReply1002IntegrationTest extends IntegrationTestSupport {
         b.put("catName", "자재검증분류");
         b.put("priceVisible", priceVisible);
         return createId("/masters/products", b);
+    }
+
+    @Test
+    @DisplayName("★#18 학교/학원검색 확정 7컬럼 — 지역명과 도시명은 다른 축이다")
+    void 학교검색_확정컬럼() {
+        JsonNode rows = data(get("/masters/schools/search?schoolCode=" + schoolMega));
+        assertThat(rows).isNotEmpty();
+        JsonNode r = rows.get(0);
+
+        assertThat(r.path("schoolCode").asText()).isEqualTo(schoolMega);
+        assertThat(r.path("schoolName").asText()).isNotBlank();
+        assertThat(r.path("cityName").asText()).as("도시명").isEqualTo("서울");
+
+        // ★거래처명1(상호)·거래처명2(풀네임)는 **거래처 마스터**에서 온다.
+        //   학교 마스터엔 거래처명이 한 칸뿐이라 둘로 나눌 수 없다.
+        assertThat(r.path("partnerName2").asText()).isEqualTo("회신검증거래처");
+
+        // ‼️지역명과 도시명은 **다른 축**이다. 예전엔 엑셀 '지역명' 칸에 도시명 값이 들어가 있었다 —
+        //   라벨만 보고 쓰면 틀린 값을 옮기게 된다.
+        assertThat(r.path("regionName").asText()).as("지역명").isEqualTo("서울관할");
+        assertThat(r.path("regionName").asText()).isNotEqualTo(r.path("cityName").asText());
     }
 
     @Test
