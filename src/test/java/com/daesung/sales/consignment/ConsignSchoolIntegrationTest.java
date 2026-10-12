@@ -157,6 +157,49 @@ class ConsignSchoolIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("★★A-1 재현 — 재고관리 상품인데 **물류창고 재고가 음수**인 경우")
+    void 음수재고_위탁반품() {
+        // 실측 건(OUT-20261008-16)은 재고관리 상품이다. 입고 없이 위탁출고만 된 상태라
+        // 물류창고 재고가 음수로 남아 있다("본사 −1 / 위탁창고 +1").
+        // ★그 상태에서 반품하면 재고 경고를 만들면서 창고 **이름**을 읽는데,
+        //   그 시점엔 영속성 컨텍스트가 이미 비워져 있어 터진다.
+        Map<String, Object> b = new HashMap<>();
+        b.put("code", "CSX" + SFX);
+        b.put("name", "음수재고 교재");
+        b.put("contentType", "SELF");
+        b.put("price", 12000);
+        b.put("supplyRate", 70);
+        b.put("catCode", "S2106B01");
+        b.put("catName", "음수재고분류");
+        b.put("salesDivision", "교재");
+        Long noStockBook = createId("/masters/products", b);   // 입고를 **하지 않는다**
+
+        String school = "CSX1" + SFX;
+        school(school, "음수재고학교");
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("processedDate", DATE);
+        body.put("partnerId", partner);
+        body.put("fromWarehouseId", mainWh);
+        body.put("toWarehouseId", consignWh);
+        body.put("schoolCode", school);
+        body.put("items", List.of(Map.of("productId", noStockBook, "qty", 2)));
+        JsonNode out = post("/consignment/out", body);
+        assertThat(out.path("success").asBoolean()).as("위탁출고(재고 음수): %s", out).isTrue();
+
+        long outId = pending("&schoolCode=" + school).get(0).path("consignmentOutId").asLong();
+
+        // 1권 반품 → 물류창고 −2 + 1 = −1 (여전히 음수) → 경고 생성 경로를 탄다
+        JsonNode r = post("/consignment/return", Map.of(
+                "processedDate", DATE,
+                "items", List.of(Map.of("consignmentOutId", outId, "returnQty", 1))));
+        assertThat(r.path("success").asBoolean()).as("음수재고 상태 반품: %s", r).isTrue();
+
+        assertThat(pending("&schoolCode=" + school).get(0).path("remainingQty").asInt())
+                .isEqualTo(1);
+    }
+
+    @Test
     @DisplayName("★★위탁 반품 A-1 재현 — 재고 미관리 상품(모의고사)")
     void 재고미관리_위탁반품() {
         // 실측 상품 SEED-B01 은 **모의고사**다. 시드가 stock_managed 를 안 주지만

@@ -951,6 +951,30 @@ public class InventoryService {
         };
     }
 
+    /**
+     * 음수재고 경고 한 건. 상품코드·창고명을 <b>id 로 다시 읽는다</b>.
+     *
+     * <p>‼️여기까지 오는 사이 영속성 컨텍스트가 비워졌을 수 있다(잔량 갱신이 원자적 UPDATE라
+     * {@code clearAutomatically}). 그러면 넘어온 엔티티가 detached 프록시라
+     * {@code getName()}·{@code getCode()} 에서 {@code LazyInitializationException} 이 나고
+     * 요청 전체가 500이 된다.
+     *
+     * <p>★<b>위탁 반품이 이것 때문에 500이었다</b>(프론트 실측 2026-10-12 A-1).
+     * 조건이 "<b>재고가 음수</b>" 하나라서 평소엔 멀쩡하다가 그 건에서만 터졌다 —
+     * 경고를 만드는 드문 경로에만 있어 통합테스트도 오래 비껴갔다.
+     * ‼️재현 조건을 "재고 미관리 상품"으로 잘못 짚은 적이 있다(그 테스트도 입고를 안 해
+     * 재고가 음수였을 뿐이다). 상품 속성이 아니라 <b>잔량 부호</b>가 조건이다.
+     */
+    private com.daesung.sales.inventory.dto.StockWarning negativeWarning(
+            Long productId, Long warehouseId, int delta, int balance) {
+        return com.daesung.sales.inventory.dto.StockWarning.negative(
+                productId,
+                productRepository.findById(productId).map(Product::getCode).orElse(null),
+                warehouseId,
+                warehouseRepository.findById(warehouseId).map(Warehouse::getName).orElse(null),
+                delta, balance);
+    }
+
     private int applyDelta(Product product, Warehouse warehouse, int delta) {
         // ★음수 재고는 **막지 않는다**. 발주처 확정(2026-08-31 화면7) 원문 —
         //   "재고 음수 차단 로직은 적용되면 안됩니다. 입고 전 출고되는 상품은 재고 (−)로 처리되며,
@@ -993,11 +1017,22 @@ public class InventoryService {
         //   "입고 전 출고"라 정상인 음수와 오타로 생긴 음수는 데이터만 봐서는 구분되지 않는다.
         //   담당자가 그 자리에서 알아채도록 응답에 싣고, 나중에 되짚도록 서버 로그에도 남긴다.
         if (balance < 0) {
-            stockWarningCollector.add(com.daesung.sales.inventory.dto.StockWarning.negative(
-                    product.getId(), product.getCode(),
-                    warehouse.getId(), warehouse.getName(), delta, balance));
+            // ‼️이름·코드는 **id 로 다시 읽는다.** 여기까지 오는 사이 영속성 컨텍스트가
+            //   비워졌을 수 있고(이 메서드의 원자적 UPDATE가 clearAutomatically),
+            //   그러면 엔티티가 detached 프록시라 getName()/getCode() 에서
+            //   LazyInitializationException 이 난다 → 500.
+            //
+            // ★위탁 반품이 이것 때문에 500이었다(프론트 실측 2026-10-12 A-1).
+            //   조건이 "**재고가 음수**" 하나라서 평소엔 멀쩡하다가 그 건에서만 터졌다 —
+            //   경고를 만드는 드문 경로에만 있어 통합테스트도 오래 비껴갔다.
+            //   ‼️재현 조건을 "재고 미관리 상품"으로 잘못 짚은 적이 있다(그 테스트도 입고를
+            //     안 해 재고가 음수였을 뿐이다). 상품 속성이 아니라 **잔량 부호**가 조건이다.
+            // 이름·코드 조회는 **별도 메서드**로 둔다 — 여기에 DB에서 읽은 문자열 지역변수가 있으면
+            //   아래 log.warn 이 정적분석 CRLF_INJECTION_LOGS 에 걸린다(같은 스코프를 오염으로 본다).
+            stockWarningCollector.add(negativeWarning(
+                    product.getId(), warehouse.getId(), delta, balance));
             // ★로그에는 **숫자 id만** 넣는다. 상품코드·창고명은 마스터에서 온 문자열이라
-            //   줄바꿈이 섞이면 로그 한 줄을 위조할 수 있다(정적분석 CRLF_INJECTION_LOGS).
+            //   줄바꿈이 섞이면 로그 한 줄을 위조할 수 있다.
             log.warn("재고 음수(차단 해제 상태): productId={} warehouseId={} 잔량={} 증감={}",
                     product.getId(), warehouse.getId(), balance, delta);
         }

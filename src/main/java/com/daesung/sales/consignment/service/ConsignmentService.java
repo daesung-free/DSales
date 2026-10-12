@@ -470,12 +470,12 @@ public class ConsignmentService {
         Product product = co.getProduct();
         Long productId = product.getId();
 
-        // ‼️**id 를 지금 읽어 둔다.** `mainWh` 는 LAZY 프록시(originTxn → warehouse)라
-        //   컨텍스트가 비워진 뒤 getId() 를 부르면 LazyInitializationException 으로 500이 난다
-        //   (프론트 실측 2026-10-12 A-1).
-        //   ★**재고관리 상품에서는 안 터진다** — moveStock 이 그 창고의 재고 행을 읽으면서
-        //     프록시가 초기화되기 때문이다. 재고 미관리 상품(모의고사 등)은 이동이 일어나지 않아
-        //     초기화된 적이 없는 프록시가 그대로 남아 드러난다. 그래서 통합테스트가 오래 못 잡았다.
+        // id 를 미리 꺼내 둔다. 아래 이고가 컨텍스트를 비우므로, 그 뒤에는 엔티티를 만지지 않는다.
+        // (프록시는 id 만은 초기화 없이 돌려주지만, 규칙을 눈에 보이게 두는 편이 안전하다.)
+        //
+        // ‼️2026-10-12 A-1 의 500 은 **여기가 아니라** InventoryService.applyDelta 였다 —
+        //   재고가 음수일 때만 경고를 만들며 창고 이름을 읽는데, 그때 컨텍스트가 비어 있었다.
+        //   한 번 "재고 미관리 상품이라서"로 잘못 짚었다. 상품 속성이 아니라 **잔량 부호**가 조건이다.
         Long mainWhId = mainWh.getId();
         Long consignWhId = consignWh.getId();
 
