@@ -61,6 +61,7 @@ public class MaterialStockService {
     private final InventoryService inventoryService;
     private final com.daesung.sales.product.repository.ProductRepository productRepository;
     private final com.daesung.sales.material.repository.MaterialBomRepository materialBomRepository;
+    private final com.daesung.sales.audit.service.StatusHistoryService statusHistoryService;
 
     /** 자재 입고. 품목마다 (1) 재고이벤트 INBOUND 기록 + (2) 잔량 가산을 한 트랜잭션으로. */
     @Transactional
@@ -208,6 +209,45 @@ public class MaterialStockService {
         }
         return new MaterialIoResponse(refNo, req.io().name(), req.io().label(),
                 warehouse.getId(), warehouse.getName(), lines);
+    }
+
+    /**
+     * 자재 입출고 전표 <b>수정</b>(프론트 10/06 요청 2-3 · 재문의 2026-10-12 C-5).
+     *
+     * <p>★<b>삭제 + 재등록이다</b>(한 트랜잭션). 새 전표번호가 나간다 —
+     * <b>폐기 수정과 같은 방식</b>이고, 이유도 같다: 자재 내역 화면이 재고 이벤트를 직접 읽어서
+     * 제자리에서 고치면 한 전표가 두 줄로 보이거나 상세와 합계가 어긋난다.
+     * 취소+재등록도 안 된다 — 역분개가 취소한 달로 잡혀 원 수량이 기간 합계에 남는다.
+     *
+     * <p>‼️<b>입고(IN-) 전표는 여기서 못 고친다.</b> 입고는 거래처·입고단가가 붙어 있어
+     * 축이 다르다({@code POST /stock/materials/inbound}). 섞으면 그 값들이 조용히 사라진다.
+     */
+    @Transactional
+    public MaterialIoResponse reviseIo(String refNo, MaterialIoRequest req, String actor) {
+        List<InventoryTxn> origins = inventoryTxnRepository.findAllByRefNo(refNo);
+        if (origins.isEmpty()) {
+            throw new BusinessException(ErrorCode.NOT_FOUND, "전표가 없습니다: " + refNo);
+        }
+        if (origins.stream().noneMatch(t -> t.getMaterial() != null)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "자재 전표가 아닙니다: " + refNo + ". 도서 전표는 해당 화면에서 고치세요.");
+        }
+        if (origins.stream().anyMatch(t -> t.getTxnType() == TxnType.INBOUND)) {
+            throw new BusinessException(ErrorCode.INVALID_INPUT,
+                    "자재 **입고** 전표는 이 API 로 고칠 수 없습니다: " + refNo
+                            + ". 거래처·입고단가가 함께 있어 입고 등록 경로로 다시 올려야 합니다.");
+        }
+
+        inventoryService.deleteVoucher(refNo, "자재 입출고 수정으로 재등록", actor);
+        MaterialIoResponse revised = io(req);
+
+        // ★어느 전표가 어느 전표로 바뀌었는지 남긴다 — 삭제 이력과 등록만 남으면
+        //   나중에 둘이 같은 건이었다는 사실을 아무도 못 잇는다(폐기 수정과 같은 규칙).
+        statusHistoryService.record(
+                com.daesung.sales.audit.entity.StatusEntityType.INVENTORY_VOUCHER,
+                origins.get(0).getId(), "revised", refNo, revised.refNo(),
+                "자재 입출고 수정: " + refNo + " → " + revised.refNo());
+        return revised;
     }
 
     /**

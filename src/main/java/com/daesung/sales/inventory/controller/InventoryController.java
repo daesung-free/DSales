@@ -501,6 +501,28 @@ public class InventoryController {
         return ApiResponse.success(materialStockService.io(req));
     }
 
+    @Operation(summary = "자재 입출고 수정(10/06 요청 2-3)",
+            description = """
+                    자재 입출고 전표의 품목·수량·비고를 고친다.
+
+                    ★**삭제 + 재등록이다(한 트랜잭션). 새 전표번호가 나간다** — 폐기 수정과 같은 방식이고
+                    이유도 같다: 자재 내역 화면이 재고 이벤트를 직접 읽어서, 제자리에서 고치면
+                    한 전표가 두 줄로 보이거나 상세와 합계가 어긋난다.
+                    취소+재등록도 안 된다 — 역분개가 **취소한 달**로 잡혀 원 수량이 기간 합계에 남는다.
+
+                    ‼️**입고(IN-) 전표는 못 고친다.** 입고는 거래처·입고단가가 붙어 있어 축이 다르다
+                    (`POST /stock/materials/inbound`). 섞으면 그 값들이 조용히 사라진다.
+
+                    · 마감된 달은 400(PERIOD_LOCKED) · 이미 취소된 전표도 400.
+                    · 어느 전표가 어느 전표로 바뀌었는지 상태변경 이력에 남는다.""")
+    @org.springframework.web.bind.annotation.PatchMapping("/materials/io/{refNo}")
+    public ApiResponse<com.daesung.sales.inventory.dto.MaterialIoResponse> reviseMaterialIo(
+            @Parameter(description = "수정할 전표번호", required = true) @PathVariable String refNo,
+            @Valid @RequestBody com.daesung.sales.inventory.dto.MaterialIoRequest req) {
+        return ApiResponse.success(
+                materialStockService.reviseIo(refNo, req, currentAuditor.username()));
+    }
+
     @Operation(summary = "자재 거래 내역",
             description = """
                     자재의 **입고·이고·폐기·실사** 내역을 최근순으로 낸다.

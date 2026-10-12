@@ -490,6 +490,7 @@ public class ReceivableController {
             }
         }
         return ApiResponse.success(salesMailService.sendStatements(fromDate, toDate,
-                null, null, null, targets, null, null, keyword, false));
+                null, null, null, targets, null, null,
+                null, null, null, null, keyword, false));
     }
 }

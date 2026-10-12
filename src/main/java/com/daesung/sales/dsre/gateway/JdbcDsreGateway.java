@@ -604,6 +604,13 @@ public class JdbcDsreGateway implements DsreGateway {
                    COALESCE(sch.SCH_NM, hak.HAK_NM)             mgr_nm,
                    prod.PROD_NM                                 prod_nm,
                    dtl.DTL_NM                                   dtl_nm,
+                   -- ★코드도 함께 준다(프론트 실측 2026-10-12 C-2). 조건(prodCodes·dtlCds·
+                   --   productYear)만 열어 두고 응답엔 이름만 있어서, 화면이 그 조건을 만들 수 없었다.
+                   --   ‼️지난 주문의 시행명을 코드로 되돌릴 방법도 없다 — `/orders/exams` 는
+                   --     등록용이라 판매 끝난 시행이 빠진다.
+                   dtl.PROD_CD                                  prod_cd,
+                   req.DTL_CD                                   dtl_cd,
+                   prod.YEAR                                    prod_year,
                    dtl.GRADE                                    grade,
                    FUNC_REQINWON_GET(req.REQ_CD)                inwon,
                    cls.CLS_CNT                                  cls_cnt,
@@ -684,6 +691,9 @@ public class JdbcDsreGateway implements DsreGateway {
                 rs.getString("mgr_nm"),
                 rs.getString("prod_nm"),
                 rs.getString("dtl_nm"),
+                trim(rs.getString("prod_cd")),
+                intOrNull(rs.getObject("dtl_cd")),
+                intOrNull(rs.getObject("prod_year")),
                 trim(rs.getString("grade")),
                 intOrNull(rs.getObject("inwon")),
                 intOrNull(rs.getObject("cls_cnt")),

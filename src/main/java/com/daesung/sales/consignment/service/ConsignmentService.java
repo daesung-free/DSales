@@ -470,15 +470,29 @@ public class ConsignmentService {
         Product product = co.getProduct();
         Long productId = product.getId();
 
+        // ‼️**id 를 지금 읽어 둔다.** `mainWh` 는 LAZY 프록시(originTxn → warehouse)라
+        //   컨텍스트가 비워진 뒤 getId() 를 부르면 LazyInitializationException 으로 500이 난다
+        //   (프론트 실측 2026-10-12 A-1).
+        //   ★**재고관리 상품에서는 안 터진다** — moveStock 이 그 창고의 재고 행을 읽으면서
+        //     프록시가 초기화되기 때문이다. 재고 미관리 상품(모의고사 등)은 이동이 일어나지 않아
+        //     초기화된 적이 없는 프록시가 그대로 남아 드러난다. 그래서 통합테스트가 오래 못 잡았다.
+        Long mainWhId = mainWh.getId();
+        Long consignWhId = consignWh.getId();
+
         co.returnUnsold(returnQty);
         consignmentOutRepository.saveAndFlush(co);   // 컨텍스트 clear 전에 미결 축소 반영
 
-        inventoryService.moveStock(product, consignWh, mainWh, returnQty,
-                processedDate, "위탁 반품 역-자동이고");   // 여기서 컨텍스트 clear
+        // ★재고 미관리 상품(인원기반 모의고사 등)은 재고를 옮기지 않는다.
+        //   위탁출고도 같은 규칙이라 위탁창고에 애초에 들어간 적이 없다 —
+        //   여기서 옮기려 들면 없는 재고를 빼게 된다(음수재고).
+        if (product.isStockManaged()) {
+            inventoryService.moveStock(product, consignWh, mainWh, returnQty,
+                    processedDate, "위탁 반품 역-자동이고");   // 여기서 컨텍스트 clear
+        }
 
         return new MovedBalance(
-                inventoryService.balanceOf(productId, mainWh.getId()),
-                inventoryService.balanceOf(productId, consignWh.getId()));
+                inventoryService.balanceOf(productId, mainWhId),
+                inventoryService.balanceOf(productId, consignWhId));
     }
 
     /**
@@ -521,9 +535,12 @@ public class ConsignmentService {
                 returnSettledStock(co, case1, req.processedDate(), null, null, null, item.memo());
                 co = consignmentOutRepository.findById(coId).orElseThrow();
                 Long pid = co.getProduct().getId();
+                // 같은 이유로 id 를 먼저 꺼낸다(LAZY 프록시 + 컨텍스트 clear).
+                Long mainWhId = co.getOriginTxn().getWarehouse().getId();
+                Long consignWhId = consignWarehouseOf(co).getId();
                 moved = new MovedBalance(
-                        inventoryService.balanceOf(pid, co.getOriginTxn().getWarehouse().getId()),
-                        inventoryService.balanceOf(pid, consignWarehouseOf(co).getId()));
+                        inventoryService.balanceOf(pid, mainWhId),
+                        inventoryService.balanceOf(pid, consignWhId));
             }
             ConsignmentOut after = consignmentOutRepository.findById(coId).orElseThrow();
 

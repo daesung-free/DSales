@@ -378,12 +378,50 @@ public class SaleReportService {
     @Transactional(readOnly = true)
     public SalesStatementResponse statement(LocalDate from, LocalDate to, Long partnerId,
                                            StatementKind kind, SalesType salesType, String keyword) {
+        return statement(from, to, partnerId, kind, salesType, null, keyword);
+    }
+
+    /**
+     * 매출액명세서. {@code tradeClasses}(거래분류 다중선택)까지 받는다.
+     *
+     * <p>근거: 프론트 실측 2026-10-12 B-1 — 10/08 회신에 "매출액정리 거래분류 다중 →
+     * `tradeClasses=`" 라고 적었는데 실제로는 {@code /sales/summary} 에만 붙어 있었다.
+     * <b>매출액정리 화면이 쓰는 것은 이쪽</b>이라 여기에 없으면 회신대로 동작하지 않는다.
+     *
+     * <p>입고·폐기는 매출 원장에 없는 분류라 떨어진다 — 그것만 고르면 빈 결과가 맞다.
+     */
+    @Transactional(readOnly = true)
+    public SalesStatementResponse statement(LocalDate from, LocalDate to, Long partnerId,
+                                           StatementKind kind, SalesType salesType,
+                                           java.util.List<com.daesung.sales.salestype.entity.TradeClass> tradeClasses,
+                                           String keyword) {
         // 구분은 회계구분·출고유형이 섞인 축이다(정본 15p) — 교사용·증정용은 둘 다 무상이라
         // 회계구분만으로는 갈라지지 않는다. 어느 쪽으로 거를지는 enum이 안다.
         SalesCategory category = (kind == null) ? null : kind.category();
         ShipmentType shipmentType = (kind == null) ? null : kind.shipmentType();
+        // 거래분류(다중) → 회계구분. 입고·폐기는 매출 원장에 없어 떨어진다.
+        java.util.List<SalesCategory> tradeCategories = new ArrayList<>();
+        boolean anyTradeClass = com.daesung.sales.common.query.MultiSelect.isAny(tradeClasses);
+        if (!anyTradeClass) {
+            for (com.daesung.sales.salestype.entity.TradeClass tc : tradeClasses) {
+                SalesCategory mapped = tc.toSalesCategory();
+                if (mapped != null && !tradeCategories.contains(mapped)) {
+                    tradeCategories.add(mapped);
+                }
+            }
+            if (tradeCategories.isEmpty()) {
+                // 입고·폐기만 골랐다 — 매출 명세서로는 한 건도 안 나오는 것이 맞다.
+                return new SalesStatementResponse(from, to,
+                        (kind == null) ? null : kind.name(),
+                        (kind == null) ? null : kind.label(),
+                        (salesType == null) ? null : salesType.name(), List.of());
+            }
+        }
         List<SalesStatementAgg> aggs = new ArrayList<>(
-                saleRepository.statementAgg(from, to, partnerId, category, shipmentType, salesType));
+                saleRepository.statementAgg(from, to, partnerId, category, shipmentType, salesType,
+                        anyTradeClass,
+                        com.daesung.sales.common.query.MultiSelect.orPlaceholder(
+                                tradeCategories, SalesCategory.SALE)));
         // ‼️키워드는 **롤업을 만들기 전에** 건다. 만들고 나서 상세행만 걸러내면
         //   소계·분류계·총계는 걸러지기 전 값으로 남아, 화면에서 상세를 다 더해도 소계와 안 맞는다.
         //   ‼️Keywords.filter 는 불변 리스트를 돌려준다 — 바로 아래 sort 가 터지므로

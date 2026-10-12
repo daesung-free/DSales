@@ -182,7 +182,7 @@ class OrderCreateValidationTest {
     private static com.daesung.sales.dsre.gateway.DsreOrderRow order(String stateCode) {
         return new com.daesung.sales.dsre.gateway.DsreOrderRow(
                 79069, "20260918", stateCode, null, null, null, null, null, null, null,
-                null, null, null, null, null, null, null, null, null, null, null, null,
+                null, null, null, null, null, null, null, null, null, null, null, null, null, null, null,
                 0L, 0, null, null);
     }
 }

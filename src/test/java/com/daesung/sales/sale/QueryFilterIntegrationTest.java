@@ -131,6 +131,23 @@ class QueryFilterIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("★★정렬 하나짜리(sort=항목,방향)도 된다 — 프론트 실측 A-2(400)")
+    void 단일_정렬() {
+        // ‼️Spring 이 `sort=salesDate,desc` 를 **List 두 개**로 쪼갠다 — ["salesDate","desc"].
+        //   그래서 'desc' 를 정렬 항목으로 보고 400 이 났다. 표준 형식이라 엑셀·외부 호출도 같이 막혔다.
+        JsonNode r = get("/sales?size=200&" + PERIOD + "&partnerIds=" + partnerA
+                + "&sort=salesDate,desc");
+        assertThat(r.path("success").asBoolean()).as("단일 정렬: %s", r).isTrue();
+
+        // 둘로 쪼개져 들어와도 같은 뜻이어야 한다(같은 요청의 다른 표기다).
+        assertThat(get("/sales?size=200&" + PERIOD + "&partnerIds=" + partnerA
+                + "&sort=salesDate&sort=desc").path("success").asBoolean()).isTrue();
+
+        assertThat(get("/disposals?fromDate=2101-01-01&toDate=2101-12-31&sort=id,asc")
+                .path("success").asBoolean()).as("폐기 목록도 같다").isTrue();
+    }
+
+    @Test
     @DisplayName("모르는 정렬 항목은 400 — 조용히 무시하면 정렬 안 된 표를 정렬된 줄 안다")
     void 모르는_정렬() {
         JsonNode r = get("/sales?" + PERIOD + "&sort=없는컬럼,asc");

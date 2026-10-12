@@ -580,11 +580,18 @@ public class SaleController {
             @RequestParam(required = false) SalesType salesType,
             @Parameter(description = "거래처 id. 미지정=전체")
             @RequestParam(required = false) Long partnerId,
+            @Parameter(description = """
+                    거래분류 **다중선택**(매출·무상·반품·입고·대체·폐기).
+                    근거: 발주처 1차회신 #8 + 프론트 실측 2026-10-12 B-1 —
+                    10/08 회신에 적어 드린 `tradeClasses` 가 `/sales/summary` 에만 붙어 있었다.
+                    매출액정리 화면이 쓰는 것은 이쪽이다.
+                    ‼️입고·대체·폐기는 매출 원장에 없는 분류라 그것만 고르면 빈 결과다.""")
+            @RequestParam(required = false) List<TradeClass> tradeClasses,
             @Parameter(description = "키워드 — 분류코드·분류명·도서코드·도서명을 함께 훑는다(부분일치). "
                     + "‼️소계·분류계는 걸러진 결과로 다시 계산된다(상세만 걸러내면 합이 안 맞는다)")
             @RequestParam(required = false) String keyword) {
-        return ApiResponse.success(
-                saleReportService.statement(from, to, partnerId, kind, salesType, keyword));
+        return ApiResponse.success(saleReportService.statement(
+                from, to, partnerId, kind, salesType, tradeClasses, keyword));
     }
 
     @Operation(summary = "매출액명세서 엑셀 다운로드", description = "드라이브 '매출액정리' 형식(분류/도서별 수량·금액·세액·합계).")
@@ -595,6 +602,7 @@ public class SaleController {
             @RequestParam(required = false) Long partnerId,
             @RequestParam(required = false) StatementKind kind,
             @RequestParam(required = false) SalesType salesType,
+            @RequestParam(required = false) List<TradeClass> tradeClasses,
             @RequestParam(required = false) String keyword) {
         List<Col> cols = List.of(
                 new Col("구분", "rowType"), new Col("대분류", "majorName"),
@@ -602,7 +610,7 @@ public class SaleController {
                 new Col("도서코드", "bookCode"), new Col("도서명", "bookName"), new Col("수량", "qty"),
                 new Col("금액", "amount"), new Col("세액", "tax"), new Col("합계", "total"));
         byte[] xlsx = excel.toXlsx("매출액명세서", cols,
-                saleReportService.statement(from, to, partnerId, kind, salesType, keyword).rows(),
+                saleReportService.statement(from, to, partnerId, kind, salesType, tradeClasses, keyword).rows(),
                 Heading.period("매출액명세서", from, to));
         return excel.asDownload(xlsx, "매출액명세서_" + from + "_" + to + ".xlsx");
     }
@@ -1034,11 +1042,20 @@ public class SaleController {
             @RequestParam(required = false) List<Long> warehouseIds,
             @Parameter(description = "학교코드 **다중선택**(조회와 동일)")
             @RequestParam(required = false) List<String> schoolCodes,
+            @Parameter(description = "세부구분 **다중선택**(조회와 동일)")
+            @RequestParam(required = false) List<String> divisions,
+            @Parameter(description = "도서 id **다중선택**(조회와 동일)")
+            @RequestParam(required = false) List<Long> productIds,
+            @Parameter(description = "거래처×학교 조합(조회와 동일)")
+            @RequestParam(required = false) List<String> partnerSchools,
+            @Parameter(description = "판매채널 **다중선택**(조회와 동일). '미분류' 가능")
+            @RequestParam(required = false) List<String> salesChannels,
             @Parameter(description = "키워드(조회와 같은 축)") @RequestParam(required = false) String keyword,
             @Parameter(description = "쿠폰 포함 카운트(조회와 동일, 기본 false)")
             @RequestParam(required = false, defaultValue = "false") boolean couponCount) {
         return ApiResponse.success(salesMailService.sendStatements(fromDate, toDate,
                 salesCategories, tradeClasses, shipmentTypes, partnerIds, warehouseIds,
-                schoolCodes, keyword, couponCount));
+                schoolCodes, divisions, productIds, partnerSchools, salesChannels,
+                keyword, couponCount));
     }
 }

@@ -559,10 +559,15 @@ public class ReceivableService {
         lines.add(ArLedgerResponse.Line.aggregate("OPENING", "이월 금액", null,
                 null, null, null, null, null, null, null, null, opening));
 
-        // 일계·월계·누계 누적기. 누계는 **이월을 포함한** 수량·금액이다(인쇄물과 같은 규칙).
-        long[] day = new long[6];
-        long[] month = new long[6];
-        long[] run = new long[6];
+        // 일계·월계·누계 누적기.
+        // ‼️**누계에는 이월 금액이 들어간다**(프론트 실측 2026-10-12 B-4 — 발주처 인쇄물 기준).
+        //   앞서는 기간 매출만 더해 "이월 49,635,790 인데 첫 달 누계가 7,441,200" 이 됐다.
+        //   받는 특약점이 보는 것은 "지금까지 얼마가 쌓였나"라 이월을 빼면 숫자가 의미를 잃는다.
+        //   → 금액 칸(index 1)만 이월로 시작한다. 수량은 이월 개념이 없다(이월은 금액 잔액이다).
+        long[] day = new long[8];
+        long[] month = new long[8];
+        long[] run = new long[8];
+        run[1] = opening;
         LocalDate curDay = null;
         java.time.YearMonth curMonth = null;
 
@@ -603,7 +608,13 @@ public class ReceivableService {
         return new ArLedgerResponse(partner.getId(), partner.getName(), from, to, opening, running, lines);
     }
 
-    /** 집계 버킷에 명세행을 더한다. 순서: 매출수량·매출액·세액·교사용수량·교사용액·반품수량. */
+    /**
+     * 집계 버킷에 명세행을 더한다.
+     * 순서: 매출수량·매출액·세액·교사용수량·교사용액·반품수량·<b>반품금액·수금액</b>.
+     *
+     * <p>★반품금액·수금액도 담는다(프론트 실측 2026-10-12 B-4) — 없으면 인쇄물의
+     * 일계·월계 줄을 서버 숫자 그대로 찍을 수 없어 화면이 다시 더해야 한다.
+     */
     private static void accumulate(long[] acc, ArLedgerResponse.Line l) {
         acc[0] += nz(l.saleQty());
         acc[1] += nz(l.saleAmount());
@@ -611,13 +622,15 @@ public class ReceivableService {
         acc[3] += nz(l.teacherQty());
         acc[4] += nz(l.teacherAmount());
         acc[5] += nz(l.returnQty());
+        acc[6] += nz(l.returnAmount());
+        acc[7] += nz(l.collectAmount());
     }
 
-    /** 집계행 한 줄. 반품금액·수금액은 버킷에 안 담으므로 비운다(인쇄물도 그렇다). */
+    /** 집계행 한 줄. */
     private static ArLedgerResponse.Line agg(String rowType, String label, LocalDate date,
                                              long[] acc, long balance) {
         return ArLedgerResponse.Line.aggregate(rowType, label, date,
-                acc[0], acc[1], acc[2], acc[3], acc[4], acc[5], null, null, balance);
+                acc[0], acc[1], acc[2], acc[3], acc[4], acc[5], acc[6], acc[7], balance);
     }
 
     /**

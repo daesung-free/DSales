@@ -307,6 +307,39 @@ class ClientReply1002IntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("★C-5 자재 입출고 수정 — 새 전표번호 · 입고 전표는 거부")
+    void 자재_입출고_수정() {
+        Long wh = createId("/masters/warehouses",
+                Map.of("code", "CRIW" + SFX, "name", "자재수정창고", "type", "MAIN"));
+        Long mat = createId("/masters/materials", Map.of("code", "CRIM" + SFX,
+                "name", "수정검증 자재", "materialType", "OMR", "unit", "부"));
+
+        JsonNode in = post("/stock/materials/inbound", Map.of(
+                "processedDate", DATE, "supplierClientId", supplier,
+                "destinationWarehouseId", wh,
+                "items", List.of(Map.of("materialId", mat, "unitCost", 100, "qty", 1000))));
+        String inboundNo = data(in).path("inboundNo").asText();
+
+        JsonNode io = post("/stock/materials/io", Map.of(
+                "processedDate", DATE, "warehouseId", wh, "io", "DISPOSE",
+                "items", List.of(Map.of("materialId", mat, "qty", 200))));
+        String oldNo = data(io).path("refNo").asText();
+
+        JsonNode r = patch("/stock/materials/io/" + oldNo, Map.of(
+                "processedDate", DATE, "warehouseId", wh, "io", "DISPOSE",
+                "items", List.of(Map.of("materialId", mat, "qty", 150, "memo", "수량 정정"))));
+        assertThat(r.path("success").asBoolean()).as("자재 입출고 수정: %s", r).isTrue();
+        assertThat(data(r).path("refNo").asText()).isNotEqualTo(oldNo);
+
+        // ‼️입고 전표는 거래처·단가가 붙어 있어 축이 다르다 — 여기서 고치면 그 값이 사라진다.
+        JsonNode blocked = patch("/stock/materials/io/" + inboundNo, Map.of(
+                "processedDate", DATE, "warehouseId", wh, "io", "DISPOSE",
+                "items", List.of(Map.of("materialId", mat, "qty", 1))));
+        assertThat(blocked.path("success").asBoolean()).isFalse();
+        assertThat(blocked.path("error").path("message").asText()).contains("입고");
+    }
+
+    @Test
     @DisplayName("#5 공급자 전화가 거래명세서에 실린다 — 비어 있으면 거래처 서류에 빈칸이 나간다")
     void 공급자_전화() {
         sell(schoolMega, 3);

@@ -157,6 +157,100 @@ class ConsignSchoolIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("★★위탁 반품 A-1 재현 — 재고 미관리 상품(모의고사)")
+    void 재고미관리_위탁반품() {
+        // 실측 상품 SEED-B01 은 **모의고사**다. 시드가 stock_managed 를 안 주지만
+        // 운영 데이터에는 인원기반(재고 미관리) 모의고사가 실제로 있다.
+        Map<String, Object> b = new HashMap<>();
+        b.put("code", "CSN" + SFX);
+        b.put("name", "재고미관리 모의고사");
+        b.put("contentType", "SELF");
+        b.put("price", 12000);
+        b.put("supplyRate", 70);
+        b.put("catCode", "M2106A01");
+        b.put("catName", "위탁검증모의고사");
+        b.put("salesDivision", "모의고사");
+        b.put("stockManaged", false);
+        Long mock = createId("/masters/products", b);
+
+        String school = "CSN1" + SFX;
+        school(school, "재고미관리학교");
+
+        Map<String, Object> body = new HashMap<>();
+        body.put("processedDate", DATE);
+        body.put("partnerId", partner);
+        body.put("fromWarehouseId", mainWh);
+        body.put("toWarehouseId", consignWh);
+        body.put("schoolCode", school);
+        body.put("items", List.of(Map.of("productId", mock, "qty", 10)));
+        JsonNode out = post("/consignment/out", body);
+        assertThat(out.path("success").asBoolean()).as("위탁출고: %s", out).isTrue();
+
+        long outId = pending("&schoolCode=" + school).get(0).path("consignmentOutId").asLong();
+        JsonNode r = post("/consignment/return", Map.of(
+                "processedDate", DATE,
+                "items", List.of(Map.of("consignmentOutId", outId, "returnQty", 1))));
+        assertThat(r.path("success").asBoolean()).as("재고 미관리 상품 반품: %s", r).isTrue();
+
+        // 실측이 짚은 두 번째 경로 — 정산 화면의 반품수량 칸(정산 0 · 반품 1).
+        JsonNode viaSettle = post("/consignment/settle", Map.of(
+                "salesDate", DATE,
+                "settlements", List.of(Map.of("consignmentOutId", outId,
+                        "settleQty", 0, "returnQty", 1))));
+        assertThat(viaSettle.path("success").asBoolean())
+                .as("정산 경로 반품: %s", viaSettle).isTrue();
+
+        assertThat(pending("&schoolCode=" + school).get(0).path("remainingQty").asInt())
+                .as("10 − 1 − 1").isEqualTo(8);
+    }
+
+    @Test
+    @DisplayName("★★위탁 반품 — 프론트 실측 A-1(500). HTTP 경로라 요청마다 새 컨텍스트다")
+    void 학교지정_위탁반품() {
+        String school = "CSR" + SFX;
+        school(school, "반품검증학교");
+        consignOut(school, 10);
+
+        long outId = pending("&schoolCode=" + school).get(0).path("consignmentOutId").asLong();
+
+        JsonNode r = post("/consignment/return", Map.of(
+                "processedDate", DATE,
+                "items", List.of(Map.of("consignmentOutId", outId, "returnQty", 1))));
+        assertThat(r.path("success").asBoolean()).as("위탁 반품: %s", r).isTrue();
+
+        assertThat(pending("&schoolCode=" + school).get(0).path("remainingQty").asInt())
+                .as("1부 돌아와 9부 남는다").isEqualTo(9);
+
+        // ★두 번째 반품 — 실측(A-1)은 같은 미결을 여러 번 건드린 뒤에 500이 났을 수 있다.
+        //   반품의 역-이고가 **또 도착다리를 만들면** 위탁창고 역추적이 2건이 되어 터진다.
+        JsonNode again = post("/consignment/return", Map.of(
+                "processedDate", DATE,
+                "items", List.of(Map.of("consignmentOutId", outId, "returnQty", 1))));
+        assertThat(again.path("success").asBoolean()).as("두 번째 반품: %s", again).isTrue();
+        assertThat(pending("&schoolCode=" + school).get(0).path("remainingQty").asInt())
+                .isEqualTo(8);
+    }
+
+    @Test
+    @DisplayName("★정산 경로의 반품수량도 된다 — 프론트 실측 A-1 두 번째 경로")
+    void 학교지정_정산반품() {
+        String school = "CSQ" + SFX;
+        school(school, "정산반품학교");
+        consignOut(school, 10);
+
+        long outId = pending("&schoolCode=" + school).get(0).path("consignmentOutId").asLong();
+
+        JsonNode r = post("/consignment/settle", Map.of(
+                "salesDate", DATE,
+                "settlements", List.of(Map.of("consignmentOutId", outId,
+                        "settleQty", 0, "returnQty", 1))));
+        assertThat(r.path("success").asBoolean()).as("정산(반품만): %s", r).isTrue();
+
+        assertThat(pending("&schoolCode=" + school).get(0).path("remainingQty").asInt())
+                .isEqualTo(9);
+    }
+
+    @Test
     @DisplayName("학교를 안 주면 예전처럼 동작한다 — 기존 위탁출고를 깨지 않는다")
     void 학교_미지정() {
         consignOut(null, 25);

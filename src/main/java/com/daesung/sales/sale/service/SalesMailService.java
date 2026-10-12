@@ -83,6 +83,11 @@ public class SalesMailService {
      * 예전엔 기간·거래처·키워드만 받아서, 화면에서 구분·출고유형·창고·학교로 걸러 본 것과
      * <b>다른 내용이 거래처에 나갔다</b>. 메일은 되돌릴 수 없어 조회와 어긋나면 안 된다.
      *
+     * <p>‼️<b>조회에 축을 더할 때 여기도 같이 더해야 한다</b>(프론트 실측 2026-10-12 B-3).
+     * 10/08에 세부구분·도서·거래처×학교·판매채널을 조회에 넣으면서 이쪽을 빠뜨려,
+     * 화면에서 그 조건으로 좁혀 놓고 보내면 <b>화면에 없던 매출까지 메일로 나갔다</b>.
+     * 같은 사고를 막으려면 두 곳이 같은 파라미터를 받는지부터 본다.
+     *
      * @param partnerIds 보낼 거래처. 비우면 <b>조회 결과에 나온 거래처 전부</b>(레거시 일괄 발송과 같다)
      */
     @Transactional(readOnly = true)
@@ -92,6 +97,8 @@ public class SalesMailService {
             List<com.daesung.sales.salestype.entity.TradeClass> tradeClasses,
             List<com.daesung.sales.salestype.entity.ShipmentType> shipmentTypes,
             List<Long> partnerIds, List<Long> warehouseIds, List<String> schoolCodes,
+            List<String> divisions, List<Long> productIds, List<String> partnerSchools,
+            List<String> salesChannels,
             String keyword, boolean couponCount) {
         if (fromDate == null || toDate == null) {
             throw new BusinessException(ErrorCode.INVALID_INPUT,
@@ -101,7 +108,8 @@ public class SalesMailService {
 
         List<SaleResponse> rows = saleService.search(fromDate, toDate,
                         salesCategories, tradeClasses, shipmentTypes,
-                        partnerIds, warehouseIds, schoolCodes, null, null, null, null,
+                        partnerIds, warehouseIds, schoolCodes,
+                        divisions, productIds, partnerSchools, salesChannels,
                         keyword, couponCount, false,
                         PageRequest.of(0, MAX_ROWS))
                 .getContent();

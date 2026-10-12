@@ -80,9 +80,28 @@ public class TaxService {
                     st[0], st[1], st[2], monthsByPartner.get(pid)));
             tCnt += st[0]; tSupply += st[1]; tTax += st[2];
         }
+        // ★합계행의 **월별**도 채운다(프론트 실측 2026-10-12 C-3).
+        //   비워 두니 화면이 거래처 줄을 직접 더해 쓰고 있었다 — 그러면 화면과 엑셀이
+        //   서로 다른 계산을 하게 되고, 언젠가 숫자가 갈린다.
+        //   월 순서는 **거래처 줄에 나온 순서**를 따른다(쿼리가 연월 오름차순으로 준다).
+        Map<String, long[]> totalByMonth = new LinkedHashMap<>();
+        for (List<RevenueReportResponse.MonthEntry> months : monthsByPartner.values()) {
+            for (RevenueReportResponse.MonthEntry m : months) {
+                long[] acc = totalByMonth.computeIfAbsent(m.yearMonth(), k -> new long[3]);
+                acc[0] += m.count();
+                acc[1] += m.netSupply();
+                acc[2] += m.netTax();
+            }
+        }
+        List<RevenueReportResponse.MonthEntry> totalMonths = new ArrayList<>(totalByMonth.size());
+        totalByMonth.entrySet().stream()
+                .sorted(Map.Entry.comparingByKey())
+                .forEach(e -> totalMonths.add(new RevenueReportResponse.MonthEntry(
+                        e.getKey(), e.getValue()[0], e.getValue()[1], e.getValue()[2])));
+
         // 합계행은 특정 거래처가 아니라 식별정보를 비운다 — 채우면 그 거래처 신고분으로 읽힌다.
         RevenueReportResponse.PartnerRevenue total = new RevenueReportResponse.PartnerRevenue(
-                null, null, "합계", null, null, tCnt, tSupply, tTax, List.of());
+                null, null, "합계", null, null, tCnt, tSupply, tTax, totalMonths);
         return new RevenueReportResponse(from, to, filter, rows, total);
     }
 

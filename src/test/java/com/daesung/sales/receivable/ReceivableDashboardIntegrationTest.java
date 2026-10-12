@@ -172,6 +172,32 @@ class ReceivableDashboardIntegrationTest extends IntegrationTestSupport {
                 .as("누계 매출수량 = 명세 합 — 갈리면 둘 다 못 믿는다").isEqualTo(detailSaleQty);
         assertThat(running.path("label").asText()).isEqualTo("누 계");
 
+        // ★★누계 **금액**에는 이월이 들어간다(프론트 실측 2026-10-12 B-4, 발주처 인쇄물 기준).
+        //   예전엔 기간 매출만 더해 "이월 4,900만인데 첫 달 누계 740만"이 됐다 —
+        //   받는 특약점이 보는 것은 "지금까지 얼마가 쌓였나"라 이월을 빼면 숫자가 의미를 잃는다.
+        long opening = data(get("/closing/ar-ledger?partnerId=" + pt
+                + "&fromDate=2050-01-01&toDate=2050-12-31")).path("opening").asLong();
+        long detailSaleAmt = 0;
+        for (JsonNode l : lines) {
+            if ("DETAIL".equals(l.path("rowType").asText())) {
+                detailSaleAmt += l.path("saleAmount").asLong(0);
+            }
+        }
+        assertThat(running.path("saleAmount").asLong())
+                .as("누계 금액 = 이월 + 기간 매출").isEqualTo(opening + detailSaleAmt);
+
+        // ‼️일계·월계는 **그 구간만**이다 — 거기까지 이월을 섞으면 하루 매출이 부풀어 보인다.
+        for (JsonNode l : lines) {
+            if ("DAY_SUBTOTAL".equals(l.path("rowType").asText())) {
+                assertThat(l.path("saleAmount").asLong())
+                        .as("일계에 이월이 섞이면 안 된다").isEqualTo(detailSaleAmt);
+            }
+        }
+
+        // 반품금액·수금액도 집계 줄에 실린다 — 없으면 인쇄물을 서버 숫자 그대로 못 찍는다.
+        assertThat(running.has("returnAmount")).isTrue();
+        assertThat(running.has("collectAmount")).isTrue();
+
         // 교사용 행: 무가 중 공급률이 있는 것만
         assertThat(teacher).isNotNull();
         assertThat(teacher.path("teacherQty").asLong()).isEqualTo(2);

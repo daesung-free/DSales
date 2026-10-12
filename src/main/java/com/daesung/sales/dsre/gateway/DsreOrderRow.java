@@ -24,6 +24,14 @@ public record DsreOrderRow(
 
         @Schema(description = "상품명", example = "더 프리미엄") String productName,
         @Schema(description = "시행명(상세)", example = "7월 16일(국어)") String detailName,
+        @Schema(description = """
+                상품코드(DSRE `PROD_CD`) — 조회 조건 `prodCodes` 와 같은 값.
+                ★조건만 열어 두고 응답에 코드가 없어서 화면이 그 조건을 만들 수 없었다
+                (2026-10-12 C-2). 지난 주문의 시행명을 코드로 되돌릴 경로도 없다 —
+                `/orders/exams` 는 등록용이라 판매 끝난 시행이 빠진다.""")
+        String prodCode,
+        @Schema(description = "시행코드(DSRE `DTL_CD`) — 조회 조건 `dtlCds` 와 같은 값") Integer dtlCd,
+        @Schema(description = "상품연도 — 조회 조건 `productYear` 와 같은 값") Integer productYear,
         @Schema(description = "학년", example = "3") String grade,
 
         @Schema(description = "인원(FUNC_REQINWON_GET)", example = "103") Integer inwon,
@@ -75,7 +83,8 @@ public record DsreOrderRow(
     /** 매출번호를 붙인 사본. 게이트웨이는 null 로 두고 서비스가 채운다. */
     public DsreOrderRow withSalesNos(java.util.List<String> nos) {
         return new DsreOrderRow(reqCd, reqDate, stateCode, stateName, custCode, custName,
-                custFullName, cityName, mgrCode, mgrName, productName, detailName, grade,
+                custFullName, cityName, mgrCode, mgrName, productName, detailName,
+                prodCode, dtlCd, productYear, grade,
                 inwon, classCount, procYn, teacher, tel, email, deliveryGubun, address, memo,
                 totalQty, itemCount, estimatedAmount, nos);
     }

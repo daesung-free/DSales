@@ -107,6 +107,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
               and (:category is null or s.salesCategory = :category)
               and (:shipmentType is null or s.shipmentType = :shipmentType)
               and (:salesType is null or s.salesType = :salesType)
+              and (:anyTradeClass = true or s.salesCategory in :tradeCategories)
             group by d.majorCategory, p.catCode, p.catName, p.code, p.name
             order by p.catCode asc, p.code asc
             """)
@@ -115,7 +116,9 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
                                          @Param("partnerId") Long partnerId,
                                          @Param("category") SalesCategory category,
                                          @Param("shipmentType") ShipmentType shipmentType,
-                                         @Param("salesType") com.daesung.sales.sale.entity.SalesType salesType);
+                                         @Param("salesType") com.daesung.sales.sale.entity.SalesType salesType,
+                                         @Param("anyTradeClass") boolean anyTradeClass,
+                                         @Param("tradeCategories") Collection<SalesCategory> tradeCategories);
 
     /**
      * 거래명세서 라인(거래처×기간). 취소 제외, 지정 회계구분(들)만. 상품 fetch join으로 N+1 방지.

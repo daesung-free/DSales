@@ -60,6 +60,13 @@ public class PageRequestDto {
             return PageRequest.of(p, s);
         }
         // ★보낸 순서가 곧 우선순위다. 화면의 '거래처 → 거래일' 같은 2단 정렬이 이것으로 표현된다.
+        //
+        // ‼️**방향이 따로 떨어져 들어온다.** `sort=salesDate,desc` 한 개를 보내도 스프링이
+        //   쉼표로 끊어 `["salesDate", "desc"]` 두 개로 넘긴다 — 그래서 'desc' 를 정렬 항목으로
+        //   보고 400 이 났다(프론트 실측 2026-10-12 A-2). `sort=항목,방향` 은 표준 형식이라
+        //   화면뿐 아니라 엑셀 다운로드·외부 호출도 같이 막혀 있었다.
+        //   → 토큰이 방향 하나뿐이면 **앞 항목의 방향**으로 붙인다. 앞 항목이 없으면 버린다
+        //     (방향만 보낸 요청은 정렬 의미가 없다 — 거기서 400 을 내면 원인이 더 가려진다).
         java.util.List<Sort.Order> orders = new java.util.ArrayList<>();
         for (String one : sort) {
             if (one == null || one.isBlank()) {
@@ -67,8 +74,17 @@ public class PageRequestDto {
             }
             String[] parts = one.split(",");
             String property = parts[0].trim();
-            Sort.Direction direction = (parts.length > 1 && "desc".equalsIgnoreCase(parts[1].trim()))
-                    ? Sort.Direction.DESC : Sort.Direction.ASC;
+
+            if (isDirection(property) && parts.length == 1) {
+                if (!orders.isEmpty()) {
+                    Sort.Order last = orders.remove(orders.size() - 1);
+                    orders.add(new Sort.Order(directionOf(property), last.getProperty()));
+                }
+                continue;
+            }
+
+            Sort.Direction direction = (parts.length > 1) ? directionOf(parts[1].trim())
+                    : Sort.Direction.ASC;
 
             if (!aliases.isEmpty()) {
                 String mapped = aliases.get(property);
@@ -82,5 +98,13 @@ public class PageRequestDto {
             orders.add(new Sort.Order(direction, property));
         }
         return orders.isEmpty() ? PageRequest.of(p, s) : PageRequest.of(p, s, Sort.by(orders));
+    }
+
+    private static boolean isDirection(String token) {
+        return "asc".equalsIgnoreCase(token) || "desc".equalsIgnoreCase(token);
+    }
+
+    private static Sort.Direction directionOf(String token) {
+        return "desc".equalsIgnoreCase(token) ? Sort.Direction.DESC : Sort.Direction.ASC;
     }
 }
