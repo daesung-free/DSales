@@ -136,6 +136,36 @@ public class ShipmentService {
     }
 
     /**
+     * 작업요청서 단위 <b>발송취소</b>(프론트 실측 2026-10-12 A-3).
+     *
+     * <p>★<b>왜 따로 필요한가</b> — 10/08에 넣은 발송취소는 {@code POST /orders/state} 의
+     * <b>D→W 전환</b>에 딸려 동작한다. 그런데 작업요청서에서 직접 [발송완료]를 누른 건은
+     * 묶인 신청의 DSRE 상태가 D 가 아니다(실측: 작업요청서 76 → reqCds=[990011] 의 상태가 A).
+     * 그 건은 D→W 대상이 아니라 <b>발송일을 내릴 방법이 아예 없었다</b>.
+     *
+     * <p>★<b>발송일만 내린다.</b> 박스 수·송장번호·수령인은 그대로 둔다 —
+     * 물건을 싸 둔 사실은 취소되지 않고, 다시 보낼 때 그 값이 필요하다
+     * (송장번호는 지우면 복원할 수 없다). 10/08 회신의 원칙과 같다.
+     *
+     * <p>‼️<b>DSRE 상태는 건드리지 않는다.</b> 주문 상태는 order 사이트·DSRE2 데스크톱도
+     * 함께 쓰는 값이라, 작업요청서 버튼 하나로 올리기 시작하면 상태를 바꾸는 주체가 셋이 된다.
+     * "DSRE2 분리 유지" 전제에서 우리가 임의로 늘릴 범위가 아니다 —
+     * 신청 상태까지 되돌릴 일이면 {@code POST /orders/state} 를 함께 쓴다.
+     *
+     * @return 실제로 내려갔으면 true(애초에 발송 전이면 false — 이미 원하는 상태다)
+     */
+    @Transactional
+    public boolean revertSent(Long shipmentId, String reason) {
+        Shipment s = getOrThrow(shipmentId);
+        boolean changed = s.revertSent();
+        if (changed) {
+            statusHistoryService.record(StatusEntityType.SHIPMENT, s.getId(),
+                    FIELD_SENT, true, false, "발송취소 — " + orNoReason(reason));
+        }
+        return changed;
+    }
+
+    /**
      * 위탁출고용 발송 건 확보(2026-09-30 검수피드백 p.12 — "위탁출고도 실제 출고가 발생하므로
      * 작업요청서에 포함되어야 합니다").
      *

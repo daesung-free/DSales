@@ -192,6 +192,40 @@ public class WorkController {
         return ApiResponse.success(null);
     }
 
+    @Operation(summary = "작업요청서 발송취소(2026-10-12 A-3)",
+            description = """
+                    그 발송 건의 **발송일을 내린다**(= 발송완료를 되돌린다).
+
+                    ★**왜 따로 있는가** — 10/08에 넣은 발송취소는 `POST /orders/state` 의
+                    **D→W 전환**에 딸려 동작한다. 그런데 이 화면에서 직접 [발송완료]를 누른 건은
+                    묶인 신청의 DSRE 상태가 D 가 아니라서 그 경로를 탈 수 없었다 —
+                    **발송일을 내릴 방법이 아예 없었다**(실측 2026-10-12).
+
+                    · **발송일만 내린다.** 박스 수·송장번호·수령인은 **그대로 둔다** —
+                      물건을 싸 둔 사실은 취소되지 않고, 다시 보낼 때 그 값이 필요하다
+                      (송장번호는 지우면 복원할 수 없다).
+                    · 사유를 받아 상태변경 이력에 남긴다. 안 적으면 `(사유 미입력)`으로 적힌다.
+                    · 이미 발송 전이면 `changed=false` — 오류가 아니다(이미 원하는 상태다).
+
+                    ‼️**DSRE 주문 상태는 건드리지 않는다.** 그 값은 order 사이트·DSRE2 데스크톱도
+                    함께 쓴다 — 여기서 올리기 시작하면 상태를 바꾸는 주체가 셋이 된다.
+                    신청 상태까지 되돌릴 일이면 `POST /orders/state`(D→W)를 함께 쓴다.""")
+    @DeleteMapping("/work-orders/{id}/shipping")
+    public ApiResponse<RevertResult> revertShipping(
+            @PathVariable Long id,
+            @Valid @RequestBody(required = false) com.daesung.sales.logistics.dto.ReasonRequest req) {
+        boolean changed = shipmentService.revertSent(id,
+                com.daesung.sales.logistics.dto.ReasonRequest.reasonOf(req));
+        return ApiResponse.success(new RevertResult(changed));
+    }
+
+    /** 되돌리기 결과. {@code changed=false} 면 애초에 발송 전이었다는 뜻이다(오류가 아니다). */
+    @io.swagger.v3.oas.annotations.media.Schema(name = "ShippingRevertResult")
+    public record RevertResult(
+            @io.swagger.v3.oas.annotations.media.Schema(description = "실제로 발송일이 내려갔으면 true")
+            boolean changed) {
+    }
+
     @Operation(summary = "송장 등록용 양식 다운로드",
             description = """
                     택배사에 넘길 발송 목록을 xlsx로 내려준다. 택배사가 **송장번호 열만 채워

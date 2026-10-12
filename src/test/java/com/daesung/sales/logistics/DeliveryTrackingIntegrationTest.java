@@ -63,6 +63,47 @@ class DeliveryTrackingIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("★★작업요청서 발송취소 — 발송일만 내리고 송장·수령인은 남긴다(2026-10-12 A-3)")
+    void 작업요청서_발송취소() {
+        // 발송완료 + 송장·수령인까지 채운 상태를 만든다.
+        put("/logistics/work-orders/" + freightShipment + "/shipping", Map.of(
+                "sentDate", "2033-05-20", "boxCount", 7,
+                "receiverName", "김수령", "receiverPhone", "010-9999-0000",
+                "courierName", "CJ대한통운", "trackingNo", "1234567890"));
+        assertThat(row(freightShipment).path("sentDate").asText()).isEqualTo("2033-05-20");
+
+        JsonNode r = del("/logistics/work-orders/" + freightShipment + "/shipping",
+                Map.of("reason", "오발송"));
+        assertThat(r.path("success").asBoolean()).as("발송취소: %s", r).isTrue();
+        assertThat(data(r).path("changed").asBoolean()).isTrue();
+
+        JsonNode after = row(freightShipment);
+        // ★발송일만 내려간다.
+        assertThat(after.hasNonNull("sentDate")).as("발송완료가 풀려야 한다").isFalse();
+        // ‼️송장·수령인·박스는 남는다 — 다시 보낼 때 필요하고, 송장번호는 복원할 수 없다.
+        assertThat(after.path("trackingNo").asText()).isEqualTo("1234567890");
+        assertThat(after.path("courierName").asText()).isEqualTo("CJ대한통운");
+        assertThat(after.path("receiverName").asText()).isEqualTo("김수령");
+        assertThat(after.path("boxCount").asInt()).isEqualTo(7);
+
+        // 이미 발송 전이면 changed=false — 오류가 아니다.
+        JsonNode twice = del("/logistics/work-orders/" + freightShipment + "/shipping",
+                Map.of("reason", "두 번째"));
+        assertThat(twice.path("success").asBoolean()).isTrue();
+        assertThat(data(twice).path("changed").asBoolean()).isFalse();
+    }
+
+    /** 그 발송 건 한 줄. */
+    private JsonNode row(long id) {
+        for (JsonNode r : data(get("/logistics/work-orders" + RANGE))) {
+            if (r.path("id").asLong() == id) {
+                return r;
+            }
+        }
+        throw new AssertionError("발송 건 없음: " + id);
+    }
+
+    @Test
     @DisplayName("발송구분·수령인이 저장되고 코드와 한글명이 함께 나온다")
     void 발송구분_수령인() {
         put("/logistics/work-orders/" + courierShipment + "/shipping", Map.of(
