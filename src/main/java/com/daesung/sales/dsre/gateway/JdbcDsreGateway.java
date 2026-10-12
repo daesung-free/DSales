@@ -610,7 +610,10 @@ public class JdbcDsreGateway implements DsreGateway {
                    --     등록용이라 판매 끝난 시행이 빠진다.
                    dtl.PROD_CD                                  prod_cd,
                    req.DTL_CD                                   dtl_cd,
-                   prod.YEAR                                    prod_year,
+                   -- ‼️`YEAR` 타입은 JDBC 가 **java.sql.Date** 로 돌려준다 —
+                   --   숫자로 읽는 매퍼가 전부 null 을 내서 상품연도가 전건 공란이었다
+                   --   (프론트 실측 2026-10-12: 500건 모두 빈 값). 숫자로 캐스팅해 받는다.
+                   CAST(prod.YEAR AS SIGNED)                    prod_year,
                    dtl.GRADE                                    grade,
                    FUNC_REQINWON_GET(req.REQ_CD)                inwon,
                    cls.CLS_CNT                                  cls_cnt,

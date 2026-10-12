@@ -571,19 +571,27 @@ public class ReceivableService {
         LocalDate curDay = null;
         java.time.YearMonth curMonth = null;
 
+        // ★이월 바로 아래에도 누 계를 둔다(프론트 실측 2026-10-12 — 발주처 샘플 SALES_10003 구조).
+        //   거래가 시작되기 전의 누계는 곧 이월이다. 이 줄이 없으면 받는 쪽이
+        //   "이월이 누계에 반영된 것인가"를 첫 거래가 나올 때까지 알 수 없다.
+        lines.add(agg("RUNNING_TOTAL", "누 계", null, run, running));
+
         for (Entry e : entries) {
             LocalDate d = e.date();
             java.time.YearMonth ym = java.time.YearMonth.from(d);
 
-            // 날짜가 바뀌면 그 전 날의 일계를, 달이 바뀌면 월계·누계를 끼워 넣는다.
+            // ★인쇄 순서는 샘플 그대로다 —
+            //   달 중간 날짜: 일 계 → 누 계
+            //   달 마지막 날: 일 계 → 월 계 → 누 계
+            //   즉 **날짜가 바뀔 때마다 누 계**가 들어가고, 달이 끝날 때만 그 앞에 월 계가 붙는다.
             if (curDay != null && !curDay.equals(d)) {
                 lines.add(agg("DAY_SUBTOTAL", "일 계", curDay, day, running));
                 java.util.Arrays.fill(day, 0L);
-            }
-            if (curMonth != null && !curMonth.equals(ym)) {
-                lines.add(agg("MONTH_SUBTOTAL", "월 계", curDay, month, running));
+                if (curMonth != null && !curMonth.equals(ym)) {
+                    lines.add(agg("MONTH_SUBTOTAL", "월 계", curDay, month, running));
+                    java.util.Arrays.fill(month, 0L);
+                }
                 lines.add(agg("RUNNING_TOTAL", "누 계", curDay, run, running));
-                java.util.Arrays.fill(month, 0L);
             }
             curDay = d;
             curMonth = ym;

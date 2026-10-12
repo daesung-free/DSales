@@ -166,6 +166,22 @@ class ReceivableDashboardIntegrationTest extends IntegrationTestSupport {
             }
         }
         assertThat(types.get(0)).as("첫 줄은 이월 금액이다").isEqualTo("OPENING");
+        // ★이월 바로 아래에도 누 계(= 이월 그 자체)를 둔다 — 발주처 샘플 구조.
+        //   없으면 받는 쪽이 "이월이 누계에 반영됐나"를 첫 거래까지 알 수 없다.
+        assertThat(types.get(1)).as("이월 다음 줄은 누 계").isEqualTo("RUNNING_TOTAL");
+        assertThat(lines.get(1).path("saleAmount").asLong())
+                .as("거래 전 누계 = 이월").isEqualTo(
+                        data(get("/closing/ar-ledger?partnerId=" + pt
+                                + "&fromDate=2050-01-01&toDate=2050-12-31")).path("opening").asLong());
+
+        // 날짜가 바뀔 때마다 누 계가 들어간다 — 일 계 바로 뒤다(달 끝이면 월 계가 사이에 낀다).
+        for (int i = 0; i < types.size(); i++) {
+            if ("DAY_SUBTOTAL".equals(types.get(i))) {
+                String next = types.get(i + 1);
+                assertThat(next).as("일 계 다음은 누 계 또는 월 계")
+                        .isIn("RUNNING_TOTAL", "MONTH_SUBTOTAL");
+            }
+        }
         assertThat(types).contains("DAY_SUBTOTAL", "MONTH_SUBTOTAL", "RUNNING_TOTAL");
         assertThat(running).isNotNull();
         assertThat(running.path("saleQty").asLong())
