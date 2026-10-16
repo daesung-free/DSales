@@ -244,6 +244,8 @@ public class TaxService {
                     && (adj.getSupplyTotal() != null || adj.getTaxTotal() != null);
 
             invoices.add(new TaxInvoiceResponse.Invoice(
+                    // ★작성일자는 계산서별이다 — 보정이 있으면 그 날짜, 없으면 조회 종료일.
+                    (adj != null && adj.getNewIssueDate() != null) ? adj.getNewIssueDate() : to,
                     free ? "05" : "01",
                     key.taxBucket(),
                     supplier.name(), supplier.bizNo(),
@@ -302,7 +304,8 @@ public class TaxService {
                         TaxInvoiceAdjustment.of(req.issueDate(), p, req.taxBucket())));
         a.replace(req.partnerName(), req.bizNo(), req.bossName(), req.address(),
                 req.bizStatus(), req.bizItem(), req.email1(), req.email2(),
-                req.supplyTotal(), req.taxTotal(), req.receiptType(), req.memo(), req.reason());
+                req.supplyTotal(), req.taxTotal(), req.receiptType(),
+                req.newIssueDate(), req.memo(), req.reason());
     }
 
     /** 보정 해제 — 파생값(매출에서 나온 숫자)으로 되돌린다. */

@@ -62,6 +62,10 @@ public record CollectionLedgerResponse(
             @Schema(description = "소계 표시명(일 계·월 계·누 계·소 계). 명세행은 null") String label,
             @Schema(description = "수금 id(명세행만)") Long id,
             @Schema(description = "수금번호") String collectionNo,
+            @Schema(description = """
+                    전표코드 — 한 번에 등록한 수금 묶음(2026-10-14 B-5).
+                    한 건씩 등록한 수금은 null.""")
+            String voucherNo,
             @Schema(description = "수금일자") LocalDate collDate,
             @Schema(description = "기장일자") LocalDate writeDate,
             @Schema(description = "거래처코드") String partnerCode,
@@ -78,7 +82,7 @@ public record CollectionLedgerResponse(
     ) {
         /** 소계 행 — 금액과 표시명만 채운다. */
         public static Row subtotal(String rowType, String label, long amount) {
-            return new Row(rowType, label, null, null, null, null, null, null, null, null, null,
+            return new Row(rowType, label, null, null, null, null, null, null, null, null, null, null,
                     amount, null, null, null, null, null);
         }
     }

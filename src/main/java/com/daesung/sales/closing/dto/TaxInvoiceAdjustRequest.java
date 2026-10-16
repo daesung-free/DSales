@@ -51,6 +51,16 @@ public record TaxInvoiceAdjustRequest(
         @Schema(description = "영수(01)/청구(02). 미지정이면 02", example = "02")
         @Pattern(regexp = "01|02") String receiptType,
 
+        @Schema(description = """
+                작성일자 **보정**(선택, 현장 피드백 2026-10-14 B-6).
+                "작성일자는 일괄로 말일에 맞춰서 나온다 → 보이는 것만 수정하기".
+
+                ★위의 `issueDate` 는 **어느 계산서인지 가리키는 키**라 그대로 두고,
+                화면·엑셀에 찍을 날짜만 이 칸으로 바꾼다. 키를 고치면 보정을 다시 못 찾는다.
+                비우면 조회 종료일 그대로다.""",
+                example = "2026-08-31")
+        LocalDate newIssueDate,
+
         @Schema(description = "비고") @Size(max = 500) String memo,
 
         @Schema(description = "보정 사유 — 감사에서 실제로 묻는 것은 \"왜\"다")

@@ -24,8 +24,12 @@ public record MaterialInboundRequest(
         @Schema(description = "처리일자", example = "2026-06-08", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotNull LocalDate processedDate,
 
-        @Schema(description = "입고 거래처(인쇄소 등) id", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
-        @NotNull Long supplierClientId,
+        @Schema(description = """
+                입고 거래처(인쇄소·매입처 등) id. **선택이다** — 비워도 등록된다.
+                근거: 현장 피드백 2026-10-14 「입고 거래처는 필수 아님 — 선택 없어도 등록되도록」.
+                비우면 조회·수불부의 매입처 칸이 빈칸으로 나간다.""",
+                example = "1")
+        Long supplierClientId,
 
         @Schema(description = "도착 창고 id", example = "1", requiredMode = Schema.RequiredMode.REQUIRED)
         @NotNull Long destinationWarehouseId,

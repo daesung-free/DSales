@@ -559,6 +559,57 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
                                      @Param("contentType") String contentType);
 
     /**
+     * 순매출 — <b>거래처별</b> 집계(현장 피드백 2026-10-14 B-2).
+     *
+     * <p>근거: 레거시 순매출조회 화면 오른쪽 위 「조회구분 ○거래처별 ○분류별」(검수피드백 15쪽).
+     * 도서별 행만 주면 화면이 거래처로 다시 묶을 수 없다 — 한 도서가 여러 거래처에 걸려 있다.
+     *
+     * <p>★<b>금액 칸은 도서별과 똑같다.</b> 같은 화면의 두 보기인데 칸이 다르면
+     * 담당자가 두 숫자를 비교하지 못한다. 묶는 축만 바뀐다.
+     *
+     * <p>‼️콘텐츠구분(content_type)은 <b>상품 속성</b>이라 거래처로 묶으면 섞인다.
+     * 한 거래처가 자체교재와 매입교재를 함께 사므로 그 칸은 비운다 —
+     * 섞인 값을 하나 골라 넣으면 매입액·이익이 틀린 기준으로 계산된다.
+     *
+     * <p>반환 Object[]: [partnerId, code, name, saleQty, saleAmt, saleTax,
+     * freeQty, freeAmt, returnQty, returnAmt, returnTax].
+     */
+    @Query(value = """
+            SELECT s.partner_id, pt.code, pt.name,
+              COALESCE(SUM(CASE WHEN s.sales_category='SALE' THEN s.qty ELSE 0 END),0) sale_qty,
+              COALESCE(SUM(CASE WHEN s.sales_category='SALE' THEN s.supply_amount ELSE 0 END),0) sale_amt,
+              COALESCE(SUM(CASE WHEN s.sales_category='SALE' THEN s.tax ELSE 0 END),0) sale_tax,
+              COALESCE(SUM(CASE WHEN s.sales_category='FREE' THEN s.qty ELSE 0 END),0) free_qty,
+              COALESCE(SUM(CASE WHEN s.sales_category='FREE' THEN s.supply_amount ELSE 0 END),0) free_amt,
+              COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN s.qty ELSE 0 END),0) return_qty,
+              COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN s.supply_amount ELSE 0 END),0) return_amt,
+              COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN s.tax ELSE 0 END),0) return_tax
+            FROM sales s
+              JOIN products p  ON p.id  = s.product_id
+              JOIN partners pt ON pt.id = s.partner_id
+            WHERE s.deleted_at IS NULL AND s.canceled = false
+              AND s.sales_date BETWEEN :fromDate AND :toDate
+              AND (CAST(:contentType AS CHAR) IS NULL OR p.content_type = :contentType)
+              AND (:anyPartner = TRUE OR s.partner_id IN (:partnerIds))
+              AND (:anyDivision = TRUE OR COALESCE(p.sales_division, '') IN (:divisions))
+              AND (:anyCat = TRUE OR p.cat_code IN (:catCodes))
+              AND (:anyProduct = TRUE OR s.product_id IN (:productIds))
+            GROUP BY s.partner_id, pt.code, pt.name
+            ORDER BY pt.code
+            """, nativeQuery = true)
+    List<Object[]> netSalesByPartner(@Param("anyPartner") boolean anyPartner,
+                                     @Param("partnerIds") Collection<Long> partnerIds,
+                                     @Param("anyDivision") boolean anyDivision,
+                                     @Param("divisions") Collection<String> divisions,
+                                     @Param("anyCat") boolean anyCat,
+                                     @Param("catCodes") Collection<String> catCodes,
+                                     @Param("anyProduct") boolean anyProduct,
+                                     @Param("productIds") Collection<Long> productIds,
+                                     @Param("fromDate") LocalDate fromDate,
+                                     @Param("toDate") LocalDate toDate,
+                                     @Param("contentType") String contentType);
+
+    /**
      * 그 미결의 <b>마지막 위탁정산 매출</b>. 확정매출분 반품(Case1)에서 정가·공급률 출처로 쓴다.
      *
      * <p>담당자가 반품하며 단가를 다시 적지 않아도 되게 하려는 것이다 —

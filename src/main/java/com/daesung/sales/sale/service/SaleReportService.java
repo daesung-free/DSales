@@ -243,6 +243,65 @@ public class SaleReportService {
     }
 
     /** 조회 조건(거래처·세부구분·분류·도서)까지 받는 순매출(2026-10-08). */
+    /**
+     * 순매출 — <b>거래처별</b>(현장 피드백 2026-10-14 B-2, 레거시 「조회구분 ○거래처별」).
+     *
+     * <p>★금액 칸은 도서별과 같다. 같은 화면의 두 보기라 칸이 달라지면 비교가 안 된다.
+     * <p>‼️매입·이익 칸은 <b>비운다</b> — 매입단가는 상품 속성이라 거래처로 묶으면
+     * 서로 다른 단가가 섞인다. 섞인 값으로 이익을 내면 틀린 숫자가 그럴듯하게 나온다.
+     */
+    @Transactional(readOnly = true)
+    public NetSalesResponse netSalesByPartner(LocalDate fromDate, LocalDate toDate, String contentType,
+                                              java.util.List<Long> partnerIds,
+                                              java.util.List<String> divisions,
+                                              java.util.List<String> catCodes,
+                                              java.util.List<Long> productIds) {
+        LocalDate from = (fromDate != null) ? fromDate : LocalDate.now().withDayOfYear(1);
+        LocalDate to = (toDate != null) ? toDate : LocalDate.now();
+        String filter = (contentType == null || contentType.isBlank())
+                ? null : contentType.trim().toUpperCase(Locale.ROOT);
+
+        List<NetSalesResponse.Row> rows = new ArrayList<>();
+        long tSaleQ = 0, tSaleA = 0, tSaleTax = 0, tFreeQ = 0, tFreeA = 0;
+        long tRetQ = 0, tRetA = 0, tRetTax = 0;
+        for (Object[] r : saleRepository.netSalesByPartner(
+                com.daesung.sales.common.query.MultiSelect.isAny(partnerIds),
+                com.daesung.sales.common.query.MultiSelect.orPlaceholder(partnerIds, 0L),
+                com.daesung.sales.common.query.MultiSelect.isAny(divisions),
+                com.daesung.sales.common.query.MultiSelect.orPlaceholder(divisions, "\u0000"),
+                com.daesung.sales.common.query.MultiSelect.isAny(catCodes),
+                com.daesung.sales.common.query.MultiSelect.orPlaceholder(catCodes, "\u0000"),
+                com.daesung.sales.common.query.MultiSelect.isAny(productIds),
+                com.daesung.sales.common.query.MultiSelect.orPlaceholder(productIds, 0L),
+                from, to, filter)) {
+            long saleQty = num(r[3]), saleAmt = num(r[4]), saleTax = num(r[5]);
+            long freeQty = num(r[6]), freeAmt = num(r[7]);
+            long retQty = num(r[8]), retAmt = num(r[9]), retTax = num(r[10]);
+            long netQty = saleQty - retQty, netAmt = saleAmt - retAmt, netTax = saleTax - retTax;
+
+            // 거래처 행에서는 상품 축(분류·콘텐츠구분)과 매입·이익을 비운다 — 섞인 값이다.
+            rows.add(new NetSalesResponse.Row(null, null, null, null, null,
+                    num(r[0]), (String) r[1], (String) r[2],
+                    null, null,
+                    saleQty, saleAmt, freeQty, freeAmt, freeQty, freeAmt,
+                    retQty, returnRate(retQty, saleQty), retAmt,
+                    netQty, netAmt, netTax, netAmt + netTax,
+                    null, null, null, null, null, null, null));
+            tSaleQ += saleQty; tSaleA += saleAmt; tSaleTax += saleTax;
+            tFreeQ += freeQty; tFreeA += freeAmt;
+            tRetQ += retQty; tRetA += retAmt; tRetTax += retTax;
+        }
+        long tNetAmt = tSaleA - tRetA;
+        long tNetTax = tSaleTax - tRetTax;
+        NetSalesResponse.Row total = new NetSalesResponse.Row(null, null, null, null, null,
+                null, null, "합계", null, null,
+                tSaleQ, tSaleA, tFreeQ, tFreeA, tFreeQ, tFreeA,
+                tRetQ, returnRate(tRetQ, tSaleQ), tRetA,
+                tSaleQ - tRetQ, tNetAmt, tNetTax, tNetAmt + tNetTax,
+                null, null, null, null, null, null, null);
+        return new NetSalesResponse(from, to, filter, rows, total);
+    }
+
     @Transactional(readOnly = true)
     public NetSalesResponse netSales(LocalDate fromDate, LocalDate toDate, String contentType,
                                      java.util.List<Long> partnerIds,
@@ -314,6 +373,7 @@ public class SaleReportService {
                 tInQ += inQty;
             }
             rows.add(new NetSalesResponse.Row(pid, (String) r[4], (String) r[5], (String) r[1], (String) r[2],
+                    null, null, null,
                     ct, contentLabel(ct),
                     saleQty, saleAmt, freeQty, freeAmt, freeQty, freeAmt,
                     retQty, returnRate(retQty, saleQty), retAmt,
@@ -329,7 +389,8 @@ public class SaleReportService {
         Long totalPurchase = anyExternal ? tPurch : null;
         Long totalProfit = anyExternal ? (tNetAmt - tPurch) : null;
         Double totalMargin = (anyExternal && tNetAmt != 0) ? Math.round((double) totalProfit / tNetAmt * 100 * 10) / 10.0 : null;
-        NetSalesResponse.Row total = new NetSalesResponse.Row(null, null, null, "합계", null, null, null,
+        NetSalesResponse.Row total = new NetSalesResponse.Row(null, null, null, "합계", null,
+                null, null, null, null, null,
                 tSaleQ, tSaleA, tFreeQ, tFreeA, tFreeQ, tFreeA,
                 tRetQ, returnRate(tRetQ, tSaleQ), tRetA,
                 tSaleQ - tRetQ, tNetAmt, tNetTax, tNetAmt + tNetTax,

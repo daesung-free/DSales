@@ -42,6 +42,21 @@ public class Collection extends SoftDeletableEntity {
     @Column(name = "collection_no", unique = true, length = 30)
     private String collectionNo;
 
+    /**
+     * 전표코드 — <b>한 번에 등록한 수금 묶음</b>(현장 피드백 2026-10-14 B-5).
+     *
+     * <p>★수금번호({@code collectionNo})는 줄마다 따로 둔다 — 개별 수정·삭제가 그 번호로 된다.
+     * 묶음은 별도 코드다. 둘을 합치면 한쪽 기능이 죽는다.
+     * <p>‼️한 건씩 등록한 수금은 null 이다(묶음이 없다).
+     */
+    @Column(name = "voucher_no", length = 30)
+    private String voucherNo;
+
+    /** 묶음 등록에서 전표코드를 붙인다. */
+    public void applyVoucher(String voucherNo) {
+        this.voucherNo = voucherNo;
+    }
+
     @Column(name = "coll_date", nullable = false)
     private LocalDate collDate;
 

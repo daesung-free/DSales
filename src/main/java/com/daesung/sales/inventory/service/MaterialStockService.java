@@ -67,9 +67,13 @@ public class MaterialStockService {
     @Transactional
     public MaterialInboundResponse inbound(MaterialInboundRequest req) {
         Warehouse warehouse = warehouse(req.destinationWarehouseId(), "창고");
-        Partner supplier = partnerRepository.findById(req.supplierClientId())
-                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
-                        "거래처가 없습니다. id=" + req.supplierClientId()));
+        // ★입고 거래처는 **선택**이다(현장 피드백 2026-10-14). 비우면 매입처 없이 등록된다.
+        //   ‼️다만 **보낸 id가 없는 거래처면 거부**한다 — 조용히 null 로 떨어뜨리면
+        //     담당자는 매입처를 골랐다고 믿는데 기록에는 빈칸이 남는다.
+        Partner supplier = (req.supplierClientId() == null) ? null
+                : partnerRepository.findById(req.supplierClientId())
+                        .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                                "거래처가 없습니다. id=" + req.supplierClientId()));
 
         // ★도서 단위 입고(발주처 #2 "도서 선택 → 하위 자재 수량 입력"). 도서를 주면 검사한다.
         java.util.Set<Long> allowed = assertProductAllows(req);

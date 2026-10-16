@@ -268,6 +268,7 @@ public class SaleController {
             @RequestParam(required = false) String keyword,
             @RequestParam(defaultValue = "false") boolean includeCanceled) {
         List<Col> cols = List.of(
+                new Col("등록번호", "entryNo"), new Col("순번", "entrySeq"),
                 new Col("매출번호", "salesNo"), new Col("매출일자", "salesDate"),
                 new Col("거래처코드", "partnerCode"), new Col("도시명", "partnerCityName"),
                 new Col("거래처명1", "partnerName1"), new Col("거래처명2", "partnerName"),
@@ -516,10 +517,26 @@ public class SaleController {
             @RequestParam(required = false) List<String> catCodes,
             @Parameter(description = "도서 id **다중선택**")
             @RequestParam(required = false) List<Long> productIds,
+            @Parameter(description = """
+                    조회구분 — `PRODUCT`(도서별, 기본) / `PARTNER`(거래처별).
+                    근거: 레거시 순매출조회 오른쪽 위 「조회구분 ○거래처별 ○분류별」
+                    (현장 피드백 2026-10-14 B-2).
+
+                    ★금액 칸은 둘이 같다 — 같은 화면의 두 보기라 칸이 달라지면 비교가 안 된다.
+                    ‼️`PARTNER` 는 **매입·이익 칸을 비운다.** 매입단가는 상품 속성이라
+                      거래처로 묶으면 서로 다른 단가가 섞인다 — 섞인 값으로 이익을 내면
+                      틀린 숫자가 그럴듯하게 나온다.""")
+            @RequestParam(required = false, defaultValue = "PRODUCT") String groupBy,
             @Parameter(description = "키워드 — 코드·명칭을 함께 훑는다(부분일치)")
             @RequestParam(required = false) String keyword) {
-        NetSalesResponse r = saleReportService.netSales(fromDate, toDate, contentType,
-                partnerIds, divisions, catCodes, productIds);
+        // 대소문자 변환 없이 값을 그대로 본다 — equalsIgnoreCase 는 로케일에 따라
+        // 결과가 달라진다(정적분석 IMPROPER_UNICODE, 터키어 i→İ).
+        boolean byPartner = "PARTNER".equals(groupBy) || "partner".equals(groupBy);
+        NetSalesResponse r = byPartner
+                ? saleReportService.netSalesByPartner(fromDate, toDate, contentType,
+                        partnerIds, divisions, catCodes, productIds)
+                : saleReportService.netSales(fromDate, toDate, contentType,
+                        partnerIds, divisions, catCodes, productIds);
         return ApiResponse.success(new NetSalesResponse(r.fromDate(), r.toDate(), r.contentType(),
                 Keywords.filter(r.rows(), keyword,
                         x -> new Object[]{x.productCode(), x.productName(), x.catCode(), x.catName()}),
@@ -543,6 +560,7 @@ public class SaleController {
             @RequestParam(required = false) List<Long> productIds) {
         List<Col> cols = List.of(
                 new Col("분류코드", "catCode"), new Col("분류명", "catName"),
+                new Col("거래처코드", "partnerCode"), new Col("거래처명", "partnerName"),
                 new Col("상품코드", "productCode"), new Col("상품명", "productName"), new Col("콘텐츠구분", "contentType"),
                 new Col("매출수량", "saleQty"), new Col("매출 공급가액", "saleAmount"),
                 new Col("교사용수량", "freeQty"), new Col("교사용 공급가액", "freeAmount"),

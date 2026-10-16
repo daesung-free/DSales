@@ -26,7 +26,11 @@ public record ArStatusResponse(
             @Schema(description = "거래처코드") String partnerCode,
             @Schema(description = "거래처명") String partnerName,
             @Schema(description = "사장명 — 재무팀 실파일 2번째 칸") String bossName,
-            @Schema(description = "이월(전년말 잔액 스냅샷)") long opening,
+            @Schema(description = """
+                    기초 — **시작일 전날까지의 잔액**이다(그해 이월 + 1/1~시작 전날 거래).
+                    ‼️예전엔 '그해 이월'만 넣어서 **같은 날짜의 잔액이 시작일에 따라 달라졌다**
+                    (프론트 실측 2026-10-15). 기간을 어떻게 잡든 종료일 기준 잔액은 같아야 한다.""")
+            long opening,
             @Schema(description = "기간 매출수량") long saleQty,
             @Schema(description = "기간 매출액") long saleAmount,
             @Schema(description = "기간 반품수량") long returnQty,

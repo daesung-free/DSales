@@ -62,15 +62,45 @@ public class ReceivableService {
     /** 수금 등록. 수금번호(C) 채번. 어음정보는 유형=어음일 때만 저장(엔티티에서 처리). */
     @Transactional
     public CollectionResponse registerCollection(CollectionRequest req) {
+        return CollectionResponse.from(registerCollectionEntity(req));
+    }
+
+    /** 수금 한 줄 저장. 묶음 등록도 이걸 쓴다 — 규칙이 둘이면 경로에 따라 결과가 달라진다. */
+    private Collection registerCollectionEntity(CollectionRequest req) {
         periodLockService.assertNotLocked(req.collDate());
         Partner partner = partnerRepository.findById(req.partnerId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                         "거래처가 없습니다. id=" + req.partnerId()));
         String collNo = "C-" + req.collDate().format(YYYYMMDD) + "-" + sequenceService.next(SequenceService.SEQ_COLLECTION);
-        Collection c = collectionRepository.save(Collection.create(
+        return collectionRepository.save(Collection.create(
                 collNo, req.collDate(), req.writeDate(), partner, req.collKind(), req.collType(), req.collAmt(),
                 req.promissoryNo(), req.promissoryDue(), req.bankName(), req.branchName(), req.memo()));
-        return CollectionResponse.from(c);
+    }
+
+    /**
+     * 수금 <b>묶음 등록</b>(현장 피드백 2026-10-14 B-5) — 여러 줄을 한 전표코드로 묶는다.
+     *
+     * <p>★줄마다 수금번호(C-)는 <b>그대로 따로</b> 채번한다. 개별 수정·삭제가 그 번호로 되기 때문이다.
+     * 전표코드(V-)는 그 위에 얹는 묶음이다.
+     *
+     * <p>★<b>한 트랜잭션이다.</b> 한 줄이 실패하면 전부 되돌린다 —
+     * 같은 입금을 쪼갠 줄들이라 일부만 남으면 합계가 입금액과 안 맞는다.
+     * (매출 일괄등록처럼 "되는 것만 넣기"로 하면 안 되는 이유다.)
+     */
+    @Transactional
+    public List<CollectionResponse> registerCollections(
+            com.daesung.sales.receivable.dto.CollectionBatchRequest req) {
+        // 전표코드는 **첫 줄의 수금일자**로 한 번만 만든다 — 한 입금의 날짜다.
+        String voucherNo = "V-" + req.lines().get(0).collDate().format(YYYYMMDD) + "-"
+                + sequenceService.next(SequenceService.SEQ_COLLECTION_VOUCHER);
+
+        List<CollectionResponse> out = new ArrayList<>(req.lines().size());
+        for (CollectionRequest line : req.lines()) {
+            Collection c = registerCollectionEntity(line);
+            c.applyVoucher(voucherNo);
+            out.add(CollectionResponse.from(c));
+        }
+        return out;
     }
 
     /**
@@ -328,6 +358,7 @@ public class ReceivableService {
 
     private static CollectionLedgerResponse.Row detailRow(Collection c) {
         return new CollectionLedgerResponse.Row("DETAIL", null, c.getId(), c.getCollectionNo(),
+                c.getVoucherNo(),
                 c.getCollDate(), c.getWriteDate(),
                 c.getPartner().getCode(), c.getPartner().getName(),
                 c.getCollKind(), c.getCollType(), c.getCollType().label(), c.getCollAmt(),
@@ -384,6 +415,22 @@ public class ReceivableService {
         Map<Long, Long> carry = toAmountMap(carryforwardRepository.sumByYear(to.getYear(), partnerId));
         Map<Long, long[]> sales = toSalesMap(saleRepository.receivableByPartner(from, to, partnerId));
         Map<Long, Long> coll = toAmountMap(collectionRepository.sumByPartner(from, to, partnerId));
+
+        // ★기초(opening)는 **시작일 전날까지의 잔액**이다 = 그해 이월 + 1/1~시작 전날 거래.
+        //   ‼️예전엔 '그해 이월'만 넣어서, 같은 날짜의 잔액이 **시작일을 바꿀 때마다 달라졌다**
+        //     (프론트 실측 2026-10-15 A-1: 1/1 시작 75,268,510 vs 7/1 시작 59,096,620 —
+        //      차이가 정확히 1~6월 거래 증가분이었다). 같은 파일의 외상매출장(arLedger)은
+        //      balanceAsOf 로 맞게 계산하고 있어, **두 화면이 서로 다른 잔액**을 보여주고 있었다.
+        //   ★행마다 balanceAsOf 를 부르지 않는다 — 거래처가 수백이면 질의가 그만큼 는다.
+        //     기간 **앞쪽 구간**(1/1~시작 전날)을 한 번에 집계해 이월에 더한다.
+        LocalDate yearStart = LocalDate.of(from.getYear(), 1, 1);
+        Map<Long, long[]> priorSales = Map.of();
+        Map<Long, Long> priorColl = Map.of();
+        if (from.isAfter(yearStart)) {
+            LocalDate priorEnd = from.minusDays(1);
+            priorSales = toSalesMap(saleRepository.receivableByPartner(yearStart, priorEnd, partnerId));
+            priorColl = toAmountMap(collectionRepository.sumByPartner(yearStart, priorEnd, partnerId));
+        }
         Map<Long, List<ArStatusResponse.CategoryBreakdown>> byCat =
                 toCategoryMap(saleRepository.receivableByPartnerAndCategory(from, to, partnerId));
 
@@ -391,6 +438,10 @@ public class ReceivableService {
         ids.addAll(carry.keySet());
         ids.addAll(sales.keySet());
         ids.addAll(coll.keySet());
+        // ‼️기간 전에만 거래가 있고 조회 기간엔 없는 거래처도 **잔액이 남아 있으면 보여야** 한다.
+        //   안 넣으면 "7월부터 조회"했을 때 상반기에만 거래한 미수 거래처가 목록에서 사라진다.
+        ids.addAll(priorSales.keySet());
+        ids.addAll(priorColl.keySet());
 
         Map<Long, Partner> partners = new HashMap<>();
         partnerRepository.findAllById(ids).forEach(p -> partners.put(p.getId(), p));
@@ -403,7 +454,9 @@ public class ReceivableService {
             if (p == null) {
                 continue;
             }
-            long opening = carry.getOrDefault(pid, 0L);
+            long opening = carry.getOrDefault(pid, 0L)
+                    + priorSales.getOrDefault(pid, new long[8])[0]
+                    - priorColl.getOrDefault(pid, 0L);
             // [gen, saleAmt, returnAmt, tax, teacherAmt, teacherQty, saleQty, returnQty]
             long[] s = sales.getOrDefault(pid, new long[8]);
             long collected = coll.getOrDefault(pid, 0L);

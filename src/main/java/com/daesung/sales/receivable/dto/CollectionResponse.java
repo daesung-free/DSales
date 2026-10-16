@@ -14,6 +14,11 @@ import java.time.LocalDate;
 public record CollectionResponse(
         @Schema(description = "수금 id") Long id,
         @Schema(description = "수금번호") String collectionNo,
+        @Schema(description = """
+                전표코드 — **한 번에 등록한 수금 묶음**(현장 피드백 2026-10-14 B-5).
+                한 번 들어온 돈을 여러 줄로 쪼개 적을 때 그 줄들이 공유한다.
+                ‼️한 건씩 등록한 수금은 null 이다(묶음이 없다).""")
+        String voucherNo,
         @Schema(description = "수금일자") LocalDate collDate,
         @Schema(description = "기장일자(회계 기표일)") LocalDate writeDate,
         @Schema(description = "거래처 id") Long partnerId,
@@ -30,7 +35,7 @@ public record CollectionResponse(
 ) {
     public static CollectionResponse from(Collection c) {
         return new CollectionResponse(
-                c.getId(), c.getCollectionNo(), c.getCollDate(), c.getWriteDate(),
+                c.getId(), c.getCollectionNo(), c.getVoucherNo(), c.getCollDate(), c.getWriteDate(),
                 c.getPartner().getId(), c.getPartner().getName(),
                 c.getCollKind(), c.getCollType(), c.getCollType().label(), c.getCollAmt(),
                 c.getPromissoryNo(), c.getPromissoryDue(), c.getBankName(), c.getBranchName(), c.getMemo());

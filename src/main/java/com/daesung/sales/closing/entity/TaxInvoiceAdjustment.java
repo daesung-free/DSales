@@ -85,6 +85,15 @@ public class TaxInvoiceAdjustment extends BaseEntity {
     @Column(name = "receipt_type", length = 2)
     private String receiptType;
 
+    /**
+     * 작성일자 보정(현장 피드백 2026-10-14 B-6).
+     *
+     * <p>★{@link #issueDate} 는 <b>어느 계산서인지 가리키는 키</b>라 바꾸지 않는다 —
+     * 그걸 고치면 보정을 다시 찾지 못한다. 표시할 날짜만 여기 둔다.
+     */
+    @Column(name = "new_issue_date")
+    private LocalDate newIssueDate;
+
     @Column(length = 500)
     private String memo;
 
@@ -109,7 +118,8 @@ public class TaxInvoiceAdjustment extends BaseEntity {
     public void replace(String partnerName, String bizNo, String bossName, String address,
                         String bizStatus, String bizItem, String email1, String email2,
                         Long supplyTotal, Long taxTotal, String receiptType,
-                        String memo, String reason) {
+                        LocalDate newIssueDate, String memo, String reason) {
+        this.newIssueDate = newIssueDate;
         this.partnerName = partnerName;
         this.bizNo = bizNo;
         this.bossName = bossName;

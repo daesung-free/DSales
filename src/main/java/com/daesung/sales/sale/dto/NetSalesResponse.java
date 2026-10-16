@@ -29,8 +29,15 @@ public record NetSalesResponse(
             @Schema(description = "상품 id(합계행 null)") Long productId,
             @Schema(description = "분류코드(상품분류)") String catCode,
             @Schema(description = "분류명") String catName,
-            @Schema(description = "상품코드") String productCode,
-            @Schema(description = "상품명") String productName,
+            @Schema(description = "상품코드(거래처별 조회면 null)") String productCode,
+            @Schema(description = "상품명(거래처별 조회면 null)") String productName,
+            @Schema(description = """
+                    거래처 id — **`groupBy=PARTNER` 일 때만** 채워진다(2026-10-14 B-2).
+                    ★상품 칸에 거래처 값을 넣지 않는다. 한 칸을 두 뜻으로 쓰면
+                    화면이 어느 축인지 매번 판단해야 하고, 언젠가 틀린다.""")
+            Long partnerId,
+            @Schema(description = "거래처코드(거래처별 조회만)") String partnerCode,
+            @Schema(description = "거래처명(거래처별 조회만)") String partnerName,
             @Schema(description = "콘텐츠구분 코드(SELF/EXTERNAL)") String contentType,
             @Schema(description = "콘텐츠구분 표기(자체교재/**매입 교재**). 발주처 2026-08-31 명칭 확정")
             String contentTypeName,

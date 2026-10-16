@@ -87,6 +87,19 @@ public record SalesEntryRequest(
                     example = "0")
             @PositiveOrZero Integer tax,
 
+            @Schema(description = """
+                    공급가액 **직접 입력**(선택). 근거: 현장 피드백 2026-10-14 —
+                    "정가는 기본, 자동 계산은 되는데 **수동으로 수정해서 등록**할 수 있도록".
+
+                    · 비우면 지금처럼 `정가 × 공급률 × 수량`(할인액 반영)으로 서버가 계산한다.
+                    · 값을 주면 **그 값을 그대로** 저장하고, 총금액 = 이 값 + 세액이 된다.
+                    · 응답·조회에 `amountOverridden=true` 가 붙는다 — 화면이 「손으로 고친 금액」으로
+                      구분해 보여줄 수 있다.
+                    ‼️정가·공급률은 **입력한 그대로 남는다**(금액에 맞춰 역산하지 않는다).
+                      역산하면 담당자가 적어 둔 조건이 사라져 나중에 왜 그 금액인지 알 수 없다.""",
+                    example = "95000")
+            @PositiveOrZero Long supplyAmount,
+
             @Schema(description = "성적처리 구분(37p 월별매출액명세서 인원 집계축): GRADED(성적처리)/UNGRADED(비처리). 미지정 시 비처리로 집계",
                     example = "GRADED")
             ProcType procType,

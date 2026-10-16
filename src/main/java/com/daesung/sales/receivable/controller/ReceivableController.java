@@ -129,6 +129,30 @@ public class ReceivableController {
         return ApiResponse.success(null);
     }
 
+    @Operation(summary = "수금 묶음 등록(2026-10-14 B-5)",
+            description = """
+                    여러 줄을 **한 전표코드로 묶어** 등록한다.
+                    근거: 현장 피드백 — "수금 여러 건 등록할 때 전표코드로 한 건 생성할 때 묶일 수 있도록".
+
+                    ★한 번 들어온 돈을 여러 줄로 쪼개 적는 경우를 위한 것이다
+                    (거래처·항목별). 지금까지는 그 줄들이 "같은 입금"이라는 사실이 어디에도 없었다.
+
+                    · 줄마다 **수금번호(C-)는 그대로 따로** 생긴다 — 개별 수정·삭제가 그 번호로 된다.
+                      전표코드(V-)는 그 위에 얹는 묶음이다.
+                    · 전표코드는 **첫 줄의 수금일자**로 만든다.
+                    · ★**한 트랜잭션이다.** 한 줄이라도 실패하면 전부 되돌린다 —
+                      같은 입금을 쪼갠 줄들이라 일부만 남으면 합계가 입금액과 안 맞는다.
+                    · 마감된 달이 한 줄이라도 있으면 전체가 400(PERIOD_LOCKED).
+
+                    ‼️거래처를 섞어도 받는다. 한 입금을 여러 거래처로 나눠 적는 경우가 실제로
+                      있는지 확인 중이라 미리 막지 않았다 — 막아야 하면 그때 넣는 편이 낫다.""")
+    @PostMapping("/collections/batch")
+    @ResponseStatus(HttpStatus.CREATED)
+    public ApiResponse<List<CollectionResponse>> registerCollections(
+            @Valid @RequestBody com.daesung.sales.receivable.dto.CollectionBatchRequest req) {
+        return ApiResponse.success(receivableService.registerCollections(req));
+    }
+
     @Operation(summary = "수금 조회(소계 포함) 23p",
             description = """
                     수금관리 화면의 본 조회. **조회대상기준 3종**과 **소계**가 붙는다.
@@ -171,6 +195,7 @@ public class ReceivableController {
             @RequestParam(required = false) CollectionType collType) {
         List<Col> cols = List.of(
                 new Col("구분", "rowType"), new Col("소계명", "label"),
+                new Col("전표코드", "voucherNo"), new Col("수금번호", "collectionNo"),
                 new Col("수금일자", "collDate"), new Col("기장일자", "writeDate"),
                 new Col("거래처코드", "partnerCode"), new Col("거래처명", "partnerName"),
                 new Col("수금구분", "collKind"), new Col("입금구분", "collTypeName"),

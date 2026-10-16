@@ -28,6 +28,17 @@ public class SequenceService {
     /** 이고 전표(TR-). 없으면 이고를 되돌릴 수 없다 — 취소·삭제가 전표번호로 대상을 찾는다. */
     public static final String SEQ_TRANSFER = "seq_transfer_no";
 
+    /**
+     * 매출 <b>등록 묶음</b> 번호(E-). 한 번의 등록(여러 줄)을 가리킨다.
+     *
+     * <p>★매출번호(I-)와 별개 시퀀스다 — 한 묶음에 줄이 여럿이라 증가 속도가 다르고,
+     * 섞으면 "3번 매출"이 묶음인지 줄인지 알 수 없게 된다.
+     */
+    public static final String SEQ_SALES_ENTRY = "seq_sales_entry_no";
+
+    /** 수금 <b>전표코드</b>(V-). 한 번에 등록한 수금 묶음을 가리킨다(수금번호 C- 와 별개). */
+    public static final String SEQ_COLLECTION_VOUCHER = "seq_collection_voucher_no";
+
     /** 세트 조립·해체 전표(BW-). 이고와 같은 이유. */
     public static final String SEQ_BOMWORK = "seq_bomwork_no";
 

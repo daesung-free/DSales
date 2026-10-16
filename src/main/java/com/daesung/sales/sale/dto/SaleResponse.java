@@ -78,6 +78,17 @@ public record SaleResponse(
                 판매채널(레거시 `schDataDT.type1`). **학교 마스터에서 붙인다** — 매출 원장엔 없다.
                 학교코드가 없거나 마스터에 그 학교가 없으면 null.""")
         String salesChannel,
+        @Schema(description = """
+                등록 묶음번호(E-yyyyMMdd-n) — **한 번의 등록**을 가리킨다(현장 피드백 2026-10-14 B-4).
+                매출번호는 줄마다 따로 채번돼 묶음을 표현하지 못한다.
+                ‼️이 컬럼 도입 전 매출은 null 이다 — 소급해 채우지 않았다(그때는 묶음이 기록되지 않았고,
+                  날짜·거래처로 추측해 묶으면 없던 사실을 만드는 것이다).""")
+        String entryNo,
+        @Schema(description = "그 묶음 안의 등록 순번(1부터). 담당자가 친 순서다") Integer entrySeq,
+        @Schema(description = """
+                공급가액을 담당자가 **직접 입력**했나(B-3).
+                true 면 계산값이 아니라 손으로 맞춘 금액이다.""")
+        boolean amountOverridden,
         String memo
 ) {
     /**
@@ -151,6 +162,7 @@ public record SaleResponse(
                 (s.getWarehouse() == null) ? null : s.getWarehouse().getId(),
                 (s.getWarehouse() == null) ? null : s.getWarehouse().getName(),
                 salesChannel,
+                s.getEntryNo(), s.getEntrySeq(), s.isAmountOverridden(),
                 s.getMemo());
     }
 }

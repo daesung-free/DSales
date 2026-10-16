@@ -9,11 +9,19 @@ import java.util.List;
  * 근거: 레거시 세금계산신고.vb. 실제 홈택스 파일 export는 별도 엔드포인트.
  */
 public record TaxInvoiceResponse(
-        @Schema(description = "작성일자(조회 종료일=말일)") LocalDate issueDate,
+        @Schema(description = """
+                작성일자 기본값(조회 종료일=말일). **계산서별로 다를 수 있다** —
+                보정(B-6)한 건은 각 계산서의 `issueDate` 를 봐야 한다.""")
+        LocalDate issueDate,
         @Schema(description = "계산서 목록") List<Invoice> invoices,
         @Schema(description = "계산서 매수") int count
 ) {
     public record Invoice(
+            @Schema(description = """
+                    이 계산서의 **작성일자**. 보정이 없으면 조회 종료일과 같고,
+                    수정했으면 그 날짜다(현장 피드백 2026-10-14 B-6).
+                    ★엑셀도 이 값으로 나간다.""")
+            LocalDate issueDate,
             @Schema(description = "종류코드(05=면세/01=과세)") String typeCode,
             @Schema(description = "과세구분(FREE/TAXABLE)") String taxType,
             @Schema(description = "공급자 상호(설정 주입, 미설정 시 공란)") String supplierName,

@@ -314,6 +314,7 @@ public class OrderService {
                 productId, ShipmentType.NORMAL_SHIP, sl.unitPrice(), sl.supplyRate(),
                 null,               // 할인액 — 미지정이면 거래처×대분류 매핑에서 자동조회된다
                 qty, sl.tax(),
+                null,               // 공급가액 직접입력 — 주문 경로엔 그 칸이 없다
                 null,               // 성적처리 구분 — 주문의 procYn 과 축이 달라 섞지 않는다
                 req.schoolCode(), null, null, null, sl.memo());
         SalesEntryRequest entry = new SalesEntryRequest(

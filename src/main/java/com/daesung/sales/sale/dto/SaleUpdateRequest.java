@@ -40,6 +40,15 @@ public record SaleUpdateRequest(
 
         @Schema(description = "할인액", example = "0") @PositiveOrZero Integer discountAmount,
 
+        @Schema(description = """
+                공급가액 **직접 입력**(선택, 현장 피드백 2026-10-14 B-3).
+                값을 주면 그 금액으로 저장하고 `amountOverridden=true` 가 된다.
+                ‼️비우면 **다시 계산된다** — 수량·정가·공급률을 고치면 금액이 따라간다.
+                  손으로 맞춘 금액을 유지하려면 이 칸에 같은 값을 함께 보내야 한다
+                  (이 요청은 '보낸 값으로 맞춘다'가 규칙이라, 안 보낸 칸은 계산값으로 돌아간다).""",
+                example = "95000")
+        @PositiveOrZero Long supplyAmount,
+
         @Schema(description = "메모") String memo,
 
         @Schema(description = "회차", example = "3") @Positive Integer bookRound,
@@ -51,7 +60,7 @@ public record SaleUpdateRequest(
     /** 바꿀 항목이 하나라도 있는지. 하나도 없으면 호출 자체가 실수다. */
     public boolean isEmpty() {
         return qty == null && unitPrice == null && supplyRate == null && tax == null
-                && discountAmount == null && memo == null && bookRound == null
-                && procType == null && packType == null;
+                && discountAmount == null && supplyAmount == null && memo == null
+                && bookRound == null && procType == null && packType == null;
     }
 }

@@ -289,6 +289,39 @@ public class Sale extends com.daesung.sales.common.entity.SoftDeletableEntity {
         this.packType = packType;
     }
 
+    /**
+     * 공급가액을 담당자가 <b>직접 입력</b>했나(현장 피드백 2026-10-14 B-3).
+     *
+     * <p>★금액만 저장하면 "계산값과 우연히 같은 건"과 "손으로 맞춘 건"을 나중에 가릴 수 없다.
+     * 세무 소명에서 묻는 것이 그 구분이고, 화면도 이 값으로 「손으로 고친 금액」을 표시한다.
+     */
+    @Column(name = "amount_overridden", nullable = false)
+    private boolean amountOverridden = false;
+
+    /**
+     * 등록 묶음번호(E-yyyyMMdd-n) — <b>한 번의 등록</b>을 가리킨다(B-4).
+     * 매출번호(I-)는 줄마다 따로 채번돼 묶음을 표현하지 못한다.
+     */
+    @Column(name = "entry_no", length = 30)
+    private String entryNo;
+
+    /** 그 묶음 안의 등록 순번(1부터). 담당자가 친 순서다. */
+    @Column(name = "entry_seq")
+    private Integer entrySeq;
+
+    /** 등록 묶음·순번 기록. 한 번의 등록에서 줄마다 1,2,3… 으로 올린다. */
+    public void applyEntry(String entryNo, int entrySeq) {
+        this.entryNo = entryNo;
+        this.entrySeq = entrySeq;
+    }
+
+    /** 공급가액을 입력값으로 덮는다(계산값 대신). 총액도 세액과 합쳐 다시 맞춘다. */
+    public void overrideSupplyAmount(long supplyAmount) {
+        this.supplyAmount = supplyAmount;
+        this.totalAmount = supplyAmount + (this.tax == null ? 0L : this.tax);
+        this.amountOverridden = true;
+    }
+
     /** 논리 취소. */
     public void cancel() {
         this.canceled = true;

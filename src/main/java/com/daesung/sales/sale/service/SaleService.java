@@ -99,6 +99,11 @@ public class SaleService {
 
         // 2단계: 저장 + 재고 반영.
         String datePart = req.salesDate().format(YYYYMMDD);
+        // ★등록 묶음번호(현장 피드백 2026-10-14 B-4) — "여러 매출을 등록했을 때 등록 순서로 순번".
+        //   매출번호(I-)는 줄마다 채번돼 "한 번에 올린 것"을 가리키지 못한다.
+        //   묶음번호 하나를 먼저 뽑고, 줄마다 1,2,3… 을 붙인다.
+        String entryNo = "E-" + datePart + "-" + sequenceService.next(SequenceService.SEQ_SALES_ENTRY);
+        int entrySeq = 0;
         List<SalesEntryResponse.Line> lines = new ArrayList<>();
 
         for (ResolvedItem r : resolved) {
@@ -117,10 +122,18 @@ public class SaleService {
                     SalesType.NORMAL_SALES, item.shipmentType(), r.salesCategory(),
                     r.unitPrice(), r.supplyRate(), item.qty(),
                     supplyAmount, tax, totalAmount, item.procType(), item.memo());
+            // ★공급가액을 직접 입력했으면 계산값을 덮는다(현장 피드백 2026-10-14 B-3).
+            //   정가·공급률은 입력한 그대로 둔다 — 금액에 맞춰 역산하면 담당자가 적어 둔 조건이 사라진다.
+            if (item.supplyAmount() != null) {
+                sale.overrideSupplyAmount(item.supplyAmount());
+                supplyAmount = item.supplyAmount();
+                totalAmount = supplyAmount + tax;
+            }
             sale.applyDiscount(r.discountAmount());   // 적용된 할인액을 남긴다(매핑은 나중에 바뀐다)
             sale.applyWarehouse(warehouse);   // 출고 창고(7p 재고위치 · 27p 출고창고)
             sale.applyUploadDetail(item.schoolCode(), item.schoolName(), item.round());   // 학교·회차(12p)
             sale.applyPackType(item.packType());   // 포장구분(회차별 작업현황 집계축)
+            sale.applyEntry(entryNo, ++entrySeq);  // 등록 묶음·순번(B-4)
             saleRepository.save(sale);
 
             // 재고 반영(한 트랜잭션): 출고유형 → 부호/이벤트유형. 위탁·취소는 이 API 불가.
@@ -500,6 +513,13 @@ public class SaleService {
 
         // ‼️from/to 칸은 VARCHAR(30)이라 요약이 안 들어간다(실제로 1406으로 터졌다).
         //   상태축에는 수량만 넣고, 무엇이 어떻게 바뀌었는지는 사유 칸(500)에 전부 적는다.
+        // ★공급가액 직접 입력(B-3). 보내면 계산값을 덮는다.
+        //   ‼️안 보내면 계산값으로 돌아간다 — 이 API 의 규칙이 "보낸 값으로 맞춘다"이기 때문이다.
+        //     손으로 맞춘 금액을 유지하려면 화면이 그 값을 함께 보내야 한다(설명에 적어 뒀다).
+        if (req.supplyAmount() != null) {
+            sale.overrideSupplyAmount(req.supplyAmount());
+        }
+
         statusHistoryService.record(StatusEntityType.SALE, sale.getId(), "revised",
                 oldQty + "부", newQty + "부",
                 "매출 수정(" + sale.getSalesNo() + ") " + before + " → " + summarizeAmounts(sale));

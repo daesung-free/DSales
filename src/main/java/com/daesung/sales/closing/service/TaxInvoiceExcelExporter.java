@@ -42,7 +42,10 @@ public class TaxInvoiceExcelExporter {
             writeRow(free, 0, header(false));
             writeRow(tax, 0, header(true));
 
-            String issueDate = data.issueDate().format(YYYYMMDD);
+            // ★작성일자는 **계산서별**이다(현장 피드백 2026-10-14 B-6 보정).
+            //   머리의 값(조회 종료일)을 그대로 쓰면 보정한 날짜가 파일에 안 나간다 —
+            //   화면과 제출 파일이 다른 날짜를 들고 있게 된다.
+            String fallbackDate = data.issueDate().format(YYYYMMDD);
             int[] rowIdx = {1, 1}; // [free, tax]
 
             for (TaxInvoiceResponse.Invoice inv : data.invoices()) {
@@ -55,6 +58,8 @@ public class TaxInvoiceExcelExporter {
                 // 품목 4개 초과 시 계산서 분할(각 분할이 별도 계산서 = 청크 합계).
                 for (int i = 0; i < items.size(); i += ITEM_SLOTS) {
                     List<TaxInvoiceResponse.Item> chunk = items.subList(i, Math.min(i + ITEM_SLOTS, items.size()));
+                    String issueDate = (inv.issueDate() != null)
+                            ? inv.issueDate().format(YYYYMMDD) : fallbackDate;
                     writeRow(sheet, rowIdx[si]++, invoiceRow(taxable, issueDate, supplier, inv, buyer, chunk));
                 }
             }
