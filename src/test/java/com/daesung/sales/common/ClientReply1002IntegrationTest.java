@@ -170,10 +170,33 @@ class ClientReply1002IntegrationTest extends IntegrationTestSupport {
             assertThat(r.path("schoolCode").asText()).isEqualTo(schoolNone);
         }
 
+
+
         // 둘을 함께 고르면 합집합이다.
         assertThat(data(get("/sales" + RANGE + "&size=200&partnerIds=" + partner
                 + "&salesChannels=메가스터디,미분류")).path("content"))
                 .as("합집합").hasSize(mega.size() + none.size());
+
+        // ★★**학교가 아예 없는 매출도 미분류다.** 실데이터에서는 이쪽이 73%(248,949건)인데,
+        //   `not in` 만 쓰면 좌변이 NULL 이라 결과가 NULL(거짓)이 되어 **통째로 빠진다**
+        //   (2026-10-16 이관 후 실측에서 0건이 나왔다).
+        Map<String, Object> noSchool = new HashMap<>();
+        noSchool.put("productId", external);
+        noSchool.put("shipmentType", "NORMAL_SHIP");
+        noSchool.put("unitPrice", 10000);
+        noSchool.put("supplyRate", 70);
+        noSchool.put("qty", 4);
+        post("/sales/entries", Map.of("salesDate", DATE, "partnerId", partner,
+                "warehouseId", warehouse, "items", List.of(noSchool)));
+
+        boolean foundNoSchool = false;
+        for (JsonNode r : data(get("/sales" + RANGE + "&size=200&partnerIds=" + partner
+                + "&salesChannels=미분류")).path("content")) {
+            if (!r.hasNonNull("schoolCode")) {
+                foundNoSchool = true;
+            }
+        }
+        assertThat(foundNoSchool).as("학교 없는 매출이 미분류에 잡혀야 한다").isTrue();
     }
 
     @Test

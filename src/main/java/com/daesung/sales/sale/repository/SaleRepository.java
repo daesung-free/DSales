@@ -364,12 +364,21 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
             //   (schDataDT.type1 — 우리 School.salesChannel). 매출 행에는 없으므로 학교코드로 되짚는다.
             //   ‼️'미분류'는 레거시가 별도 분기로 처리한다(조회.vb:1205 `type1 is null or ''`) —
             //     목록에 넣어 비교하면 값이 NULL 이라 영원히 안 걸린다.
+            // ‼️**exists 상관 서브쿼리를 쓰면 안 된다.** 실데이터 33만 행에서 이 조건 하나로
+            //   0.08초 → **45초**가 됐다(2026-10-16 이관 후 실측). MySQL 이 `0=1 and not exists(...)`
+            //   를 상수로 접지 못하고 **행마다 서브쿼리를 돌린다** — 조건이 꺼져 있어도 그렇다.
+            //   IN/NOT IN 은 세미조인으로 풀려 0.19초다(265배).
+            //   ★시드 수십 건에서는 드러나지 않는다. 실데이터가 들어와야 보인다.
+            //
+            // ‼️미분류에 `school_code is null` 을 **반드시 함께** 둔다.
+            //   `not in` 은 좌변이 NULL 이면 결과가 NULL(거짓)이라, 학교 없는 매출
+            //   (전체의 73%, 248,949건)이 통째로 빠진다 — 실제로 0건이 나왔다.
             + "and (:anyChannel = true "
-            + "     or (:unclassified = true and not exists ("
-            + "            select 1 from School uc where uc.schoolCode = s.schoolCode "
-            + "              and uc.salesChannel is not null and uc.salesChannel <> '')) "
-            + "     or exists (select 1 from School sc where sc.schoolCode = s.schoolCode "
-            + "                  and sc.salesChannel in :channels)) "
+            + "     or (:unclassified = true and (s.schoolCode is null or s.schoolCode = '' "
+            + "          or s.schoolCode not in (select uc.schoolCode from School uc "
+            + "               where uc.salesChannel is not null and uc.salesChannel <> ''))) "
+            + "     or s.schoolCode in (select sc.schoolCode from School sc "
+            + "                           where sc.salesChannel in :channels)) "
             // 키워드는 담당자가 화면에서 치는 값이다 — 거래처명·도서명·도서코드·매출번호·학교명을 함께 훑는다.
             // 어느 칸에 쳤는지 기억하고 고르게 하면 실무에서 안 쓴다.
             + "and (:keyword is null or lower(s.partner.name) like :keyword "
