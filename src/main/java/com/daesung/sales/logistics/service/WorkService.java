@@ -105,8 +105,41 @@ public class WorkService {
     public List<WorkOrderResponse> workOrders(LocalDate from, LocalDate to, String tradeClass,
                                               Long partnerId, Boolean printed, Boolean acknowledged,
                                               DeliveryType deliveryType) {
+        // ‼️**발송 건을 먼저 읽는다.** 예전엔 기간 내 매출 전량을 Java 맵으로 올린 다음
+        //   발송 건을 훑었다. 그래서 발송이 **0건이어도** 매출 33만 행을 집계·적재했고,
+        //   넓은 기간(2020~2035)으로 부르면 0건을 돌려주는 데 **13초**가 걸렸다
+        //   (프론트 실측 2026-10-16 B-3 — 같은 시각 매출 조회는 0.2초).
+        //   화면이 기간을 비우면 이 넓은 기간으로 부른다.
+        //   ★목록의 주인은 발송 건이다. 매출 줄은 그 발송에 붙일 내용일 뿐이라
+        //     발송이 없으면 읽을 이유가 없다.
+        List<Shipment> shipments = shipmentRepository.findAllIncludingDeleted(from, to, tradeClass,
+                partnerId, toFlag(printed), toFlag(acknowledged),
+                deliveryType == null ? null : deliveryType.name());
+        if (shipments.isEmpty()) {
+            return List.of();
+        }
+        // 매출·위탁 줄도 **발송 건이 실제로 걸쳐 있는 날짜 범위**로만 좁힌다.
+        // 요청 기간이 2035년까지여도 발송이 올해 것뿐이면 올해만 읽는다.
+        LocalDate minDate = null;
+        LocalDate maxDate = null;
+        for (Shipment s : shipments) {
+            LocalDate d = s.getTradeDate();
+            if (d == null) {
+                continue;
+            }
+            if (minDate == null || d.isBefore(minDate)) {
+                minDate = d;
+            }
+            if (maxDate == null || d.isAfter(maxDate)) {
+                maxDate = d;
+            }
+        }
+        // 거래일자가 전부 비어 있으면(이론상) 요청 기간을 그대로 쓴다 — 줄을 못 붙이는 것보다 낫다.
+        LocalDate lineFrom = (minDate != null) ? minDate : from;
+        LocalDate lineTo = (maxDate != null) ? maxDate : to;
+
         Map<String, List<WorkOrderResponse.Line>> linesByKey = new LinkedHashMap<>();
-        for (WorkOrderLineAgg a : saleRepository.workOrderLines(from, to)) {
+        for (WorkOrderLineAgg a : saleRepository.workOrderLines(lineFrom, lineTo)) {
             linesByKey.computeIfAbsent(
                             key(a.getTradeDate(), a.getPartnerId(), a.getSchoolCode(), a.getTradeClass()),
                             k -> new ArrayList<>())
@@ -118,7 +151,7 @@ public class WorkService {
         // ★위탁출고 지시도 같은 키로 합친다(검수피드백 2026-09-30 p.12).
         //   위탁출고는 매출이 없어(미결로 나간다) 매출 기반 목록엔 안 잡힌다 —
         //   그동안 위탁 건은 작업요청서에 **빈 목록**으로 떠서 물류가 뭘 싸야 할지 몰랐다.
-        for (var c : consignmentOutRepository.workOrderLines(from, to)) {
+        for (var c : consignmentOutRepository.workOrderLines(lineFrom, lineTo)) {
             linesByKey.computeIfAbsent(
                             key(c.getTradeDate(), c.getPartnerId(), c.getSchoolCode(), c.getTradeClass()),
                             k -> new ArrayList<>())
@@ -129,7 +162,7 @@ public class WorkService {
 
         // 발송 건별 신청번호(2026-10-01). 한 발송에 신청이 여럿일 수 있어 목록으로 모은다.
         Map<String, List<Integer>> reqCdsByKey = new LinkedHashMap<>();
-        for (var r : saleRepository.workOrderReqCds(from, to)) {
+        for (var r : saleRepository.workOrderReqCds(lineFrom, lineTo)) {
             reqCdsByKey.computeIfAbsent(
                             key(r.getTradeDate(), r.getPartnerId(), r.getSchoolCode(), r.getTradeClass()),
                             k -> new ArrayList<>())
@@ -138,9 +171,7 @@ public class WorkService {
 
         List<WorkOrderResponse> out = new ArrayList<>();
         // ★삭제된 건도 함께 읽는다(레거시와 같다 — 취소선으로 보여주고 작업 대상에서만 뺀다).
-        for (Shipment s : shipmentRepository.findAllIncludingDeleted(from, to, tradeClass, partnerId,
-                toFlag(printed), toFlag(acknowledged),
-                deliveryType == null ? null : deliveryType.name())) {
+        for (Shipment s : shipments) {
             List<WorkOrderResponse.Line> lines = linesByKey.getOrDefault(
                     key(s.getTradeDate(), s.getPartner().getId(), s.getSchoolCode(), s.getTradeClass()),
                     List.of());

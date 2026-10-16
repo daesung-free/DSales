@@ -66,6 +66,7 @@ public class DuffSalesImportService {
 
     private final DsreGateway dsreGateway;
     private final SequenceService sequenceService;
+    private final EntryNumberService entryNumberService;
     private final SaleRepository saleRepository;
     private final PartnerRepository partnerRepository;
     private final ProductRepository productRepository;
@@ -87,6 +88,10 @@ public class DuffSalesImportService {
         }
 
         List<DuffImportResponse.Line> lines = new ArrayList<>();
+        // 매출일괄등록도 한 번에 수십~수백 줄이 들어간다 — 묶음번호·순번을 붙인다
+        // (프론트 실측 2026-10-16 B-2). 묶음번호는 **가져온 날짜**로 뽑는다(원천 거래일자가 섞여 온다).
+        String entryNo = entryNumberService.next(LocalDate.now());
+        int entrySeq = 0;
         int imported = 0, skipped = 0, unmapped = 0, zeroInwon = 0, zeroAmount = 0;
         long totalSum = 0;
 
@@ -182,6 +187,7 @@ public class DuffSalesImportService {
             sale.applyUploadDetail(row.schoolCode(), row.schoolName(), null);
             sale.linkOrder(row.reqCd());   // 주문 목록이 "무슨 매출이 됐나"를 역참조한다
             sale.applyDiscount(discountOrNull(row));
+            sale.applyEntry(entryNo, ++entrySeq);
             saleRepository.save(sale);
 
             imported++;

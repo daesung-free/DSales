@@ -62,6 +62,7 @@ public class ConsignmentService {
     private final ConsignmentOutRepository consignmentOutRepository;
     private final ConsignmentSettlementRepository settlementRepository;
     private final SaleRepository saleRepository;
+    private final com.daesung.sales.sale.service.EntryNumberService entryNumberService;
     private final ProductRepository productRepository;
     private final WarehouseRepository warehouseRepository;
     private final PartnerRepository partnerRepository;
@@ -220,6 +221,9 @@ public class ConsignmentService {
     public ConsignSettleResponse settle(ConsignSettleRequest req) {
         periodLockService.assertNotLocked(req.salesDate());
         String datePart = req.salesDate().format(YYYYMMDD);
+        // 위탁정산도 한 번에 여러 미결을 확정한다 — 묶음번호·순번을 붙인다(프론트 실측 2026-10-16 B-2).
+        String entryNo = entryNumberService.next(req.salesDate());
+        int entrySeq = 0;
         List<ConsignSettleResponse.Line> lines = new ArrayList<>();
 
         for (ConsignSettleRequest.Settlement s : req.settlements()) {
@@ -280,6 +284,7 @@ public class ConsignmentService {
                 consignSale.applyDiscount(discount);
                 // 위탁정산 매출은 위탁창고에서 나간다(7p 재고위치).
                 consignSale.applyWarehouse(consignWarehouseOf(co));
+                consignSale.applyEntry(entryNo, ++entrySeq);
                 saleRepository.save(consignSale);
                 co.settle(settleQty);
 

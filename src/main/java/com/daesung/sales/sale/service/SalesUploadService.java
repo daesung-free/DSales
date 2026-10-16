@@ -59,6 +59,7 @@ public class SalesUploadService {
     private final ProductRepository productRepository;
     private final com.daesung.sales.product.service.PartnerSupplyRateService partnerSupplyRateService;
     private final SequenceService sequenceService;
+    private final EntryNumberService entryNumberService;
     private final PeriodLockService periodLockService;
 
     private record Kind(ShipmentType shipmentType, SalesCategory category) {}
@@ -81,6 +82,11 @@ public class SalesUploadService {
         List<SalesUploadResponse.Line> lines = new ArrayList<>();
         int imported = 0;
         int failed = 0;
+        // ★묶음번호는 **올린 날짜**로 뽑는다(줄마다 다를 수 있는 거래일자가 아니다).
+        //   한 파일이 한 번의 등록이고, 파일 안에 여러 거래일자가 섞여 들어올 수 있다 —
+        //   거래일자로 뽑으면 한 파일이 여러 묶음으로 쪼개져 "몇 번째 줄"을 못 센다.
+        String entryNo = entryNumberService.next(LocalDate.now());
+        int entrySeq = 0;
 
         com.daesung.sales.common.excel.ExcelSheetReader.assertReadable(file);
         try (Workbook wb = WorkbookFactory.create(file.getInputStream())) {
@@ -140,6 +146,9 @@ public class SalesUploadService {
                             amt.supplyAmount(), amt.tax(), amt.totalAmount(), str(row, 11), null);
                     sale.applyDiscount(discount);
                     sale.applyUploadDetail(str(row, 2), null, intOrNull(row, 5));   // 학교코드·(학교명 미구현)·회차
+                    // 업로드는 한 파일이 곧 한 번의 등록이다 — 파일 전체에 같은 묶음번호,
+                    // 줄마다 순번. 담당자가 "몇 번째 줄" 로 찾는 경로다(프론트 실측 2026-10-16 B-2).
+                    sale.applyEntry(entryNo, ++entrySeq);
                     saleRepository.save(sale);
 
                     // ★재고도 같이 뺀다. 업로드만 이게 빠져 있어서, 올린 만큼 매출은 서는데

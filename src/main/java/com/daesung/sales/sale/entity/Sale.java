@@ -287,6 +287,12 @@ public class Sale extends com.daesung.sales.common.entity.SoftDeletableEntity {
         this.bookRound = bookRound;
         this.procType = procType;
         this.packType = packType;
+        // ‼️여기 들어오는 금액은 **계산값**이다. 그래서 '손으로 고친 금액' 표시를 내려야 한다.
+        //   안 내리면 수량만 고친 뒤에도 화면이 계속 「손으로 고친 금액」으로 표시하고,
+        //   세무 소명에서 묻는 "계산값인가 손으로 맞춘 값인가"가 틀어진다
+        //   (프론트 실측 2026-10-16 B-1). 직접 입력이 함께 온 경우는 호출부가
+        //   이 뒤에 overrideSupplyAmount 를 불러 다시 true 로 올린다.
+        this.amountOverridden = false;
     }
 
     /**

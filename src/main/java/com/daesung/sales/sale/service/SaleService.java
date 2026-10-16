@@ -55,6 +55,7 @@ public class SaleService {
     private static final DateTimeFormatter YYYYMMDD = DateTimeFormatter.BASIC_ISO_DATE;
 
     private final SaleRepository saleRepository;
+    private final EntryNumberService entryNumberService;
     private final PartnerRepository partnerRepository;
     private final ProductRepository productRepository;
     private final com.daesung.sales.product.service.PartnerSupplyRateService partnerSupplyRateService;
@@ -102,7 +103,7 @@ public class SaleService {
         // ★등록 묶음번호(현장 피드백 2026-10-14 B-4) — "여러 매출을 등록했을 때 등록 순서로 순번".
         //   매출번호(I-)는 줄마다 채번돼 "한 번에 올린 것"을 가리키지 못한다.
         //   묶음번호 하나를 먼저 뽑고, 줄마다 1,2,3… 을 붙인다.
-        String entryNo = "E-" + datePart + "-" + sequenceService.next(SequenceService.SEQ_SALES_ENTRY);
+        String entryNo = entryNumberService.next(req.salesDate());
         int entrySeq = 0;
         List<SalesEntryResponse.Line> lines = new ArrayList<>();
 
@@ -249,6 +250,9 @@ public class SaleService {
                         "물류창고가 없습니다. id=" + req.warehouseId()));
 
         String datePart = req.returnDate().format(YYYYMMDD);
+        // 반품입고도 한 번에 여러 줄이 들어간다 — 묶음번호·순번을 붙인다(프론트 실측 2026-10-16 B-2).
+        String entryNo = entryNumberService.next(req.returnDate());
+        int entrySeq = 0;
         List<SalesEntryResponse.Line> lines = new ArrayList<>();
         List<SalesEntryResponse.Warning> warnings = new ArrayList<>();
 
@@ -285,6 +289,7 @@ public class SaleService {
             if (item.sourceOutNo() != null && !item.sourceOutNo().isBlank()) {
                 sale.linkSourceOut(item.sourceOutNo());
             }
+            sale.applyEntry(entryNo, ++entrySeq);
             saleRepository.save(sale);
 
             // 물류창고 재고 +복구(한 트랜잭션). 재고 미관리 상품(모의고사 등)은 이벤트 없음.

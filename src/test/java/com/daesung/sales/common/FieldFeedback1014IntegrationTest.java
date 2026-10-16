@@ -222,6 +222,113 @@ class FieldFeedback1014IntegrationTest extends IntegrationTestSupport {
      * ‼️공유하면 다른 테스트의 매출이 집계·조회에 섞여 들어온다 —
      *   실제로 이 파일에서 그렇게 깨졌다(B-3 이 B-6 의 매출을 집었다).
      */
+    @Test
+    @DisplayName("★★[10/16 B-1] 금액을 안 보내고 수정하면 '손으로 고친 금액' 표시가 내려간다")
+    void 금액_직접입력_해제() {
+        Long p = partner("OVR");
+        Map<String, Object> item = new HashMap<>(line(10));
+        item.put("supplyAmount", 95_000);   // 계산값 70,000 과 다른 값
+        assertThat(post("/sales/entries", Map.of("salesDate", DATE, "partnerId", p,
+                "warehouseId", warehouse, "items", List.of(item)))
+                .path("success").asBoolean()).isTrue();
+
+        long id = find(p, "FFP" + SFX).path("id").asLong();
+        assertThat(find(p, "FFP" + SFX).path("amountOverridden").asBoolean()).isTrue();
+
+        // 수량만 고친다 — 금액 칸은 비운다. 이 API 규칙은 "보낸 값으로 맞춘다"라
+        // 금액은 계산값(20부 × 7,000 = 140,000)으로 돌아간다.
+        assertThat(patch("/sales/" + id, Map.of("qty", 20)).path("success").asBoolean()).isTrue();
+
+        JsonNode row = find(p, "FFP" + SFX);
+        assertThat(row.path("supplyAmount").asLong()).as("계산값으로 복귀").isEqualTo(140_000);
+        // ★★여기가 핵심 — 금액이 계산값인데 표시가 true 로 남아 있으면
+        //   화면이 계속 「손으로 고친 금액」으로 그리고, 세무 소명에서 묻는 구분이 틀어진다.
+        assertThat(row.path("amountOverridden").asBoolean())
+                .as("계산값으로 돌아갔으니 표시도 내려가야 한다").isFalse();
+
+        // 같은 수정에서 금액을 함께 보내면 다시 올라간다.
+        assertThat(patch("/sales/" + id, Map.of("qty", 20, "supplyAmount", 99_000))
+                .path("success").asBoolean()).isTrue();
+        JsonNode again = find(p, "FFP" + SFX);
+        assertThat(again.path("supplyAmount").asLong()).isEqualTo(99_000);
+        assertThat(again.path("amountOverridden").asBoolean()).isTrue();
+    }
+
+    @Test
+    @DisplayName("★★[10/16 B-2] 반품입고도 등록번호·순번을 받는다 — 여러 줄이 한 번에 들어가는 경로다")
+    void 반품입고_묶음번호() {
+        Long p = partner("RTE");
+        // 반품 범위를 만들기 위해 먼저 출고.
+        post("/stock/inbound", Map.of("processedDate", DATE, "destinationWarehouseId", warehouse,
+                "items", List.of(Map.of("productId", product, "unitCost", 1000, "qty", 100))));
+        assertThat(post("/sales/entries", Map.of("salesDate", DATE, "partnerId", p,
+                "warehouseId", warehouse, "items", List.of(line(50))))
+                .path("success").asBoolean()).isTrue();
+
+        JsonNode r = post("/sales/return-inbound", Map.of(
+                "returnDate", DATE, "partnerId", p, "warehouseId", warehouse,
+                "items", List.of(
+                        Map.of("productId", product, "unitPrice", 10000, "supplyRate", 70, "qty", 3),
+                        Map.of("productId", product, "unitPrice", 10000, "supplyRate", 70, "qty", 4))));
+        assertThat(r.path("success").asBoolean()).as("반품입고: %s", r).isTrue();
+
+        java.util.List<String> entryNos = new java.util.ArrayList<>();
+        java.util.List<Integer> seqs = new java.util.ArrayList<>();
+        for (JsonNode row : data(get("/sales" + RANGE + "&size=200&partnerIds=" + p))
+                .path("content")) {
+            if ("RETURN".equals(row.path("salesCategory").asText())) {
+                entryNos.add(row.path("entryNo").asText());
+                seqs.add(row.path("entrySeq").asInt());
+            }
+        }
+        assertThat(seqs).as("반품 2줄").hasSize(2);
+        assertThat(entryNos).allMatch(e -> e.startsWith("E-"), "등록번호가 붙는다");
+        assertThat(entryNos.get(0)).as("두 줄이 같은 묶음").isEqualTo(entryNos.get(1));
+        assertThat(seqs).as("1,2 순번").containsExactlyInAnyOrder(1, 2);
+    }
+
+    @Test
+    @DisplayName("★[10/16 B-3] 작업요청서 — 발송 건이 없는 기간은 매출을 읽지 않는다")
+    void 작업요청서_발송없으면_즉시() {
+        // 발송 건이 없는 기간(이 클래스의 데이터는 2108년에만 있다).
+        // 예전엔 발송이 0건이어도 **요청 기간 내 매출 전량**을 Java 맵으로 올린 뒤 0건을 돌려줬다 —
+        // 실데이터 33만 행에서 2020~2035 로 부르면 13초였다(프론트 실측 2026-10-16 B-3).
+        long t = System.nanoTime();
+        JsonNode r = get("/logistics/work-orders?fromDate=2109-01-01&toDate=2135-12-31");
+        long ms = (System.nanoTime() - t) / 1_000_000;
+
+        assertThat(r.path("success").asBoolean()).as("조회: %s", r).isTrue();
+        assertThat(data(r)).as("이 기간엔 발송 건이 없다").isEmpty();
+        // 시드 규모에서는 전후 둘 다 빠르다 — 이 테스트가 지키는 것은 "발송이 없으면 끝낸다"는 순서다.
+        assertThat(ms).as("발송 0건이면 즉시 끝난다(걸린 시간 %dms)", ms).isLessThan(5_000);
+    }
+
+    @Test
+    @DisplayName("★★[10/16 B-3] 발송 건이 있으면 매출 줄은 그대로 붙는다 — 빠르게 만들다 빠뜨리면 안 된다")
+    void 작업요청서_줄은_그대로() {
+        Long p = partner("WRK");
+        assertThat(post("/sales/entries", Map.of("salesDate", DATE, "partnerId", p,
+                "warehouseId", warehouse, "items", List.of(line(11))))
+                .path("success").asBoolean()).isTrue();
+
+        // 요청 기간을 **아주 넓게** 준다(화면이 기간을 비우면 이렇게 부른다).
+        // 줄 조회는 발송 건이 걸쳐 있는 날짜로 좁혀지지만, 내용은 빠지지 않아야 한다.
+        JsonNode rows = data(get("/logistics/work-orders"
+                + "?fromDate=2000-01-01&toDate=2135-12-31&partnerId=" + p));
+        assertThat(rows).as("발송 건이 잡힌다").isNotEmpty();
+
+        boolean found = false;
+        for (JsonNode w : rows) {
+            for (JsonNode ln : w.path("lines")) {
+                if (("FFP" + SFX).equals(ln.path("productCode").asText())
+                        && ln.path("qty").asInt() == 11) {
+                    found = true;
+                }
+            }
+        }
+        assertThat(found).as("매출 줄(11부)이 작업요청서에 붙어야 한다: %s", rows).isTrue();
+    }
+
     private Long partner(String tag) {
         return createId("/masters/clients",
                 Map.of("code", tag + SFX, "name", "현장검증" + tag, "type", "NORMAL"));
