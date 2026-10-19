@@ -56,7 +56,7 @@ class DeliveryTrackingIntegrationTest extends IntegrationTestSupport {
                         Map.of("productId", mock, "shipmentType", "NORMAL_SHIP", "qty", 5,
                                 "schoolCode", "20001", "schoolName", "발송고등학교"))));
 
-        JsonNode orders = data(get("/logistics/work-orders" + RANGE));
+        JsonNode orders = data(get("/logistics/work-orders" + RANGE)).path("content");
         assertThat(orders).hasSize(2);
         courierShipment = orders.get(0).path("id").asLong();
         freightShipment = orders.get(1).path("id").asLong();
@@ -95,7 +95,7 @@ class DeliveryTrackingIntegrationTest extends IntegrationTestSupport {
 
     /** 그 발송 건 한 줄. */
     private JsonNode row(long id) {
-        for (JsonNode r : data(get("/logistics/work-orders" + RANGE))) {
+        for (JsonNode r : data(get("/logistics/work-orders" + RANGE)).path("content")) {
             if (r.path("id").asLong() == id) {
                 return r;
             }
@@ -147,11 +147,11 @@ class DeliveryTrackingIntegrationTest extends IntegrationTestSupport {
         put("/logistics/work-orders/" + courierShipment + "/shipping", Map.of("deliveryType", "COURIER"));
         put("/logistics/work-orders/" + freightShipment + "/shipping", Map.of("deliveryType", "FREIGHT"));
 
-        JsonNode courier = data(get("/logistics/work-orders" + RANGE + "&deliveryType=COURIER"));
+        JsonNode courier = data(get("/logistics/work-orders" + RANGE + "&deliveryType=COURIER")).path("content");
         assertThat(courier).hasSize(1);
         assertThat(courier.get(0).path("id").asLong()).isEqualTo(courierShipment);
 
-        JsonNode freight = data(get("/logistics/work-orders" + RANGE + "&deliveryType=FREIGHT"));
+        JsonNode freight = data(get("/logistics/work-orders" + RANGE + "&deliveryType=FREIGHT")).path("content");
         assertThat(freight).hasSize(1);
         assertThat(freight.get(0).path("id").asLong()).isEqualTo(freightShipment);
     }
@@ -240,7 +240,7 @@ class DeliveryTrackingIntegrationTest extends IntegrationTestSupport {
     }
 
     private JsonNode orderById(long id) {
-        for (JsonNode o : data(get("/logistics/work-orders" + RANGE))) {
+        for (JsonNode o : data(get("/logistics/work-orders" + RANGE)).path("content")) {
             if (o.path("id").asLong() == id) {
                 return o;
             }

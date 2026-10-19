@@ -63,7 +63,7 @@ class WorkRevertAcknowledgeIntegrationTest extends IntegrationTestSupport {
      * '출력됐지만 미확인'이 먼저 돌면 '처음 확인'이 false가 된다).
      */
     private Long shipmentId() {
-        long id = data(get("/logistics/work-orders" + RANGE + "&partnerId=" + partner))
+        long id = data(get("/logistics/work-orders" + RANGE + "&partnerId=" + partner)).path("content")
                 .get(0).path("id").asLong();
         post("/logistics/work-orders/" + id + "/print/revert", Map.of("reason", "테스트 초기화"));
         post("/logistics/work-orders/" + id + "/acknowledge/revert", Map.of("reason", "테스트 초기화"));
@@ -95,7 +95,7 @@ class WorkRevertAcknowledgeIntegrationTest extends IntegrationTestSupport {
         // 미출력 필터에 다시 잡힌다 — 되돌렸는데 목록에 안 나오면 재출력을 할 수 없다.
         boolean found = false;
         for (JsonNode o : data(get("/logistics/work-orders" + RANGE
-                + "&partnerId=" + partner + "&printed=false"))) {
+                + "&partnerId=" + partner + "&printed=false")).path("content")) {
             found |= o.path("id").asLong() == id;
         }
         assertThat(found).as("미출력분 목록에 돌아온다").isTrue();
@@ -182,14 +182,14 @@ class WorkRevertAcknowledgeIntegrationTest extends IntegrationTestSupport {
 
         boolean found = false;
         for (JsonNode o : data(get("/logistics/work-orders" + RANGE + "&partnerId=" + partner
-                + "&printed=true&acknowledged=false"))) {
+                + "&printed=true&acknowledged=false")).path("content")) {
             found |= o.path("id").asLong() == id;
         }
         assertThat(found).as("출력됐고 미확인이면 잡힌다").isTrue();
 
         post("/logistics/work-orders/" + id + "/acknowledge", null);
         for (JsonNode o : data(get("/logistics/work-orders" + RANGE + "&partnerId=" + partner
-                + "&printed=true&acknowledged=false"))) {
+                + "&printed=true&acknowledged=false")).path("content")) {
             assertThat(o.path("id").asLong()).as("확인하면 빠진다").isNotEqualTo(id);
         }
     }

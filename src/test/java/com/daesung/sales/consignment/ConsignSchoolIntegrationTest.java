@@ -137,7 +137,7 @@ class ConsignSchoolIntegrationTest extends IntegrationTestSupport {
         school(school, "작업요청서학교");
         consignOut(school, 40);
 
-        JsonNode d = data(get("/logistics/work-orders" + RANGE + "&partnerId=" + partner));
+        JsonNode d = data(get("/logistics/work-orders" + RANGE + "&partnerId=" + partner)).path("content");
         JsonNode rows = d.isArray() ? d : d.path("content");
 
         JsonNode mine = null;

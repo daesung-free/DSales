@@ -101,7 +101,29 @@ public class WorkService {
         return rows;
     }
 
-    /** 작업요청서 — 발송 건 + 그 안에 담을 도서 목록(무엇을 몇 개 넣어라). */
+    /**
+     * 작업요청서 <b>목록(페이지)</b> — 발송 건 + 그 안에 담을 도서 목록.
+     *
+     * <p>‼️<b>전량 반환은 서버를 죽인다.</b> 이관 뒤 발송 48,755건에서 넓은 기간(2020~2035)을
+     * 부르면 <b>17,866건 / 11.6MB / 27.6초</b>였고, 배포 서버(힙 478MB)가
+     * <b>OutOfMemoryError</b> 로 내려앉았다(2026-10-19 실측). 화면이 기간을 비우면 그렇게 부른다.
+     * → 발송 건을 <b>페이지 단위로</b> 읽고, 줄도 그 페이지 몫만 모은다.
+     */
+    public org.springframework.data.domain.Page<WorkOrderResponse> workOrdersPage(
+            LocalDate from, LocalDate to, String tradeClass, Long partnerId,
+            Boolean printed, Boolean acknowledged, DeliveryType deliveryType,
+            org.springframework.data.domain.Pageable pageable) {
+        var page = shipmentRepository.findPageIncludingDeleted(from, to, tradeClass, partnerId,
+                toFlag(printed), toFlag(acknowledged),
+                deliveryType == null ? null : deliveryType.name(), pageable);
+        List<WorkOrderResponse> rows = buildWorkOrders(page.getContent(), from, to);
+        return new org.springframework.data.domain.PageImpl<>(rows, pageable, page.getTotalElements());
+    }
+
+    /**
+     * 작업요청서 <b>전량</b> — 송장 템플릿처럼 한 번에 다 필요한 경로만 쓴다.
+     * 화면 목록은 {@link #workOrdersPage} 를 쓸 것.
+     */
     public List<WorkOrderResponse> workOrders(LocalDate from, LocalDate to, String tradeClass,
                                               Long partnerId, Boolean printed, Boolean acknowledged,
                                               DeliveryType deliveryType) {
@@ -115,6 +137,12 @@ public class WorkService {
         List<Shipment> shipments = shipmentRepository.findAllIncludingDeleted(from, to, tradeClass,
                 partnerId, toFlag(printed), toFlag(acknowledged),
                 deliveryType == null ? null : deliveryType.name());
+        return buildWorkOrders(shipments, from, to);
+    }
+
+    /** 발송 건 묶음에 줄·신청번호를 붙여 응답으로 만든다(페이지·전량 공용). */
+    private List<WorkOrderResponse> buildWorkOrders(List<Shipment> shipments,
+                                                    LocalDate from, LocalDate to) {
         if (shipments.isEmpty()) {
             return List.of();
         }

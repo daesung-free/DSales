@@ -77,7 +77,10 @@ springdoc:
 
 logging:
   level:
-    org.hibernate.SQL: debug
+    # ‼️**기본은 끈다.** 배포 서버에서 켜 둔 채로 돌다가 로그가 **130만 줄**까지 쌓였고,
+    #   OOM 원인을 쫓을 때 정작 요청 기록이 SQL 더미에 묻혀 안 보였다(2026-10-19).
+    #   쿼리를 봐야 할 땐 실행 시 `--logging.level.org.hibernate.SQL=debug` 로 켠다.
+    org.hibernate.SQL: ${SQL_LOG_LEVEL:info}
 
 # 계산서(홈택스) 공급자(자사) 정보. ★실값은 배포 시 환경변수/시크릿으로 주입 — 소스에 커밋 금지.
 # 예: DAESUNG_SUPPLIER_BIZ-NO=... (2법인 지원은 후속: default/consign 분리)

@@ -71,7 +71,7 @@ class WorkOrderDeleteIntegrationTest extends IntegrationTestSupport {
     }
 
     private JsonNode row(String schoolCode) {
-        for (JsonNode r : data(get("/logistics/work-orders" + RANGE + "&partnerId=" + partner))) {
+        for (JsonNode r : data(get("/logistics/work-orders" + RANGE + "&partnerId=" + partner)).path("content")) {
             if (schoolCode.equals(r.path("schoolCode").asText())) {
                 return r;
             }

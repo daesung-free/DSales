@@ -298,7 +298,8 @@ class FieldFeedback1014IntegrationTest extends IntegrationTestSupport {
         long ms = (System.nanoTime() - t) / 1_000_000;
 
         assertThat(r.path("success").asBoolean()).as("조회: %s", r).isTrue();
-        assertThat(data(r)).as("이 기간엔 발송 건이 없다").isEmpty();
+        assertThat(data(r).path("content")).as("이 기간엔 발송 건이 없다").isEmpty();
+        assertThat(data(r).path("totalElements").asInt()).isZero();
         // 시드 규모에서는 전후 둘 다 빠르다 — 이 테스트가 지키는 것은 "발송이 없으면 끝낸다"는 순서다.
         assertThat(ms).as("발송 0건이면 즉시 끝난다(걸린 시간 %dms)", ms).isLessThan(5_000);
     }
@@ -314,7 +315,7 @@ class FieldFeedback1014IntegrationTest extends IntegrationTestSupport {
         // 요청 기간을 **아주 넓게** 준다(화면이 기간을 비우면 이렇게 부른다).
         // 줄 조회는 발송 건이 걸쳐 있는 날짜로 좁혀지지만, 내용은 빠지지 않아야 한다.
         JsonNode rows = data(get("/logistics/work-orders"
-                + "?fromDate=2000-01-01&toDate=2135-12-31&partnerId=" + p));
+                + "?fromDate=2000-01-01&toDate=2135-12-31&partnerId=" + p)).path("content");
         assertThat(rows).as("발송 건이 잡힌다").isNotEmpty();
 
         boolean found = false;

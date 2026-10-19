@@ -118,6 +118,56 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long> {
                                            @Param("acknowledged") Integer acknowledged,
                                            @Param("deliveryType") String deliveryType);
 
+    /**
+     * 위와 같은 조건의 <b>페이지</b>. 작업요청서 목록이 쓴다.
+     *
+     * <p>‼️<b>왜 페이징이 필요한가</b> — 이관 뒤 발송이 48,755건이 되자 넓은 기간(2020~2035)
+     * 조회가 <b>17,866건 / 응답 11.6MB / 27.6초</b>가 됐고, 배포 서버(힙 478MB)에서
+     * <b>OutOfMemoryError 로 앱이 죽었다</b>(2026-10-19 실측).
+     * 화면이 기간을 비우면 그 넓은 기간으로 부른다.
+     *
+     * <p>★전량을 못 읽게 막는 것이 요점이다. 줄(도서 목록)은 <b>이 페이지의 발송 건</b>에
+     * 대해서만 모으므로, 페이지가 작으면 줄 조회 범위도 같이 줄어든다.
+     */
+    @Query(value = """
+            SELECT s.* FROM shipment s
+              JOIN partners p ON p.id = s.partner_id
+             WHERE s.trade_date BETWEEN :from AND :to
+               AND (:tradeClass IS NULL OR s.trade_class = :tradeClass)
+               AND (CAST(:partnerId AS SIGNED) IS NULL OR p.id = :partnerId)
+               AND (CAST(:printed AS SIGNED) IS NULL
+                    OR (:printed = 1 AND s.printed_at IS NOT NULL)
+                    OR (:printed = 0 AND s.printed_at IS NULL))
+               AND (CAST(:acknowledged AS SIGNED) IS NULL
+                    OR (:acknowledged = 1 AND s.acknowledged_at IS NOT NULL)
+                    OR (:acknowledged = 0 AND s.acknowledged_at IS NULL))
+               AND (:deliveryType IS NULL OR s.delivery_type = :deliveryType)
+             ORDER BY s.trade_date DESC, p.code, s.school_code
+            """,
+            countQuery = """
+            SELECT COUNT(*) FROM shipment s
+              JOIN partners p ON p.id = s.partner_id
+             WHERE s.trade_date BETWEEN :from AND :to
+               AND (:tradeClass IS NULL OR s.trade_class = :tradeClass)
+               AND (CAST(:partnerId AS SIGNED) IS NULL OR p.id = :partnerId)
+               AND (CAST(:printed AS SIGNED) IS NULL
+                    OR (:printed = 1 AND s.printed_at IS NOT NULL)
+                    OR (:printed = 0 AND s.printed_at IS NULL))
+               AND (CAST(:acknowledged AS SIGNED) IS NULL
+                    OR (:acknowledged = 1 AND s.acknowledged_at IS NOT NULL)
+                    OR (:acknowledged = 0 AND s.acknowledged_at IS NULL))
+               AND (:deliveryType IS NULL OR s.delivery_type = :deliveryType)
+            """, nativeQuery = true)
+    org.springframework.data.domain.Page<Shipment> findPageIncludingDeleted(
+            @Param("from") LocalDate from,
+            @Param("to") LocalDate to,
+            @Param("tradeClass") String tradeClass,
+            @Param("partnerId") Long partnerId,
+            @Param("printed") Integer printed,
+            @Param("acknowledged") Integer acknowledged,
+            @Param("deliveryType") String deliveryType,
+            org.springframework.data.domain.Pageable pageable);
+
     /** 삭제된 건 포함 단건 조회 — 삭제 대상을 찾을 때 쓴다(@SQLRestriction 우회). */
     @Query(value = "SELECT * FROM shipment WHERE id = :id", nativeQuery = true)
     Optional<Shipment> findByIdIncludingDeleted(@Param("id") Long id);

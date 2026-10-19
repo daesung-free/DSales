@@ -59,7 +59,7 @@ class WorkIntegrationTest extends IntegrationTestSupport {
     @Test
     @DisplayName("매출등록이 발송 건을 만들고, 같은 단위면 하나로 묶인다")
     void 발송건_생성단위() {
-        JsonNode orders = data(get("/logistics/work-orders" + RANGE + "&partnerId=" + partner));
+        JsonNode orders = data(get("/logistics/work-orders" + RANGE + "&partnerId=" + partner)).path("content");
         // 물류는 품목이 아니라 상자 단위로 일한다 — 두 번 등록해도 발송은 분류당 하나다.
         assertThat(orders).hasSize(2);
 
@@ -78,7 +78,7 @@ class WorkIntegrationTest extends IntegrationTestSupport {
     @Test
     @DisplayName("출력 처리는 최초 시각만 남긴다 — 재출력해도 덮지 않는다")
     void 출력처리() {
-        Long id = data(get("/logistics/work-orders" + RANGE + "&partnerId=" + partner)).get(0).path("id").asLong();
+        Long id = data(get("/logistics/work-orders" + RANGE + "&partnerId=" + partner)).path("content").get(0).path("id").asLong();
 
         assertThat(data(post("/logistics/work-orders/" + id + "/print", null)).asBoolean())
                 .as("처음 출력").isTrue();
@@ -86,7 +86,7 @@ class WorkIntegrationTest extends IntegrationTestSupport {
                 .as("재출력은 기록을 바꾸지 않는다").isFalse();
 
         // 미출력 필터에서 빠져야 한다(레거시의 '출력 안 된 건만' 필터)
-        for (JsonNode o : data(get("/logistics/work-orders" + RANGE + "&partnerId=" + partner + "&printed=false"))) {
+        for (JsonNode o : data(get("/logistics/work-orders" + RANGE + "&partnerId=" + partner + "&printed=false")).path("content")) {
             assertThat(o.path("id").asLong()).isNotEqualTo(id);
         }
     }
@@ -94,7 +94,7 @@ class WorkIntegrationTest extends IntegrationTestSupport {
     @Test
     @DisplayName("발송정보는 지정한 항목만 바뀐다 — 박스만 고치다 발송일이 지워지면 안 된다")
     void 발송정보_부분입력() {
-        Long id = data(get("/logistics/work-orders" + RANGE + "&partnerId=" + partner)).get(0).path("id").asLong();
+        Long id = data(get("/logistics/work-orders" + RANGE + "&partnerId=" + partner)).path("content").get(0).path("id").asLong();
 
         put("/logistics/work-orders/" + id + "/shipping", Map.of("boxCount", 3, "sendMemo", "착불"));
         put("/logistics/work-orders/" + id + "/shipping", Map.of("sentDate", "2027-04-12"));

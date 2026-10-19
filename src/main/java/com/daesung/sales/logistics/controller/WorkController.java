@@ -63,7 +63,7 @@ public class WorkController {
                     · `printed=false`로 **아직 지시가 안 나간 건만** 볼 수 있다(레거시 동일 필터).
                     · 반품은 대상이 아니다(들어오는 물건이라 내보낼 작업이 없다).""")
     @GetMapping("/work-orders")
-    public ApiResponse<List<WorkOrderResponse>> workOrders(
+    public ApiResponse<com.daesung.sales.common.response.PageResponse<WorkOrderResponse>> workOrders(
             @Parameter(description = "거래일자 시작", required = true)
             @RequestParam(name = "fromDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
             @Parameter(description = "거래일자 종료", required = true)
@@ -76,9 +76,12 @@ public class WorkController {
                     + "printed=true & acknowledged=false 로 '지시는 나갔는데 아직 확인 안 된 건'을 추린다")
             @RequestParam(required = false) Boolean acknowledged,
             @Parameter(description = "발송구분 COURIER(택배)/FREIGHT(화물). 미지정=전체(미선택 건 포함)")
-            @RequestParam(required = false) DeliveryType deliveryType) {
-        return ApiResponse.success(workService.workOrders(
-                fromDate, toDate, tradeClass, partnerId, printed, acknowledged, deliveryType));
+            @RequestParam(required = false) DeliveryType deliveryType,
+            @org.springdoc.core.annotations.ParameterObject
+            com.daesung.sales.common.dto.PageRequestDto pageReq) {
+        return ApiResponse.success(com.daesung.sales.common.response.PageResponse.of(
+                workService.workOrdersPage(fromDate, toDate, tradeClass, partnerId,
+                        printed, acknowledged, deliveryType, pageReq.toPageable())));
     }
 
     @Operation(summary = "미확인 출고요청 건수",

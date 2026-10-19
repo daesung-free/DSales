@@ -107,7 +107,7 @@ class RemainingFeedbackIntegrationTest extends IntegrationTestSupport {
     }
 
     private int workOrderCount() {
-        JsonNode d = data(get("/logistics/work-orders" + RANGE + "&partnerId=" + partner));
+        JsonNode d = data(get("/logistics/work-orders" + RANGE + "&partnerId=" + partner)).path("content");
         JsonNode rows = d.isArray() ? d : d.path("content");
         return rows.size();
     }
