@@ -54,6 +54,42 @@ class CollectionAxisIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("★★음수 수금은 **화면에서 막는다** — DB 제약만 푼 것이다(V91)")
+    void 음수_수금은_API가_막는다() {
+        // V91 에서 `coll_amt >= 0` CHECK 를 풀었다. 레거시에 음수 수금이 252건 실재해서
+        // 이관이 조용히 그만큼을 버렸기 때문이다(합계가 36억 많게 나왔다).
+        // ‼️그렇다고 **새로 음수를 등록할 길을 연 것은 아니다.** 제약을 푼 이유는
+        //   과거 장부를 담기 위해서고, 등록 경로는 그대로 막혀 있어야 한다.
+        //   둘이 섞이면 "왜 화면에선 안 되는데 데이터엔 있나"를 아무도 설명 못 한다.
+        JsonNode r = post("/closing/collections", Map.of(
+                "collDate", "2035-07-20", "partnerId", partner,
+                "collKind", "도서대금", "collType", "CASH", "collAmt", -1000));
+        assertThat(r.path("success").asBoolean()).as("음수 등록은 거부: %s", r).isFalse();
+    }
+
+    @Test
+    @DisplayName("★입금구분은 정해진 값만 — 이름 붙인 CHECK 가 살아 있어야 한다(V91)")
+    void 입금구분은_정해진_값만() {
+        // V91 작업 중 자동이름(`collection_chk_1`)을 금액 제약으로 착각해 지웠다가
+        // **입금구분 제약을 날린 적이 있다**(배포 DB에서 실제로). 그래서 이름을 붙여
+        // 다시 세웠고(ck_collection_coll_type), 여기서 그게 살아 있는지 고정한다.
+        //
+        // ★한글 라벨('현금')은 **정상 입력이다** — CollectionType 이 코드명·한글을 둘 다 받는다.
+        //   그래서 여기서는 어느 쪽으로도 읽히지 않는 값을 쓴다.
+        JsonNode r = post("/closing/collections", Map.of(
+                "collDate", "2035-07-21", "partnerId", partner,
+                "collKind", "도서대금", "collType", "없는구분", "collAmt", 1000));
+        assertThat(r.path("success").asBoolean()).as("없는 입금구분은 거부: %s", r).isFalse();
+
+        // 한글 라벨은 그대로 들어가고 코드로 저장된다(위 규칙의 반대편을 함께 고정).
+        JsonNode ok = post("/closing/collections", Map.of(
+                "collDate", "2035-07-21", "partnerId", partner,
+                "collKind", "도서대금", "collType", "현금", "collAmt", 1000));
+        assertThat(ok.path("success").asBoolean()).as("한글 라벨은 허용: %s", ok).isTrue();
+        assertThat(data(ok).path("collType").asText()).isEqualTo("CASH");
+    }
+
+    @Test
     @DisplayName("수금구분 미입력이면 '도서대금' — 레거시가 화면에서 고정하던 값")
     void 수금구분_기본값() {
         JsonNode d = data(post("/closing/collections", Map.of(
