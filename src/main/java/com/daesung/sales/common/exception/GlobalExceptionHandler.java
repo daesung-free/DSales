@@ -158,6 +158,29 @@ public class GlobalExceptionHandler {
                 .body(ApiResponse.fail(ErrorResponse.of(ErrorCode.FORBIDDEN)));
     }
 
+    /**
+     * <b>클라이언트가 먼저 끊은 것</b>(Broken pipe) — 서버 오류가 아니다.
+     *
+     * <p>탭을 닫거나 다른 화면으로 넘어가거나 로딩 중 새로고침하면 난다. 응답을 쓰는 중에
+     * 받는 쪽이 사라진 것이고, 데이터는 멀쩡하다.
+     *
+     * <p>‼️<b>그런데 이걸 ERROR + 스택으로 찍고 있었다.</b> 사용자가 탭 하나 닫을 때마다
+     * 200줄이 쌓인다. 2026-10-19 메모리 부족 원인을 쫓을 때 <b>정작 필요한 기록이
+     * 이런 스택에 묻혀 안 보였다</b>(로그가 130만 줄이었다).
+     *
+     * <p>★이미 끊긴 연결이라 <b>응답 본문을 쓸 수 없다</b>. 쓰려 하면 같은 예외가 다시 난다.
+     * 그래서 본문 없이 상태코드만 돌려준다(어차피 아무도 안 받는다).
+     */
+    @ExceptionHandler({org.apache.catalina.connector.ClientAbortException.class,
+            org.springframework.web.context.request.async.AsyncRequestNotUsableException.class})
+    public ResponseEntity<Void> handleClientAbort(Exception e) {
+        // ‼️예외 메시지를 로그 인자로 넘기지 않는다 — 정적분석(CRLF_INJECTION_LOGS)에 걸린다.
+        //   끊긴 이유는 어차피 하나뿐이라(상대가 사라짐) 종류만 남기면 충분하다.
+        log.debug("클라이언트가 응답 수신을 중단했습니다(정상 — 탭 닫기·이동·새로고침): {}",
+                e.getClass().getSimpleName());
+        return ResponseEntity.status(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE).build();
+    }
+
     /** 처리되지 않은 그 외 예외. */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<ApiResponse<Void>> handleEtc(Exception e) {
