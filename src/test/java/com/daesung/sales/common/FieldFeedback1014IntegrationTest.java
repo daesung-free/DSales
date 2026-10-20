@@ -373,6 +373,86 @@ class FieldFeedback1014IntegrationTest extends IntegrationTestSupport {
         }
     }
 
+    @Test
+    @DisplayName("★★[10/20 B-1] 바뀐 도서만 받는다 — 전량을 30분마다 다시 받지 않아도 된다")
+    void 바뀐_도서만() {
+        // 기준 시각 전에 도서 하나를 만들어 둔다.
+        Map<String, Object> before = new HashMap<>();
+        before.put("code", "UPD-OLD" + SFX);
+        before.put("name", "기준 전 도서");
+        before.put("contentType", "SELF");
+        before.put("price", 1000);
+        before.put("catCode", "U2108A01");
+        before.put("catName", "갱신검증분류");
+        long oldId = createId("/masters/products", before);
+
+        JsonNode oldRow = findProduct(oldId);
+        // ★한 번도 안 고친 도서도 기준에 걸려야 한다 — 서버가 등록시각으로 보기 때문이다.
+        //   updatedAt 만 보면 **새로 등록된 도서가 영영 안 잡힌다**.
+        String since = oldRow.path("updatedAt").isNull() || oldRow.path("updatedAt").asText().isEmpty()
+                ? null : oldRow.path("updatedAt").asText();
+
+        // 기준 시각 = 아주 과거로 두면 둘 다 잡혀야 하고, 아주 미래면 아무것도 안 잡혀야 한다.
+        assertThat(ids(get("/masters/products?size=200&updatedSince=2000-01-01T00:00:00")))
+                .as("과거 기준이면 잡힌다").contains(oldId);
+        assertThat(ids(get("/masters/products?size=200&updatedSince=2999-01-01T00:00:00")))
+                .as("미래 기준이면 아무것도 안 잡힌다").isEmpty();
+        assertThat(since).as("응답에 updatedAt 칸이 있다(없으면 프론트가 기준을 못 만든다)").isNotNull();
+    }
+
+    @Test
+    @DisplayName("★[10/20 B-2] view=slim 은 가볍게, 기본은 그대로 — 말없이 칸을 빼면 다른 화면이 빈다")
+    void 가벼운_도서목록() {
+        // ‼️값이 비면 Jackson 이 칸을 통째로 생략한다 — 아무 도서나 집으면 "칸이 없다"로 보인다.
+        //   그래서 칸을 **다 채운 도서**를 만들어 그걸로 본다.
+        Map<String, Object> b = new HashMap<>(line(1));
+        b.remove("productId");
+        b.remove("shipmentType");
+        b.remove("qty");
+        b.put("code", "SLIM" + SFX);
+        b.put("name", "가벼운응답 검증도서");
+        b.put("contentType", "SELF");
+        b.put("price", 12000);
+        b.put("supplyRate", 70);
+        b.put("catCode", "S2108A01");
+        b.put("catName", "가벼운응답분류");
+        b.put("salesDivision", "교재");
+        b.put("grade", "3");
+        createId("/masters/products", b);
+
+        String q = "&keyword=SLIM" + SFX;
+        JsonNode full = data(get("/masters/products?size=5" + q)).path("content").get(0);
+        JsonNode slim = data(get("/masters/products?size=5&view=slim" + q)).path("content").get(0);
+
+        // 화면이 쓰는 칸은 slim 에도 있어야 한다.
+        for (String f : List.of("id", "code", "name", "catCode", "salesDivision",
+                "useYn", "price", "taxFree", "supplyRate", "contentType",
+                "priceVisible", "stockManaged", "updatedAt")) {
+            assertThat(slim.has(f)).as("slim 에 %s 가 있어야 한다: %s", f, slim).isTrue();
+        }
+        // 기본 응답은 칸이 줄지 않았다(다른 화면 보호).
+        assertThat(full.size()).as("기본 응답이 slim 보다 칸이 많다").isGreaterThan(slim.size());
+        assertThat(full.has("webVisible")).as("기본에는 남아 있다").isTrue();
+        assertThat(slim.has("webVisible")).as("slim 에서는 뺀다").isFalse();
+    }
+
+    private java.util.List<Long> ids(JsonNode res) {
+        java.util.List<Long> out = new java.util.ArrayList<>();
+        for (JsonNode r : data(res).path("content")) {
+            out.add(r.path("id").asLong());
+        }
+        return out;
+    }
+
+    private JsonNode findProduct(long id) {
+        for (JsonNode r : data(get("/masters/products?size=200")).path("content")) {
+            if (r.path("id").asLong() == id) {
+                return r;
+            }
+        }
+        throw new AssertionError("도서 없음: " + id);
+    }
+
     private Long partner(String tag) {
         return createId("/masters/clients",
                 Map.of("code", tag + SFX, "name", "현장검증" + tag, "type", "NORMAL"));

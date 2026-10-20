@@ -9,6 +9,7 @@ import com.daesung.sales.product.dto.ProductFlagBulkRequest;
 import com.daesung.sales.product.dto.ProductFlagBulkResult;
 import com.daesung.sales.product.dto.ProductCreateRequest;
 import com.daesung.sales.product.dto.ProductResponse;
+import com.daesung.sales.product.dto.ProductSlimResponse;
 import com.daesung.sales.product.dto.ProductUpdateRequest;
 import com.daesung.sales.product.service.ProductService;
 import io.swagger.v3.oas.annotations.Operation;
@@ -17,6 +18,7 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springdoc.core.annotations.ParameterObject;
+import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -41,7 +43,7 @@ public class ProductController {
 
     @Operation(summary = "상품 목록 조회", description = "keyword(코드/명 부분일치)로 검색, 페이징·정렬 지원")
     @GetMapping
-    public ApiResponse<PageResponse<ProductResponse>> list(
+    public ApiResponse<PageResponse<?>> list(
             @Parameter(description = "검색어(상품코드 또는 상품명 부분일치)") @RequestParam(required = false) String keyword,
             @Parameter(description = """
                     수불부노출 필터 — 제품수불부(11p) 집계 대상만/제외만 보기.
@@ -51,8 +53,35 @@ public class ProductController {
                     단가노출 필터 — 거래처별 단가를 매기는 도서만/제외만 보기.
                     수불부엔 안 나와도 단가는 매기는 상품이 있어 수불부노출과 따로 둔다.""")
             @RequestParam(required = false) Boolean priceVisible,
+            @Parameter(description = """
+                    **이 시각 이후 등록·수정된 도서만**(yyyy-MM-dd'T'HH:mm:ss).
+                    프론트 요청 2026-10-20 B-1 — 이관 뒤 14,808권(약 5.4MB)이라 전량을 30분마다
+                    다시 받고 있었다. 지난번 받은 응답의 `updatedAt` 중 **가장 큰 값**을 그대로 넣으면
+                    그 뒤 바뀐 것만 온다. 사용중지(useYn=false)도 수정이라 여기 잡힌다.
+
+                    ‼️**삭제(논리삭제)는 이걸로 알 수 없다** — 목록에서 아예 빠지기 때문이다.
+                      삭제분까지 따라가야 하면 별도 경로가 필요하다(협의 중).
+                    ‼️한 번도 안 고친 도서는 `updatedAt` 이 비어 있어, 서버는 **등록시각**으로 본다.
+                      그래서 새로 등록된 도서도 빠짐없이 잡힌다.""")
+            @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME) java.time.LocalDateTime updatedSince,
+            @Parameter(description = """
+                    `slim`(소문자 그대로) 을 주면 **화면이 쓰는 칸만** 담아 가볍게 보낸다(프론트 요청 2026-10-20 B-2).
+                    담는 칸: id·code·name·catCode·catName·majorCategoryName·set·salesDivision·
+                    useYn·price·taxFree·supplyRate·contentType·grade·priceVisible·stockManaged·updatedAt.
+                    ★기본(미지정)은 **전체 칸 그대로**다 — 다른 화면이 쓰는 칸을 말없이 빼면 그쪽이 깨진다.""",
+                    schema = @io.swagger.v3.oas.annotations.media.Schema(allowableValues = {"slim"}))
+            @RequestParam(required = false) String view,
             @ParameterObject PageRequestDto pageReq) {
-        return ApiResponse.success(productService.findAll(keyword, ledgerVisible, priceVisible, pageReq.toPageable()));
+        var page = productService.findAll(
+                keyword, ledgerVisible, priceVisible, updatedSince, pageReq.toPageable());
+        // ‼️대소문자를 접지 않고 **정확히** 비교한다. 접으면 정적분석(IMPROPER_UNICODE)에 걸리고,
+        //   로케일을 명시해도 마찬가지다 — 규칙이 '대소문자 변환 후 분기' 자체를 본다.
+        //   값은 우리가 정하는 것이라(화면이 보내는 고정 문자열) 접을 이유가 없다.
+        if ("slim".equals(view)) {
+            return ApiResponse.success(page.map(ProductSlimResponse::from));
+        }
+        return ApiResponse.success(page);
     }
 
     @Operation(summary = "도서 목록 엑셀 다운로드", description = "검색조건 전체를 xlsx로(도서관리 기본정보).")

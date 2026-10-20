@@ -66,7 +66,12 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
 
     /**
      * 도서 목록 검색 — 검색어(코드·상품명) + 수불부노출 + 단가노출.
-     * 세 조건 모두 null이면 전체다. 노출 플래그는 <b>서로 다른 축</b>이라 각각 받는다.
+     * 모든 조건이 null이면 전체다. 노출 플래그는 <b>서로 다른 축</b>이라 각각 받는다.
+     *
+     * <p>★{@code updatedSince} — <b>그 시각 이후 등록·수정된 것만</b>(프론트 요청 2026-10-20 B-1).
+     * 이관 뒤 도서가 14,808권(약 5.4MB)이 되어 화면이 30분마다 전량을 다시 받고 있었다.
+     * ‼️{@code coalesce(updatedAt, createdAt)} 로 본다 — 등록만 하고 한 번도 안 고친 도서는
+     * {@code updatedAt} 이 비어 있어서, 그것만 보면 <b>새로 등록된 도서가 영영 안 잡힌다</b>.
      */
     @org.springframework.data.jpa.repository.Query("""
             select p from Product p
@@ -74,10 +79,13 @@ public interface ProductRepository extends JpaRepository<Product, Long> {
                     or lower(p.name) like lower(concat('%', :keyword, '%')))
                and (:ledgerVisible is null or p.ledgerVisible = :ledgerVisible)
                and (:priceVisible is null or p.priceVisible = :priceVisible)
+               and (:updatedSince is null
+                    or coalesce(p.updatedAt, p.createdAt) >= :updatedSince)
             """)
     org.springframework.data.domain.Page<Product> search(
             @org.springframework.data.repository.query.Param("keyword") String keyword,
             @org.springframework.data.repository.query.Param("ledgerVisible") Boolean ledgerVisible,
             @org.springframework.data.repository.query.Param("priceVisible") Boolean priceVisible,
+            @org.springframework.data.repository.query.Param("updatedSince") java.time.LocalDateTime updatedSince,
             org.springframework.data.domain.Pageable pageable);
 }

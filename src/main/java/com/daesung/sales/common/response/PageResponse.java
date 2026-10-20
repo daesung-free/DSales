@@ -56,6 +56,15 @@ public class PageResponse<T> {
                 (long) (safePage + 1) * safeSize >= totalElements);
     }
 
+    /**
+     * 내용만 다른 모양으로 바꾼다 — 페이지 정보(쪽·건수)는 그대로다.
+     * 같은 조회를 '가벼운 응답'으로도 내보낼 때 쓴다(도서 목록 {@code view=slim}).
+     */
+    public <R> PageResponse<R> map(java.util.function.Function<? super T, ? extends R> mapper) {
+        return new PageResponse<>(content.stream().map(mapper).map(x -> (R) x).toList(),
+                page, size, totalElements, totalPages, last);
+    }
+
     public static <T> PageResponse<T> of(Page<T> page) {
         return new PageResponse<>(
                 page.getContent(),

@@ -51,8 +51,16 @@ public class ProductService {
      */
     public PageResponse<ProductResponse> findAll(String keyword, Boolean ledgerVisible,
                                                  Boolean priceVisible, Pageable pageable) {
+        return findAll(keyword, ledgerVisible, priceVisible, null, pageable);
+    }
+
+    /** 위와 같되 {@code updatedSince} 이후 등록·수정된 것만(B-1). */
+    public PageResponse<ProductResponse> findAll(String keyword, Boolean ledgerVisible,
+                                                 Boolean priceVisible,
+                                                 java.time.LocalDateTime updatedSince,
+                                                 Pageable pageable) {
         String kw = (keyword == null || keyword.isBlank()) ? null : keyword.trim();
-        Page<Product> page = productRepository.search(kw, ledgerVisible, priceVisible, pageable);
+        Page<Product> page = productRepository.search(kw, ledgerVisible, priceVisible, updatedSince, pageable);
         // 세부구분 마스터는 몇 줄짜리라 한 번에 읽어 맵으로 쓴다 — 상품마다 조회하면 목록 한 장에 수백 번이 된다.
         Map<String, SalesDivision> divisions = divisionsByCode();
         return PageResponse.of(page.map(p -> ProductResponse.from(p, divisions.get(p.getSalesDivision()))));
