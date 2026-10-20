@@ -305,7 +305,12 @@ public class WorkController {
         // ★여기서는 **만든 목록을 자른다**(DB 페이징이 아니다). workResults 가 출고창고 필터를
         //   조회 뒤에 거르기 때문이다 — DB에서 끊으면 걸러진 만큼 페이지가 비어 건수가 틀어진다.
         //   JSON 을 13MB 만들던 것이 메모리를 터뜨린 쪽이라, 자르는 것만으로 그 위험은 사라진다.
-        //   (목록 생성 자체를 줄이는 것은 별도 과제로 남긴다.)
+        //
+        // ★목록 생성 자체는 그대로지만 **실측상 문제가 되지 않는다**(2026-10-20, 배포 DB 46,232건) —
+        //   당월 0.04초 · 당해 0.70초 · 2년 2.93초 · 전기간(15년) 7.40초.
+        //   15년치를 한 번에 부르는 조회는 실무에 없고, 그마저도 메모리는 터지지 않는다.
+        //   DB 페이징으로 더 내리려면 출고창고 필터(조회 뒤 판정)를 상관 서브쿼리로 바꿔야 하는데,
+        //   같은 모양을 판매채널에서 했다가 0.08초 → 45초가 된 적이 있어 여기서는 하지 않는다.
         List<WorkResultRow> all = Keywords.filter(
                 workService.workResults(fromDate, toDate, tradeClass, partnerId, printed, acknowledged, warehouseType),
                 keyword,
