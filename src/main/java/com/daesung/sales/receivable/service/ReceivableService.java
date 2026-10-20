@@ -55,6 +55,7 @@ public class ReceivableService {
     private final SequenceService sequenceService;
     private final ReceivableCarryforwardRepository carryforwardRepository;
     private final SaleRepository saleRepository;
+    private final com.daesung.sales.inventory.repository.InventoryTxnRepository inventoryTxnRepository;
     private final PartnerRepository partnerRepository;
     private final PeriodLockService periodLockService;
     private final com.daesung.sales.common.audit.CurrentAuditor currentAuditor;
@@ -434,6 +435,16 @@ public class ReceivableService {
         Map<Long, List<ArStatusResponse.CategoryBreakdown>> byCat =
                 toCategoryMap(saleRepository.receivableByPartnerAndCategory(from, to, partnerId));
 
+        // ★매입(입고)도 그 거래처 원장에 들어간다 — 레거시 외상매출현황조회.vb:676 의 공식이
+        //   `이월 + 매출 + 반품 + (입고 + 취소) − 수금` 이다. 빼면 매입처가 "수금만 있는"
+        //   거래처로 보인다(프론트 실측 2026-10-20 A-1: 25곳이 매출 0 · 수금 130~197억).
+        //   ‼️이월에도 같은 기준을 적용한다 — 안 그러면 연도 사이가 이어지지 않는다(A-2).
+        Map<Long, Long> purchase = toAmountMap(
+                inventoryTxnRepository.purchaseByPartner(from, to, partnerId));
+        Map<Long, Long> priorPurchase = (from.getDayOfYear() == 1) ? Map.of()
+                : toAmountMap(inventoryTxnRepository.purchaseByPartner(
+                        LocalDate.of(from.getYear(), 1, 1), from.minusDays(1), partnerId));
+
         Set<Long> ids = new LinkedHashSet<>();
         ids.addAll(carry.keySet());
         ids.addAll(sales.keySet());
@@ -442,12 +453,16 @@ public class ReceivableService {
         //   안 넣으면 "7월부터 조회"했을 때 상반기에만 거래한 미수 거래처가 목록에서 사라진다.
         ids.addAll(priorSales.keySet());
         ids.addAll(priorColl.keySet());
+        // 매입만 있는 거래처(매입처)도 원장에 서야 한다 — 빼면 그 거래처가 목록에서 사라진다.
+        ids.addAll(purchase.keySet());
+        ids.addAll(priorPurchase.keySet());
 
         Map<Long, Partner> partners = new HashMap<>();
         partnerRepository.findAllById(ids).forEach(p -> partners.put(p.getId(), p));
 
         List<ArStatusResponse.Row> rows = new ArrayList<>();
         long tOpen = 0, tSale = 0, tRet = 0, tTax = 0, tGen = 0, tColl = 0, tBal = 0, tTeacher = 0, tTeacherQty = 0;
+        long tPurchase = 0;
         long tSaleQty = 0, tRetQty = 0;
         for (Long pid : ids) {
             Partner p = partners.get(pid);
@@ -456,11 +471,13 @@ public class ReceivableService {
             }
             long opening = carry.getOrDefault(pid, 0L)
                     + priorSales.getOrDefault(pid, new long[8])[0]
+                    + priorPurchase.getOrDefault(pid, 0L)
                     - priorColl.getOrDefault(pid, 0L);
             // [gen, saleAmt, returnAmt, tax, teacherAmt, teacherQty, saleQty, returnQty]
             long[] s = sales.getOrDefault(pid, new long[8]);
             long collected = coll.getOrDefault(pid, 0L);
-            long balance = opening + s[0] - collected;
+            long purchased = purchase.getOrDefault(pid, 0L);
+            long balance = opening + s[0] + purchased - collected;
 
             Long assureAmount = p.getAssureAmount();
             Double ratio = null;
@@ -470,17 +487,18 @@ public class ReceivableService {
                 level = ratio >= 100 ? "OVER" : ratio >= 70 ? "WARN" : ratio > 50 ? "WATCH" : "NORMAL";
             }
             rows.add(new ArStatusResponse.Row(pid, p.getCode(), p.getName(), p.getBossName(),
-                    opening, s[6], s[1], s[7], s[2], s[3], s[0], collected, balance, s[4], s[5],
+                    opening, s[6], s[1], s[7], s[2], s[3], s[0], purchased, collected, balance, s[4], s[5],
                     byCat.getOrDefault(pid, List.of()),
                     assureAmount, ratio, p.getAssureExpiry(), p.getAssureNote(), level));
 
             tOpen += opening; tSale += s[1]; tRet += s[2]; tTax += s[3]; tGen += s[0];
             tColl += collected; tBal += balance; tTeacher += s[4]; tTeacherQty += s[5];
+            tPurchase += purchased;
             tSaleQty += s[6]; tRetQty += s[7];
         }
         rows.sort((a, b) -> a.partnerCode().compareTo(b.partnerCode()));
         ArStatusResponse.Row total = new ArStatusResponse.Row(null, "합계", null, null,
-                tOpen, tSaleQty, tSale, tRetQty, tRet, tTax, tGen, tColl, tBal, tTeacher, tTeacherQty,
+                tOpen, tSaleQty, tSale, tRetQty, tRet, tTax, tGen, tPurchase, tColl, tBal, tTeacher, tTeacherQty,
                 sumCategories(byCat.values()),
                 null, null, null, null, null);
         // ★이월 스냅샷이 없는 연도는 **없다고 말한다**. 예전엔 조용히 0으로 나가서,

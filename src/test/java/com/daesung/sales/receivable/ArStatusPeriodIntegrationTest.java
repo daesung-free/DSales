@@ -135,6 +135,42 @@ class ArStatusPeriodIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("★★매입(입고)도 그 거래처 원장에 선다 — 매입처가 '수금만 있는 곳'으로 보이면 안 된다")
+    void 매입도_원장에_선다() {
+        // 레거시 외상매출현황조회.vb:676 — `이월 + 매출 + 반품 + (입고 + 취소) − 수금 = 잔액`.
+        // 매입을 빼면 매입처가 매출 0 · 수금만 있는 거래처로 보여 잔액이 크게 음수가 된다
+        // (프론트 실측 2026-10-20 A-1: 25곳이 매출 0 · 수금 130~197억, 잔액 −190억).
+        Long buyFrom = createId("/masters/clients",
+                Map.of("code", "APV" + SFX, "name", "매입처", "type", "NORMAL"));
+
+        // 매입입고 300부 × 단가 1,000 = 300,000
+        JsonNode in = post("/stock/inbound", Map.of(
+                "processedDate", YEAR + "-03-02", "supplierClientId", buyFrom,
+                "inboundType", "PURCHASE", "destinationWarehouseId", warehouse,
+                "items", List.of(Map.of("productId", product, "unitCost", 1000, "qty", 300))));
+        assertThat(in.path("success").asBoolean()).as("매입입고: %s", in).isTrue();
+
+        // 그 해 말에 매입대금을 정산한다(레거시가 하던 그대로 — 연 1건).
+        JsonNode c = post("/closing/collections", Map.of(
+                "collDate", YEAR + "-12-30", "partnerId", buyFrom,
+                "collType", "CASH", "collAmt", 300_000));
+        assertThat(c.path("success").asBoolean()).as("정산 수금: %s", c).isTrue();
+
+        JsonNode row = null;
+        for (JsonNode r : data(get("/closing/ar-status?fromDate=" + YEAR + "-01-01&toDate="
+                + YEAR + "-12-31&partnerId=" + buyFrom)).path("rows")) {
+            if (r.hasNonNull("partnerId") && r.path("partnerId").asLong() == buyFrom) {
+                row = r;
+            }
+        }
+        assertThat(row).as("매입만 있는 거래처도 목록에 선다").isNotNull();
+        assertThat(row.path("saleAmount").asLong()).as("매출은 없다").isZero();
+        assertThat(row.path("purchaseAmount").asLong()).as("매입액이 보인다").isEqualTo(300_000);
+        // ★★매입을 안 세면 여기가 −300,000 이 된다. 그게 A-1 에서 본 그림이다.
+        assertThat(row.path("balance").asLong()).as("매입과 정산이 상계돼 0").isZero();
+    }
+
+    @Test
     @DisplayName("★미수금현황과 외상매출장이 같은 잔액을 준다 — 갈리면 둘 다 못 믿는다")
     void 두_화면이_같은_값() {
         String from = YEAR + "-07-01";

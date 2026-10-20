@@ -484,4 +484,34 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
             @Param("anyWarehouse") boolean anyWarehouse,
             @Param("warehouseIds") java.util.Collection<Long> warehouseIds,
             org.springframework.data.domain.Pageable pageable);
+
+    /**
+     * <b>거래처별 매입액</b>(기간). 미수금현황·외상매출장이 쓴다.
+     *
+     * <p>★<b>왜 채권 화면에 매입이 들어가나</b> — 레거시 외상매출현황이 그렇게 계산한다.
+     * {@code 외상매출현황조회.vb:676} —
+     * <pre>이월 + 매출 + 반품 + (입고 + 취소) − 수금 = 잔액</pre>
+     * 화면에 `입고수량`·`입고금액`·`실입고금액` 컬럼이 따로 있고, 한 거래처 원장에
+     * <b>받을 돈(매출)과 줄 돈(매입)을 함께</b> 본다.
+     *
+     * <p>‼️이걸 빼면 <b>매입처가 "수금만 있고 매출이 없는" 이상한 거래처</b>로 보인다.
+     * 실제로 그랬다(프론트 실측 2026-10-20 A-1) — 2022~2025 해마다 25곳 안팎이
+     * 매출 0에 수금 130~197억으로 찍혀 잔액이 −190억까지 내려갔다.
+     * 그 수금은 <b>그 해 매입대금 정산</b>이고(금액이 그 해 입고액과 거의 일치), 짝이 되는
+     * 매입이 없으니 한쪽 다리로 서 있던 것이다.
+     *
+     * <p>반환 Object[]: [partnerId, 매입액].
+     */
+    @Query(value = """
+            SELECT partner_id, COALESCE(SUM(qty * COALESCE(unit_cost, 0)), 0)
+            FROM inventory_txn
+            WHERE deleted_at IS NULL AND partner_id IS NOT NULL
+              AND txn_type = 'INBOUND' AND inbound_type = 'PURCHASE'
+              AND trade_date BETWEEN :fromDate AND :toDate
+              AND (CAST(:partnerId AS SIGNED) IS NULL OR partner_id = :partnerId)
+            GROUP BY partner_id
+            """, nativeQuery = true)
+    List<Object[]> purchaseByPartner(@Param("fromDate") LocalDate fromDate,
+                                     @Param("toDate") LocalDate toDate,
+                                     @Param("partnerId") Long partnerId);
 }

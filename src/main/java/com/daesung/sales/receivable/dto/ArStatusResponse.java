@@ -37,8 +37,14 @@ public record ArStatusResponse(
             @Schema(description = "기간 반품액") long returnAmount,
             @Schema(description = "기간 세액(순)") long tax,
             @Schema(description = "기간 채권발생(매출+세액−반품)") long receivableGen,
+            @Schema(description = """
+                    기간 **매입액**(입고). 레거시 외상매출현황의 `입고금액` 칸이다 —
+                    한 거래처 원장에 받을 돈(매출)과 줄 돈(매입)을 함께 본다
+                    (외상매출현황조회.vb:676 `이월+매출+반품+(입고+취소)−수금=잔액`).
+                    매입처는 이 칸으로 늘고 수금으로 준다.""")
+            long purchaseAmount,
             @Schema(description = "기간 수금") long collected,
-            @Schema(description = "잔액(이월+채권발생−수금)") long balance,
+            @Schema(description = "잔액(이월+채권발생+매입−수금)") long balance,
             @Schema(description = """
                     교사용(증정 포함) 공급가액. ‼️무가라 **채권에는 들어가지 않는다** —
                     잔액·채권발생과 더하지 말 것. "이 거래처에 무가로 얼마가 나갔나"를 보는 칸이다.""")
