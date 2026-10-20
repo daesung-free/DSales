@@ -57,7 +57,8 @@ public class PageRequestDto {
         int p = (page == null || page < 0) ? 0 : page;
         int s = (size == null || size < 1) ? 20 : Math.min(size, MAX_SIZE);
         if (sort == null || sort.isEmpty()) {
-            return PageRequest.of(p, s);
+            // ★정렬을 안 줘도 **순서를 고정한다**(아래 TIEBREAK 주석 참고).
+            return PageRequest.of(p, s, Sort.by(Sort.Order.asc(TIEBREAK)));
         }
         // ★보낸 순서가 곧 우선순위다. 화면의 '거래처 → 거래일' 같은 2단 정렬이 이것으로 표현된다.
         //
@@ -97,8 +98,28 @@ public class PageRequestDto {
             }
             orders.add(new Sort.Order(direction, property));
         }
-        return orders.isEmpty() ? PageRequest.of(p, s) : PageRequest.of(p, s, Sort.by(orders));
+        // ★★**마지막에 id 를 덧붙인다 — 페이지 경계에서 행이 겹치거나 빠지는 것을 막는다.**
+        //
+        // 거래일자처럼 **같은 값이 많은 축**으로만 정렬하면 동순위 행들의 순서가 조회마다
+        // 달라질 수 있다(DB 가 보장하지 않는다). 그러면 1쪽 끝과 2쪽 처음에 같은 행이
+        // 두 번 나오고 다른 행은 아예 안 나온다.
+        //   실측(프론트 2026-10-20 C-1): 작업요청서 2026년 23쪽을 받으면 **매번 한 건이
+        //   두 쪽에 겹치고 한 건이 빠졌다**(2회 재현). 합계는 맞는데 목록이 틀린다 —
+        //   눈에 잘 안 띄고, 엑셀로 내리면 그대로 굳는다.
+        //
+        // id 는 유일하므로 맨 뒤에 한 번만 붙이면 순서가 완전히 결정된다.
+        // ‼️이미 id 로 정렬 중이면 덧붙이지 않는다(중복 정렬은 무의미하고 쿼리만 길어진다).
+        // ‼️별칭 검사를 거치지 않는다 — 사용자 입력이 아니라 **우리가 넣는 값**이다.
+        //   (네이티브 페이징 쿼리는 `findPageIncludingDeleted` 하나뿐이고 `SELECT s.*` 라
+        //    `id` 가 출력 컬럼으로 해석된다 — 모호하지 않다.)
+        if (orders.stream().noneMatch(o -> TIEBREAK.equals(o.getProperty()))) {
+            orders.add(Sort.Order.asc(TIEBREAK));
+        }
+        return PageRequest.of(p, s, Sort.by(orders));
     }
+
+    /** 순서를 확정짓는 마지막 정렬 항목. 모든 엔티티가 가진 유일값이다. */
+    private static final String TIEBREAK = "id";
 
     private static boolean isDirection(String token) {
         return "asc".equalsIgnoreCase(token) || "desc".equalsIgnoreCase(token);

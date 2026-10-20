@@ -285,7 +285,7 @@ public class WorkController {
                       임의로 만들면 화면 의미가 달라져, 발주처 확인 후 붙일 항목으로 남겨 두었다.
                       '확인'과 섞지 말 것 — 축이 다르다.""")
     @GetMapping("/work-results")
-    public ApiResponse<List<WorkResultRow>> workResults(
+    public ApiResponse<com.daesung.sales.common.response.PageResponse<WorkResultRow>> workResults(
             @RequestParam(name = "fromDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
             @RequestParam(name = "toDate") @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @RequestParam(required = false) String tradeClass,
@@ -296,12 +296,27 @@ public class WorkController {
             @Parameter(description = "출고창고 구분 MAIN(본사물류창고)/CONSIGN(위탁창고). 미지정=전체(관리자만)")
             @RequestParam(required = false) WarehouseType warehouseType,
             @Parameter(description = "키워드 — 코드·명칭을 함께 훑는다(부분일치)")
-            @RequestParam(required = false) String keyword) {
-        return ApiResponse.success(Keywords.filter(
+            @RequestParam(required = false) String keyword,
+            @org.springdoc.core.annotations.ParameterObject
+            com.daesung.sales.common.dto.PageRequestDto pageReq) {
+        // ‼️전량 반환은 서버를 죽인다 — 2012~2026 전 기간이 **13.1MB · 7.8초**였다
+        //   (2026-10-20 실측, 배포 서버 힙 478MB). 작업요청서와 같은 이유다.
+        //
+        // ★여기서는 **만든 목록을 자른다**(DB 페이징이 아니다). workResults 가 출고창고 필터를
+        //   조회 뒤에 거르기 때문이다 — DB에서 끊으면 걸러진 만큼 페이지가 비어 건수가 틀어진다.
+        //   JSON 을 13MB 만들던 것이 메모리를 터뜨린 쪽이라, 자르는 것만으로 그 위험은 사라진다.
+        //   (목록 생성 자체를 줄이는 것은 별도 과제로 남긴다.)
+        List<WorkResultRow> all = Keywords.filter(
                 workService.workResults(fromDate, toDate, tradeClass, partnerId, printed, acknowledged, warehouseType),
                 keyword,
                 r -> new Object[]{r.partnerCode(), r.partnerName(), r.schoolCode(), r.schoolName(),
-                        r.warehouseName()}));
+                        r.warehouseName()});
+        var pageable = pageReq.toPageable();
+        int from = (int) Math.min(pageable.getOffset(), all.size());
+        int to = Math.min(from + pageable.getPageSize(), all.size());
+        return ApiResponse.success(com.daesung.sales.common.response.PageResponse.of(
+                new org.springframework.data.domain.PageImpl<>(
+                        all.subList(from, to), pageable, all.size())));
     }
 
     @Operation(summary = "작업결과 엑셀 다운로드")

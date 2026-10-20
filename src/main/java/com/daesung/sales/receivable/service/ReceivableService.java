@@ -546,6 +546,46 @@ public class ReceivableService {
     }
 
     /**
+     * 외상매출장 전체 — <b>거래처 단위 페이지</b>.
+     *
+     * <p>‼️<b>전량 반환은 서버를 죽인다.</b> 이관 뒤 2012~2026 전 기간을 부르면
+     * <b>응답 127MB · 56.9초</b>였다(2026-10-20 실측). 배포 서버 힙이 478MB 라
+     * 이 호출 <b>한 번으로</b> OutOfMemoryError 가 난다 — 10/19 에 실제로 겪은 그것이다.
+     *
+     * <p>★<b>거래처 단위로 자른다.</b> 한 거래처의 원장(이월·명세·일계·누계)은 통째로 유지된다.
+     * 명세 줄 단위로 자르면 누계와 일계가 중간에서 끊겨 숫자가 맞지 않는다.
+     *
+     * <p>일괄 메일·PDF 는 전 거래처가 필요하므로 {@link #arLedgerAll} 을 그대로 쓴다.
+     */
+    @Transactional(readOnly = true)
+    public org.springframework.data.domain.Page<ArLedgerResponse> arLedgerAllPage(
+            LocalDate fromDate, LocalDate toDate, boolean onlyReportable,
+            org.springframework.data.domain.Pageable pageable) {
+        List<Long> partnerIds = new ArrayList<>();
+        for (ArStatusResponse.Row r : arStatus(fromDate, toDate, null).rows()) {
+            if (r.partnerId() != null) {
+                partnerIds.add(r.partnerId());   // 합계행 제외
+            }
+        }
+        // ★원장은 **이 페이지의 거래처만** 만든다. 전체를 만들고 자르면 느린 것은 그대로다.
+        //   다만 onlyReportable 은 원장을 만들어 봐야 알 수 있어, 그 경우에만 전량을 훑는다.
+        if (onlyReportable) {
+            List<ArLedgerResponse> all = arLedgerAll(fromDate, toDate, true);
+            int from = (int) Math.min(pageable.getOffset(), all.size());
+            int to = Math.min(from + pageable.getPageSize(), all.size());
+            return new org.springframework.data.domain.PageImpl<>(
+                    all.subList(from, to), pageable, all.size());
+        }
+        int from = (int) Math.min(pageable.getOffset(), partnerIds.size());
+        int to = Math.min(from + pageable.getPageSize(), partnerIds.size());
+        List<ArLedgerResponse> rows = new ArrayList<>();
+        for (Long id : partnerIds.subList(from, to)) {
+            rows.add(arLedger(id, fromDate, toDate));
+        }
+        return new org.springframework.data.domain.PageImpl<>(rows, pageable, partnerIds.size());
+    }
+
+    /**
      * 외상매출장(24p) — <b>도서 단위 명세</b> + 러닝밸런스.
      * 근거: 레거시 외상매출장조회.vb {@code Refresh_DataGridView()} + 정본 24p 데이터 항목.
      *

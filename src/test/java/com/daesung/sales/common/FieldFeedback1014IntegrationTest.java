@@ -330,6 +330,49 @@ class FieldFeedback1014IntegrationTest extends IntegrationTestSupport {
         assertThat(found).as("매출 줄(11부)이 작업요청서에 붙어야 한다: %s", rows).isTrue();
     }
 
+    @Test
+    @DisplayName("★★[10/20 C-1] 페이지를 이어 붙이면 겹치거나 빠지는 행이 없다")
+    void 페이지_경계가_안정적이다() {
+        Long p = partner("PAG");
+        // 같은 거래일·거래처로 여러 건 — 거래일자만으로 정렬하면 순서가 안 정해지는 모양이다.
+        for (int i = 0; i < 7; i++) {
+            assertThat(post("/sales/entries", Map.of("salesDate", DATE, "partnerId", p,
+                    "warehouseId", warehouse, "items", List.of(line(i + 1))))
+                    .path("success").asBoolean()).isTrue();
+        }
+        // 2건씩 끊어 네 쪽을 받아 id 를 모은다.
+        java.util.List<Long> ids = new java.util.ArrayList<>();
+        int total = -1;
+        for (int page = 0; page < 4; page++) {
+            JsonNode d = data(get("/sales" + RANGE + "&partnerIds=" + p + "&size=2&page=" + page));
+            if (total < 0) {
+                total = d.path("totalElements").asInt();
+            }
+            for (JsonNode r : d.path("content")) {
+                ids.add(r.path("id").asLong());
+            }
+        }
+        // ★★겹치면 중복이 생기고, 빠지면 개수가 모자란다. 정렬이 흔들리면 둘 다 일어난다
+        //   (실측: 작업요청서 23쪽에서 매번 한 건이 겹치고 한 건이 빠졌다 — 프론트 2026-10-20 C-1).
+        assertThat(ids).as("겹치는 행이 없다").doesNotHaveDuplicates();
+        assertThat(ids).as("빠지는 행이 없다 — 전체 %d건", total).hasSize(total);
+    }
+
+    @Test
+    @DisplayName("★[10/20 C-2] 작업결과·외상매출장 전체가 페이지로 온다 — 전량 반환은 서버를 죽였다")
+    void 큰_목록은_페이지로_온다() {
+        // 작업결과: 전 기간 13.1MB / 외상매출장 전체: 127MB 였다(2026-10-20 실측, 힙 478MB).
+        for (String path : List.of(
+                "/logistics/work-results?fromDate=2000-01-01&toDate=2135-12-31&size=5",
+                "/closing/ar-ledger/all?fromDate=2000-01-01&toDate=2135-12-31&size=5")) {
+            JsonNode d = data(get(path));
+            assertThat(d.has("content")).as("페이지 형태: %s", path).isTrue();
+            assertThat(d.path("content").size())
+                    .as("한 쪽은 요청한 크기를 넘지 않는다: %s", path).isLessThanOrEqualTo(5);
+            assertThat(d.has("totalElements")).as("전체 건수를 함께 준다: %s", path).isTrue();
+        }
+    }
+
     private Long partner(String tag) {
         return createId("/masters/clients",
                 Map.of("code", tag + SFX, "name", "현장검증" + tag, "type", "NORMAL"));

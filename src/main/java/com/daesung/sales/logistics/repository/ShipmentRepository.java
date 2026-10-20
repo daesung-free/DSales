@@ -142,7 +142,7 @@ public interface ShipmentRepository extends JpaRepository<Shipment, Long> {
                     OR (:acknowledged = 1 AND s.acknowledged_at IS NOT NULL)
                     OR (:acknowledged = 0 AND s.acknowledged_at IS NULL))
                AND (:deliveryType IS NULL OR s.delivery_type = :deliveryType)
-             ORDER BY s.trade_date DESC, p.code, s.school_code
+             ORDER BY s.trade_date DESC, p.code, s.school_code, s.id
             """,
             countQuery = """
             SELECT COUNT(*) FROM shipment s

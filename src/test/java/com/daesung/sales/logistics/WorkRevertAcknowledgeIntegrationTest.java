@@ -71,7 +71,7 @@ class WorkRevertAcknowledgeIntegrationTest extends IntegrationTestSupport {
     }
 
     private JsonNode row(Long id) {
-        for (JsonNode r : data(get("/logistics/work-results" + RANGE + "&partnerId=" + partner))) {
+        for (JsonNode r : data(get("/logistics/work-results" + RANGE + "&partnerId=" + partner)).path("content")) {
             if (r.path("id").asLong() == id) {
                 return r;
             }

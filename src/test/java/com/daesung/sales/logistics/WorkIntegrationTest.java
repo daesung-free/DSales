@@ -100,7 +100,7 @@ class WorkIntegrationTest extends IntegrationTestSupport {
         put("/logistics/work-orders/" + id + "/shipping", Map.of("sentDate", "2027-04-12"));
 
         JsonNode row = null;
-        for (JsonNode r : data(get("/logistics/work-results" + RANGE + "&partnerId=" + partner))) {
+        for (JsonNode r : data(get("/logistics/work-results" + RANGE + "&partnerId=" + partner)).path("content")) {
             if (r.path("id").asLong() == id) {
                 row = r;
             }
@@ -118,7 +118,7 @@ class WorkIntegrationTest extends IntegrationTestSupport {
     void 작업결과_수량분해() {
         long textbookQty = 0;
         long examQty = 0;
-        for (JsonNode r : data(get("/logistics/work-results" + RANGE + "&partnerId=" + partner))) {
+        for (JsonNode r : data(get("/logistics/work-results" + RANGE + "&partnerId=" + partner)).path("content")) {
             textbookQty += r.path("quantities").path("교재").asLong();
             examQty += r.path("quantities").path("IC").asLong();
         }
@@ -134,8 +134,8 @@ class WorkIntegrationTest extends IntegrationTestSupport {
         String q = RANGE + "&partnerId=" + partner;
 
         // 관리자: 전체·MAIN 모두 보이고 창고명이 실려 온다
-        assertThat(data(get("/logistics/work-results" + q))).isNotEmpty();
-        JsonNode main = data(get("/logistics/work-results" + q + "&warehouseType=MAIN"));
+        assertThat(data(get("/logistics/work-results" + q)).path("content")).isNotEmpty();
+        JsonNode main = data(get("/logistics/work-results" + q + "&warehouseType=MAIN")).path("content");
         assertThat(main).isNotEmpty();
         assertThat(main.get(0).path("warehouseName").asText()).isEqualTo("물류");
 
@@ -150,7 +150,7 @@ class WorkIntegrationTest extends IntegrationTestSupport {
 
         JsonNode forced = om.readTree(exchangeRaw(HttpMethod.GET,
                         "/logistics/work-results" + q + "&warehouseType=CONSIGN", null, token, null)
-                        .getBody()).path("data");
+                        .getBody()).path("data").path("content");
         assertThat(forced).as("물류도 결과를 본다(빈 화면이 아니다)").isNotEmpty();
         for (JsonNode r : forced) {
             assertThat(r.path("warehouseName").asText())

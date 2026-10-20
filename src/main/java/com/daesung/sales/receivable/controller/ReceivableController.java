@@ -383,7 +383,7 @@ public class ReceivableController {
                     · 대상 거래처는 **외상매출현황과 같은 집합**이다(이월이 있거나 기간 내 거래가 있는 곳).
                     · ‼️거래처 수만큼 조회가 돈다. 기간을 넓게 잡으면 느리다.""")
     @GetMapping("/ar-ledger/all")
-    public ApiResponse<List<ArLedgerResponse>> arLedgerAll(
+    public ApiResponse<com.daesung.sales.common.response.PageResponse<ArLedgerResponse>> arLedgerAll(
             @Parameter(description = "시작일(yyyy-MM-dd, 미지정 시 올해 1/1)") @RequestParam(required = false)
             @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
             @Parameter(description = "종료일(yyyy-MM-dd, 미지정 시 오늘)") @RequestParam(required = false)
@@ -396,10 +396,25 @@ public class ReceivableController {
                     레거시에서 '신고대상'은 조회 필터가 아니라 **일괄 메일·PDF 대상을 추리는 스위치**였다
                     (화면 안내: "신고대상 체크시 설정된 기간내 신고내역이 있는 거래처에 내역서 일괄 메일 전송").
                     여기서 걸러 주면 **거래가 없는 곳에 0원짜리 명세서가 나가는 사고**를 막는다.""")
-            @RequestParam(required = false, defaultValue = "false") boolean onlyReportable) {
-        return ApiResponse.success(Keywords.filter(
-                receivableService.arLedgerAll(fromDate, toDate, onlyReportable), keyword,
-                x -> new Object[]{x.partnerName()}));
+            @RequestParam(required = false, defaultValue = "false") boolean onlyReportable,
+            @org.springdoc.core.annotations.ParameterObject
+            com.daesung.sales.common.dto.PageRequestDto pageReq) {
+        // ‼️키워드가 오면 **먼저 거르고** 잘라야 한다 — 자른 뒤 거르면 페이지마다 건수가 들쭉날쭉하고
+        //   총건수도 틀린다. 키워드는 거래처명 부분일치라 원장을 다 만들어야 알 수 있어,
+        //   이때만 전량을 훑는다(키워드를 주는 조회는 결과가 작다).
+        var p = pageReq.toPageable();
+        if (keyword != null && !keyword.isBlank()) {
+            var filtered = Keywords.filter(
+                    receivableService.arLedgerAll(fromDate, toDate, onlyReportable), keyword,
+                    x -> new Object[]{x.partnerName()});
+            int from = (int) Math.min(p.getOffset(), filtered.size());
+            int to = Math.min(from + p.getPageSize(), filtered.size());
+            return ApiResponse.success(com.daesung.sales.common.response.PageResponse.of(
+                    new org.springframework.data.domain.PageImpl<>(
+                            filtered.subList(from, to), p, filtered.size())));
+        }
+        return ApiResponse.success(com.daesung.sales.common.response.PageResponse.of(
+                receivableService.arLedgerAllPage(fromDate, toDate, onlyReportable, p)));
     }
 
     @Operation(summary = "외상매출장 '더프모만'(24p)",

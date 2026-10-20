@@ -132,7 +132,7 @@ class ReturnableConditionIntegrationTest extends IntegrationTestSupport {
     @DisplayName("★외상매출장 전체 거래처 — 거래처마다 한 벌씩 나온다")
     void 외상매출장_전체() {
         JsonNode all = data(get("/closing/ar-ledger/all?fromDate=" + YEAR + "-01-01"
-                + "&toDate=" + YEAR + "-12-31"));
+                + "&toDate=" + YEAR + "-12-31")).path("content");
 
         assertThat(all).as("배열이어야 한다").isNotEmpty();
 
@@ -155,7 +155,7 @@ class ReturnableConditionIntegrationTest extends IntegrationTestSupport {
     @DisplayName("전체 원장도 키워드로 좁힌다")
     void 전체원장_키워드() {
         String p = "/closing/ar-ledger/all?fromDate=" + YEAR + "-01-01&toDate=" + YEAR + "-12-31";
-        JsonNode hit = data(get(p + "&keyword=조건거래처"));
+        JsonNode hit = data(get(p + "&keyword=조건거래처")).path("content");
 
         assertThat(hit).isNotEmpty();
         for (JsonNode led : hit) {
