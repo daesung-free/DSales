@@ -971,6 +971,7 @@ public class SaleController {
             @RequestParam(required = false) String groupBy,
             @Parameter(description = "키워드 — 코드·명칭을 함께 훑는다(부분일치)")
             @RequestParam(required = false) String keyword) {
+        assertWithinTwelveMonths(fromDate, toDate);
         AttendancePeriodResponse r = attendanceService.period(fromDate, toDate, grade, grades,
                 partnerId, groupBy);
         return ApiResponse.success(new AttendancePeriodResponse(r.fromDate(), r.toDate(), r.months(),
@@ -1075,5 +1076,32 @@ public class SaleController {
                 salesCategories, tradeClasses, shipmentTypes, partnerIds, warehouseIds,
                 schoolCodes, divisions, productIds, partnerSchools, salesChannels,
                 keyword, couponCount));
+    }
+
+    /**
+     * 응시현황(기간별)은 <b>12개월까지</b>만 받는다.
+     *
+     * <p>★화면이 월 칸을 12개까지만 그린다 — 더 넓게 조회하면 같은 달이 겹쳐 읽을 수가 없다
+     * (프론트 확인 2026-10-21, 화면에서도 같은 상한을 건다).
+     *
+     * <p>‼️여기서 막는 이유는 따로 있다. 이 응답은 <b>페이징할 수 없다</b> —
+     * 행에 학교 줄과 소계 줄이 섞여 있어(SCHOOL·PARTNER_SUBTOTAL·REGION_SUBTOTAL·TOTAL)
+     * 줄 단위로 자르면 묶음이 쪽 사이에서 끊기고 총계가 마지막 쪽에만 남는다.
+     * 그래서 <b>기간으로 막는 것이 유일한 안전장치</b>다 —
+     * 전 기간(15년) 조회가 7.2MB 였다(2026-10-20 실측).
+     */
+    private static void assertWithinTwelveMonths(LocalDate from, LocalDate to) {
+        if (from == null || to == null) {
+            return;
+        }
+        if (to.isBefore(from)) {
+            throw new com.daesung.sales.common.exception.BusinessException(com.daesung.sales.common.exception.ErrorCode.INVALID_INPUT,
+                    "종료일이 시작일보다 빠릅니다.");
+        }
+        if (from.plusMonths(12).minusDays(1).isBefore(to)) {
+            throw new com.daesung.sales.common.exception.BusinessException(com.daesung.sales.common.exception.ErrorCode.INVALID_INPUT,
+                    "응시현황은 한 번에 12개월까지 조회할 수 있습니다. "
+                            + "기간을 나눠서 조회해 주세요(요청: " + from + " ~ " + to + ").");
+        }
     }
 }

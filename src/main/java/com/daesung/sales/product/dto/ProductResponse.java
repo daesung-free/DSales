@@ -38,10 +38,12 @@ public record ProductResponse(
         boolean stockManaged,
 
         @io.swagger.v3.oas.annotations.media.Schema(description = """
-                마지막 수정 시각. **바뀐 도서만 받을 때 쓰는 기준**이다(프론트 요청 2026-10-20 B-1).
-                `updatedSince` 에 지난번 받은 값 중 가장 큰 것을 그대로 넣으면 그 뒤 바뀐 것만 온다.
-                ‼️등록만 하고 한 번도 안 고친 도서는 **비어 있다**(생성 시각은 `createdAt` 이다) —
-                  그래서 서버는 `updatedSince` 를 **수정시각 또는 등록시각** 기준으로 본다.""")
+                마지막 변경 시각 — **수정 시각, 없으면 등록 시각**이다.
+                `updatedSince` 에 지난번 받은 값 중 가장 큰 것을 그대로 넣으면 그 뒤 바뀐 것만 온다
+                (프론트 요청 2026-10-20 B-1).
+                ‼️<b>비지 않는다.</b> 예전엔 한 번도 안 고친 도서가 비어 있어서, 전부 그런 상태면
+                  화면이 **기준 자체를 못 잡았다**(프론트 실측 2026-10-21).
+                  서버가 거르는 기준과 같은 값(`coalesce(updatedAt, createdAt)`)을 그대로 돌려준다.""")
         java.time.LocalDateTime updatedAt
 ) {
     /**
@@ -61,6 +63,8 @@ public record ProductResponse(
                 (major == null) ? null : major.label(),
                 p.getProductYear(), p.getProductType(), p.getSupplyRate(),
                 p.isLedgerVisible(), p.isPriceVisible(), p.isWebVisible(), p.isStockManaged(),
-                p.getUpdatedAt());
+                // ‼️서버가 `updatedSince` 로 거르는 기준과 **같은 값**을 준다 —
+                //   다르면 화면이 만든 기준으로 다시 물었을 때 같은 건이 또 오거나 빠진다.
+                (p.getUpdatedAt() != null) ? p.getUpdatedAt() : p.getCreatedAt());
     }
 }

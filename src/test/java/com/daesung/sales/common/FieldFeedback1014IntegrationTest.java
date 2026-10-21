@@ -453,6 +453,53 @@ class FieldFeedback1014IntegrationTest extends IntegrationTestSupport {
         throw new AssertionError("도서 없음: " + id);
     }
 
+    @Test
+    @DisplayName("★★[10/21] 도서의 updatedAt 은 비지 않는다 — 비면 화면이 기준을 못 잡는다")
+    void updatedAt_은_비지_않는다() {
+        // 한 번도 안 고친 도서도 값이 있어야 한다. 전부 비어 있으면 화면이
+        // `updatedSince` 기준 자체를 만들 수 없어 예전 방식(전량 받기)으로 돌아간다.
+        Map<String, Object> b = new HashMap<>();
+        b.put("code", "UPA" + SFX);
+        b.put("name", "수정이력 없는 도서");
+        b.put("contentType", "SELF");
+        b.put("price", 1000);
+        b.put("catCode", "P2108A01");
+        b.put("catName", "갱신기준분류");
+        long id = createId("/masters/products", b);
+
+        JsonNode row = null;
+        for (JsonNode r : data(get("/masters/products?size=200&keyword=UPA" + SFX)).path("content")) {
+            if (r.path("id").asLong() == id) {
+                row = r;
+            }
+        }
+        assertThat(row).isNotNull();
+        assertThat(row.path("updatedAt").isNull()).as("비어 있으면 안 된다: %s", row).isFalse();
+        assertThat(row.path("updatedAt").asText()).isNotBlank();
+
+        // ★그 값을 그대로 기준으로 되물으면 자기 자신이 다시 온다(경계 포함).
+        //   서버가 거르는 기준과 응답 값이 **같아야** 화면이 다음 기준을 만들 수 있다.
+        boolean found = false;
+        for (JsonNode r : data(get("/masters/products?size=200&updatedSince="
+                + row.path("updatedAt").asText())).path("content")) {
+            if (r.path("id").asLong() == id) {
+                found = true;
+            }
+        }
+        assertThat(found).as("응답의 updatedAt 을 기준으로 되물으면 잡힌다").isTrue();
+    }
+
+    @Test
+    @DisplayName("★[10/21] 응시현황은 12개월까지 — 페이징할 수 없는 응답이라 기간으로 막는다")
+    void 응시현황_12개월_상한() {
+        // 행에 학교 줄과 소계 줄이 섞여 있어 줄 단위로 자를 수 없다.
+        // 그래서 기간 제한이 유일한 안전장치다(전 기간 15년이 7.2MB 였다).
+        assertThat(get("/sales/attendance-period?fromDate=2108-01-01&toDate=2108-12-31")
+                .path("success").asBoolean()).as("12개월은 허용").isTrue();
+        JsonNode over = get("/sales/attendance-period?fromDate=2108-01-01&toDate=2109-06-30");
+        assertThat(over.path("success").asBoolean()).as("12개월 초과는 거부: %s", over).isFalse();
+    }
+
     private Long partner(String tag) {
         return createId("/masters/clients",
                 Map.of("code", tag + SFX, "name", "현장검증" + tag, "type", "NORMAL"));

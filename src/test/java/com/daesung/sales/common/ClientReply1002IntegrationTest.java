@@ -311,7 +311,7 @@ class ClientReply1002IntegrationTest extends IntegrationTestSupport {
     @Test
     @DisplayName("★#18 학교/학원검색 확정 7컬럼 — 지역명과 도시명은 다른 축이다")
     void 학교검색_확정컬럼() {
-        JsonNode rows = data(get("/masters/schools/search?schoolCode=" + schoolMega));
+        JsonNode rows = data(get("/masters/schools/search?schoolCode=" + schoolMega)).path("content");
         assertThat(rows).isNotEmpty();
         JsonNode r = rows.get(0);
 

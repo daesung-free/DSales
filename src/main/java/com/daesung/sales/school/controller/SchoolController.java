@@ -118,14 +118,26 @@ public class SchoolController {
 
                     화면명은 '학교검색' → '**학교/학원검색**'으로 확정(발주처 2026-08-31).""")
     @GetMapping("/search")
-    public ApiResponse<java.util.List<com.daesung.sales.school.dto.SchoolSearchRow>> search(
+    public ApiResponse<com.daesung.sales.common.response.PageResponse<
+            com.daesung.sales.school.dto.SchoolSearchRow>> search(
             @Parameter(description = "학교코드(부분일치)") @RequestParam(required = false) String schoolCode,
             @Parameter(description = "학교/학원명(부분일치)") @RequestParam(required = false) String schoolName,
             @Parameter(description = "지역(지역코드·지역명·관할 어디든 부분일치)")
             @RequestParam(required = false) String region,
             @Parameter(description = "특약점명(대표·모의고사·IC 세 축 부분일치)")
-            @RequestParam(required = false) String partnerName) {
-        return ApiResponse.success(schoolService.search(schoolCode, schoolName, region, partnerName));
+            @RequestParam(required = false) String partnerName,
+            @org.springdoc.core.annotations.ParameterObject
+            com.daesung.sales.common.dto.PageRequestDto pageReq) {
+        // ★학교 줄만 있는 평평한 목록이라 **줄 단위로 잘라도 안전**하다
+        //   (응시현황처럼 소계 줄이 섞여 있지 않다 — 프론트 확인 2026-10-21).
+        //   전 건이 4,860개 · 1.2MB 라 당장 급하진 않았지만, 학교가 늘면 같은 길을 간다.
+        var all = schoolService.search(schoolCode, schoolName, region, partnerName);
+        var pageable = pageReq.toPageable();
+        int from = (int) Math.min(pageable.getOffset(), all.size());
+        int to = Math.min(from + pageable.getPageSize(), all.size());
+        return ApiResponse.success(com.daesung.sales.common.response.PageResponse.of(
+                new org.springframework.data.domain.PageImpl<>(
+                        all.subList(from, to), pageable, all.size())));
     }
 
     @Operation(summary = "판매채널 목록",

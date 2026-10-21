@@ -61,7 +61,7 @@ class SchoolSearchIntegrationTest extends IntegrationTestSupport {
 
     private List<String> codes(String query) {
         List<String> out = new java.util.ArrayList<>();
-        data(get("/masters/schools/search" + query)).forEach(n -> out.add(n.path("schoolCode").asText()));
+        data(get("/masters/schools/search" + query)).path("content").forEach(n -> out.add(n.path("schoolCode").asText()));
         return out;
     }
 
@@ -83,7 +83,7 @@ class SchoolSearchIntegrationTest extends IntegrationTestSupport {
     @DisplayName("레거시와 같은 컬럼 — 특약점LN은 '소재 + 특약점명'")
     void 컬럼구성() {
         JsonNode row = null;
-        for (JsonNode n : data(get("/masters/schools/search?schoolCode=SS1" + SFX))) {
+        for (JsonNode n : data(get("/masters/schools/search?schoolCode=SS1" + SFX)).path("content")) {
             row = n;
         }
         assertThat(row).isNotNull();
