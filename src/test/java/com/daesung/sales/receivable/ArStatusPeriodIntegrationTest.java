@@ -29,6 +29,13 @@ class ArStatusPeriodIntegrationTest extends IntegrationTestSupport {
 
     private static final String SFX = "-AP" + (System.nanoTime() % 1_000_000L);
     private static final String YEAR = "2107";
+    /**
+     * 공급자(우리) 사업자번호 — <b>테스트 프로파일 값</b>이다
+     * ({@code IntegrationTestSupport} 가 `111-11-11111` 로 덮는다).
+     * ‼️운영값(1088166057)을 적으면 안 된다 — 테스트에서는 안 맞아 필터가 안 걸린다(실제로 틀렸다).
+     * ★하이픈 표기가 다른 것도 함께 본다: 여기는 하이픈 있고 거래처는 없이 넣는다.
+     */
+    private static final String SUPPLIER_BIZ_NO = "1111111111";
 
     private Long partner;
     private Long product;
@@ -168,6 +175,29 @@ class ArStatusPeriodIntegrationTest extends IntegrationTestSupport {
         assertThat(row.path("purchaseAmount").asLong()).as("매입액이 보인다").isEqualTo(300_000);
         // ★★매입을 안 세면 여기가 −300,000 이 된다. 그게 A-1 에서 본 그림이다.
         assertThat(row.path("balance").asLong()).as("매입과 정산이 상계돼 0").isZero();
+    }
+
+    @Test
+    @DisplayName("★★자기 자신(같은 사업자번호)은 채권 원장에 안 선다")
+    void 자기자신은_채권이_아니다() {
+        // 레거시에 `(주)대성학력개발연구소`(108-81-66057)가 입고처로 있었는데,
+        // 우리 공급자 사업자번호와 **같다** — 같은 법인 안의 다른 사업부다.
+        // 그쪽에서 받은 물건은 매입이 아니고, 거기 찍힌 수금도 고객 돈이 아니라 내부 정산이다.
+        // ‼️한쪽만 빼면 더 나빠진다 — 매입만 빼고 수금을 남기면 잔액이 −30.5억이 된다.
+        Long self = createId("/masters/clients", Map.of(
+                "code", "SELF" + SFX, "name", "우리 다른 사업부", "type", "NORMAL",
+                "bizNo", SUPPLIER_BIZ_NO));
+
+        assertThat(post("/closing/collections", Map.of(
+                "collDate", YEAR + "-06-10", "partnerId", self,
+                "collType", "CASH", "collAmt", 500_000))
+                .path("success").asBoolean()).isTrue();
+
+        for (JsonNode r : data(get("/closing/ar-status?fromDate=" + YEAR + "-01-01&toDate="
+                + YEAR + "-12-31")).path("rows")) {
+            assertThat(r.hasNonNull("partnerId") && r.path("partnerId").asLong() == self)
+                    .as("자기 자신이 채권 목록에 있으면 안 된다: %s", r).isFalse();
+        }
     }
 
     @Test

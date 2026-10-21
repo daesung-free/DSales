@@ -56,6 +56,7 @@ public class ReceivableService {
     private final ReceivableCarryforwardRepository carryforwardRepository;
     private final SaleRepository saleRepository;
     private final com.daesung.sales.inventory.repository.InventoryTxnRepository inventoryTxnRepository;
+    private final com.daesung.sales.closing.config.SupplierProperties supplier;
     private final PartnerRepository partnerRepository;
     private final PeriodLockService periodLockService;
     private final com.daesung.sales.common.audit.CurrentAuditor currentAuditor;
@@ -460,6 +461,14 @@ public class ReceivableService {
         Map<Long, Partner> partners = new HashMap<>();
         partnerRepository.findAllById(ids).forEach(p -> partners.put(p.getId(), p));
 
+        // ★★<b>자기 자신은 채권 대상이 아니다.</b> 사업자번호가 공급자(우리)와 같은 거래처는
+        //   같은 법인 안의 다른 사업부다 — 그쪽에서 받은 물건은 매입이 아니고,
+        //   거기 찍힌 수금도 고객이 준 돈이 아니라 **내부 정산**이다.
+        //   실데이터에서 `(주)대성학력개발연구소`(108-81-66057)가 그랬다. 우리 공급자 번호와 같다.
+        //   ‼️한쪽만 빼면 더 나빠진다 — 매입만 빼고 수금을 남기면 잔액이 −30.5억이 된다
+        //     (2026-10-21 실제로 그렇게 만들었다가 되돌렸다). 거래처 자체를 뺀다.
+        String ourBizNo = digitsOnly(supplier.bizNo());
+
         List<ArStatusResponse.Row> rows = new ArrayList<>();
         long tOpen = 0, tSale = 0, tRet = 0, tTax = 0, tGen = 0, tColl = 0, tBal = 0, tTeacher = 0, tTeacherQty = 0;
         long tPurchase = 0;
@@ -467,6 +476,10 @@ public class ReceivableService {
         for (Long pid : ids) {
             Partner p = partners.get(pid);
             if (p == null) {
+                continue;
+            }
+            // 자기 자신(같은 사업자번호)은 채권 원장에서 뺀다 — 위 주석 참고.
+            if (!ourBizNo.isEmpty() && ourBizNo.equals(digitsOnly(p.getBizNo()))) {
                 continue;
             }
             long opening = carry.getOrDefault(pid, 0L)
@@ -896,5 +909,10 @@ public class ReceivableService {
             m.put(num(r[0]), num(r[1]));
         }
         return m;
+    }
+
+    /** 사업자번호 비교용 — 하이픈 표기가 섞여 있어(108-81-66057 / 1088166057) 숫자만 남긴다. */
+    private static String digitsOnly(String s) {
+        return (s == null) ? "" : s.replaceAll("[^0-9]", "");
     }
 }
