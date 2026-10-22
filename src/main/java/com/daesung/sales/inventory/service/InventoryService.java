@@ -600,7 +600,7 @@ public class InventoryService {
                         MultiSelect.isAny(warehouseIds), MultiSelect.orPlaceholder(warehouseIds, 0L),
                         pageable);
         java.util.Set<String> canceled = canceledRefNos(page.getContent());
-        return page.map(t -> disposalRow(t, canceled.contains(t.getRefNo())));
+        return page.map(t -> disposalRow(t, isCanceled(canceled, t)));
     }
 
     /** 폐기 내역 전량(엑셀 다운로드 전용). 화면은 페이지로 보지만 파일은 전량이 나가야 쓸모가 있다. */
@@ -611,10 +611,18 @@ public class InventoryService {
                         MultiSelect.isAny(productIds), MultiSelect.orPlaceholder(productIds, 0L),
                         MultiSelect.isAny(warehouseIds), MultiSelect.orPlaceholder(warehouseIds, 0L));
         java.util.Set<String> canceled = canceledRefNos(rows);
-        return rows.stream().map(t -> disposalRow(t, canceled.contains(t.getRefNo()))).toList();
+        return rows.stream().map(t -> disposalRow(t, isCanceled(canceled, t))).toList();
     }
 
     /** 페이지에 실린 전표 중 취소된 것(N+1 방지 — 번호만 모아 한 번 묻는다). */
+    /**
+     * 이 묶음 안에서 <b>취소된 전표번호</b>만 추린다.
+     *
+     * <p>‼️빈 결과를 {@code Set.of()}로 돌려주면 안 된다 — 불변 Set은 <b>null-hostile</b>이라
+     * {@code contains(null)}이 NPE를 던진다. 전표번호가 없는 행(이관분)만 있는 페이지에서
+     * 폐기 내역 조회가 통째로 500이 났다(2026-10-22, DISPOSE 4,374건 전부 ref_no NULL).
+     * 호출부에서도 null을 먼저 거르지만, 여기서도 null을 받아낼 수 있는 Set을 돌려준다.
+     */
     private java.util.Set<String> canceledRefNos(List<InventoryTxn> txns) {
         java.util.Set<String> refNos = new java.util.HashSet<>();
         txns.forEach(t -> {
@@ -622,8 +630,15 @@ public class InventoryService {
                 refNos.add(t.getRefNo());
             }
         });
-        return refNos.isEmpty() ? java.util.Set.of()
-                : new java.util.HashSet<>(voucherCancelRepository.findRefNosIn(refNos));
+        if (refNos.isEmpty()) {
+            return new java.util.HashSet<>();
+        }
+        return new java.util.HashSet<>(voucherCancelRepository.findRefNosIn(refNos));
+    }
+
+    /** 전표번호가 없는 행은 취소될 수 없다 — 조회(contains)에 null을 흘리지 않는다. */
+    private static boolean isCanceled(java.util.Set<String> canceled, InventoryTxn t) {
+        return t.getRefNo() != null && canceled.contains(t.getRefNo());
     }
 
     private static DisposalRecordRow disposalRow(InventoryTxn t, boolean canceled) {
