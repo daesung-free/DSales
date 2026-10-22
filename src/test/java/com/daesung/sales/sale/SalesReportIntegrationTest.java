@@ -21,6 +21,7 @@ import org.junit.jupiter.api.TestInstance;
 class SalesReportIntegrationTest extends IntegrationTestSupport {
 
     private Long partnerId;
+    private Long whMain;
     private Long pA011;
     private Long pA012;
     private Long pA021;
@@ -32,9 +33,13 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
         // 창고(MAIN)
         Long whId = createId("/masters/warehouses",
                 Map.of("code", "WH-MAIN", "name", "메인창고", "type", "MAIN"));
-        // 거래처(공급·판매 겸용)
+        whMain = whId;
+        // 거래처(공급·판매 겸용).
+        // ★사업자번호를 반드시 넣는다 — 38p 월별신고가 사업자번호 없는 거래처를 '미발행분'으로
+        //   따로 센다. 비워 두면 이 클래스의 매출이 전부 미발행 버킷으로 가 계산서/세금계산서가 0이 된다.
         partnerId = createId("/masters/clients",
-                Map.of("code", "CUST-1", "name", "테스트거래처", "type", "NORMAL"));
+                Map.of("code", "CUST-1", "name", "테스트거래처", "type", "NORMAL",
+                        "bizNo", "211-11-11111"));
         // 상품(catCode): 대분류 A(A2026A01×2, A2026A02), B(B2026B01)
         // 분류코드는 [영문1자][연도4자][영문·숫자1~3자] 형식이어야 한다(실데이터 규칙).
         pA011 = product("BK-A011", "A2026A01", "국어모의");
@@ -425,9 +430,42 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
         assertThat(jun.path("invoiceSale").asLong()).isEqualTo(0);           // 면세 상품 없음
         assertThat(jun.path("netTotal").asLong()).isEqualTo(185_000);
         assertThat(jun.path("tax").asLong()).isEqualTo(18_500);              // 19,500(매출) − 1,000(반품)
-        assertThat(jun.path("taxInvoiceUnissued").asLong()).isEqualTo(0);    // 미발행분 placeholder
+        // 이 거래처는 사업자번호가 있으므로 미발행분이 아니다. 매출총액 = 계산서+세금계산서+미발행
+        assertThat(jun.path("unissuedSale").asLong()).isEqualTo(0);
+        assertThat(jun.path("saleTotal").asLong()).isEqualTo(195_000);
         // 12개월 행 항상 존재
         assertThat(d.path("rows")).hasSize(12);
+    }
+
+    @Test
+    @DisplayName("계산서월별신고 — 사업자번호 없는 거래처 매출은 '미발행분'으로 분리(계산서·세금계산서와 배타)")
+    void 계산서월별신고_미발행분() {
+        // 근거: 재무팀 양식 '2026 월별 신고내역' E4 셀 메모 —
+        //   "학원매출+외부판매 / 온라인몰 / (사업자번호가없는 거래처의 합)".
+        // ★6월은 공유 시드가 쓰므로 건드리지 않는다 — 9월에 따로 심어 그 달만 본다.
+        // 실행별 고유 접미어. ‼️partners.code 는 VARCHAR(20) 이라 nanoTime 전체(19자)는 넘친다.
+        String sfx = String.valueOf(System.nanoTime() % 100_000_000L);
+        Long noBizPartner = createId("/masters/clients",
+                Map.of("code", "NOBIZ-" + sfx, "name", "온라인몰" + sfx, "type", "NORMAL"));
+        Map<String, Object> item = new java.util.HashMap<>();
+        item.put("productId", pB011);
+        item.put("shipmentType", "NORMAL_SHIP");
+        item.put("unitPrice", 10000);
+        item.put("supplyRate", 50);
+        item.put("qty", 10);
+        item.put("tax", 0);            // 세액 0이어도 계산서 칸이 아니라 미발행으로 가야 한다
+        JsonNode r = post("/sales/entries", Map.of(
+                "salesDate", "2026-09-10", "partnerId", noBizPartner, "warehouseId", whMain,
+                "items", List.of(item)));
+        assertThat(r.path("success").asBoolean()).as("매출등록 성공: %s", r).isTrue();
+
+        JsonNode sep = rowWhere(data(get("/closing/tax-filing?year=2026")).path("rows"), "month", "9");
+        long unissued = sep.path("unissuedSale").asLong();
+        assertThat(unissued).isPositive();
+        // 사업자번호가 없으면 세액이 0이어도 계산서 칸으로 가면 안 된다 — 배타가 핵심이다.
+        assertThat(sep.path("invoiceSale").asLong() + sep.path("taxInvoiceSale").asLong() + unissued)
+                .isEqualTo(sep.path("saleTotal").asLong());
+        assertThat(sep.path("unissuedNet").asLong()).isEqualTo(unissued);   // 9월 반품 없음
     }
 
     @Test

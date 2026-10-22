@@ -710,22 +710,36 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
 
     /**
      * 계산서·세금계산서 월별신고(38p): 월×발행유형으로 매출/반품/세액 집계. 취소 제외.
-     * 발행유형: tax=0 → 'INVOICE'(계산서/면세), tax≠0 → 'TAX_INVOICE'(세금계산서/과세).
-     *   (기존 계산서신고 taxInvoiceLines와 동일 버킷 규칙.)
+     * 발행유형 3종 — 앞 조건이 이긴다(배타):
+     * <pre>
+     *   UNISSUED    거래처 사업자번호가 비어 있음 → 계산서를 끊을 상대가 없다 = 미발행분
+     *   INVOICE     tax = 0  → 계산서(면세)
+     *   TAX_INVOICE tax ≠ 0  → 세금계산서(과세)
+     * </pre>
+     * ★UNISSUED를 <b>맨 앞에</b> 둔다. 사업자번호가 없으면 면세든 과세든 발행 자체를 안 하므로,
+     * tax로 먼저 가르면 그 매출이 계산서/세금계산서 칸에 섞여 들어가 미발행분이 영영 0이 된다.
+     * 근거: 재무팀 양식 '2026 월별 신고내역' <b>E4 셀 메모</b> —
+     * "학원매출+외부판매 / 온라인몰 / (사업자번호가없는 거래처의 합)".
+     *
+     * <p>하이픈·공백만 든 값도 '없음'으로 본다({@code REGEXP_REPLACE}로 숫자만 남겨 비교) —
+     * 실데이터에 {@code '-'} 같은 자리표시자가 섞여 있으면 단순 NULL 검사로는 안 걸린다.
      * 무상(FREE)은 매출/반품에서 제외(SALE·RETURN만 집계).
      * 반환 Object[]: [month(1~12), issueType, saleSupply, returnSupply, netTax].
      */
     @Query(value = """
             SELECT EXTRACT(MONTH FROM s.sales_date) AS mon,
-              CASE WHEN s.tax = 0 THEN 'INVOICE' ELSE 'TAX_INVOICE' END AS issue_type,
+              CASE WHEN REGEXP_REPLACE(COALESCE(pt.biz_no,''),'[^0-9]','') = '' THEN 'UNISSUED'
+                   WHEN s.tax = 0 THEN 'INVOICE' ELSE 'TAX_INVOICE' END AS issue_type,
               COALESCE(SUM(CASE WHEN s.sales_category='SALE'   THEN s.supply_amount ELSE 0 END),0) AS sale_supply,
               COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN s.supply_amount ELSE 0 END),0) AS return_supply,
               COALESCE(SUM(CASE WHEN s.sales_category='RETURN' THEN -s.tax ELSE s.tax END),0)      AS net_tax
             FROM sales s
+              LEFT JOIN partners pt ON pt.id = s.partner_id
             WHERE s.deleted_at IS NULL AND s.canceled = false
               AND EXTRACT(YEAR FROM s.sales_date) = :year
             GROUP BY EXTRACT(MONTH FROM s.sales_date),
-                     CASE WHEN s.tax = 0 THEN 'INVOICE' ELSE 'TAX_INVOICE' END
+                     CASE WHEN REGEXP_REPLACE(COALESCE(pt.biz_no,''),'[^0-9]','') = '' THEN 'UNISSUED'
+                          WHEN s.tax = 0 THEN 'INVOICE' ELSE 'TAX_INVOICE' END
             ORDER BY mon
             """, nativeQuery = true)
     List<Object[]> taxFilingByMonth(@Param("year") int year);

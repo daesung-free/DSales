@@ -116,9 +116,11 @@ public class TaxController {
     }
 
     @Operation(summary = "계산서·세금계산서 월별신고 조회(38p)",
-            description = "월(1~12)×발행유형(계산서=면세/세금계산서=과세) 기준 매출·반품·순매출·세액 집계 + 연간 합계. "
-                    + "발행유형은 매출 세액(0/≠0)으로 파생. 취소 제외. "
-                    + "⚠️'미발행분'은 정의 미확정으로 현재 0. year 미지정 시 올해.")
+            description = "월(1~12)×발행유형(계산서=면세/세금계산서=과세/미발행) 기준 매출·반품·순매출·세액 집계 "
+                    + "+ 연간 합계. 취소 제외. year 미지정 시 올해.<br>"
+                    + "★<b>미발행분 = 거래처 사업자번호가 없는 매출</b>(학원매출·외부판매·온라인몰). "
+                    + "계산서를 끊을 상대가 없어 발행 자체를 안 하는 건이라 계산서·세금계산서와 <b>배타</b>이며, "
+                    + "셋을 더한 값이 '매출(총액)'이다. 근거: 재무팀 양식 '2026 월별 신고내역' E4 셀 메모.")
     @GetMapping("/tax-filing")
     public ApiResponse<TaxFilingResponse> taxFiling(
             @Parameter(description = "신고연도(미지정 시 올해)", example = "2026") @RequestParam(required = false) Integer year) {
@@ -132,11 +134,15 @@ public class TaxController {
     public ResponseEntity<byte[]> taxFilingExport(@RequestParam(required = false) Integer year) {
         int y = (year != null) ? year : LocalDate.now().getYear();
         List<Col> cols = List.of(
+                // 재무팀 양식('2026 월별 신고내역') 칸 순서 그대로 —
+                // 매출(계산서·세금계산서·총액·미발행분) → 반품 → 순매출 → 계 → 세액.
                 new Col("월", "month"),
-                new Col("계산서매출", "invoiceSale"), new Col("계산서미발행", "invoiceUnissued"),
-                new Col("세금계산서매출", "taxInvoiceSale"), new Col("세금계산서미발행", "taxInvoiceUnissued"),
-                new Col("계산서반품", "invoiceReturn"), new Col("세금계산서반품", "taxInvoiceReturn"),
+                new Col("매출(계산서)", "invoiceSale"), new Col("매출(세금계산서)", "taxInvoiceSale"),
+                new Col("매출(총액)", "saleTotal"), new Col("매출(미발행분)", "unissuedSale"),
+                new Col("반품(계산서)", "invoiceReturn"), new Col("반품(세금계산서)", "taxInvoiceReturn"),
+                new Col("반품(미발행분)", "unissuedReturn"),
                 new Col("순매출(계산서)", "invoiceNet"), new Col("순매출(세금계산서)", "taxInvoiceNet"),
+                new Col("순매출(미발행분)", "unissuedNet"),
                 new Col("계", "netTotal"), new Col("세액", "tax"));
         byte[] xlsx = excel.toXlsx("월별신고내역", cols, taxService.taxFiling(y).rows(),
                 new Heading("계산서·세금계산서 월별 신고내역", "조회기준 : " + y + "년"));
