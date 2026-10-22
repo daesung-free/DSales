@@ -230,11 +230,11 @@ public class ReceivableController {
             @Parameter(description = "키워드 — 코드·명칭을 함께 훑는다(부분일치)")
             @RequestParam(required = false) String keyword) {
         ArStatusResponse r = receivableService.arStatus(fromDate, toDate, partnerId);
-        // ‼️합계는 그대로 둔다 — 걸러진 것만의 합으로 바꾸면 "전체 잔액"이 아니게 된다.
+        // ‼️합계·소계는 그대로 둔다 — 걸러진 것만의 합으로 바꾸면 "전체 잔액"이 아니게 된다.
         return ApiResponse.success(new ArStatusResponse(r.fromDate(), r.toDate(),
                 Keywords.filter(r.rows(), keyword,
                         x -> new Object[]{x.partnerCode(), x.partnerName()}),
-                r.total(), r.warnings()));
+                r.total(), r.purchaseSubtotal(), r.salesSubtotal(), r.warnings()));
     }
 
     @Operation(summary = "미수금현황 엑셀 다운로드", description = "거래처별 이월·매출·반품·채권발생·수금·잔액·담보비율.")
@@ -285,7 +285,12 @@ public class ReceivableController {
             cols.add(new Col("반품금액(" + c.label() + ")", "returnAmount_" + c.name()));
         }
         cols.addAll(List.of(
-                new Col("채권발생", "receivableGen"), new Col("수금", "collected"), new Col("잔액", "balance"),
+                new Col("채권발생", "receivableGen"),
+                // 매입(입고) — 레거시 대성교재 화면의 `입고수량`·`입고금액` 칸.
+                // 잔액 공식에 들어가므로 칸으로도 보여야 한다. 안 보이면 매입처 잔액을 설명할 수 없다.
+                new Col("구분", "partnerKind"),
+                new Col("입고수량", "purchaseQty"), new Col("입고금액", "purchaseAmount"),
+                new Col("수금", "collected"), new Col("잔액", "balance"),
                 new Col("담보금액", "assureAmount"), new Col("담보비율", "assureRatio"),
                 new Col("담보등급", "assureLevel")));
         return cols;

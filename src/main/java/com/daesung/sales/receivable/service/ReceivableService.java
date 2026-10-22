@@ -56,7 +56,6 @@ public class ReceivableService {
     private final ReceivableCarryforwardRepository carryforwardRepository;
     private final SaleRepository saleRepository;
     private final com.daesung.sales.inventory.repository.InventoryTxnRepository inventoryTxnRepository;
-    private final com.daesung.sales.closing.config.SupplierProperties supplier;
     private final PartnerRepository partnerRepository;
     private final PeriodLockService periodLockService;
     private final com.daesung.sales.common.audit.CurrentAuditor currentAuditor;
@@ -440,10 +439,10 @@ public class ReceivableService {
         //   `이월 + 매출 + 반품 + (입고 + 취소) − 수금` 이다. 빼면 매입처가 "수금만 있는"
         //   거래처로 보인다(프론트 실측 2026-10-20 A-1: 25곳이 매출 0 · 수금 130~197억).
         //   ‼️이월에도 같은 기준을 적용한다 — 안 그러면 연도 사이가 이어지지 않는다(A-2).
-        Map<Long, Long> purchase = toAmountMap(
+        Map<Long, long[]> purchase = toQtyAmountMap(
                 inventoryTxnRepository.purchaseByPartner(from, to, partnerId));
-        Map<Long, Long> priorPurchase = (from.getDayOfYear() == 1) ? Map.of()
-                : toAmountMap(inventoryTxnRepository.purchaseByPartner(
+        Map<Long, long[]> priorPurchase = (from.getDayOfYear() == 1) ? Map.of()
+                : toQtyAmountMap(inventoryTxnRepository.purchaseByPartner(
                         LocalDate.of(from.getYear(), 1, 1), from.minusDays(1), partnerId));
 
         Set<Long> ids = new LinkedHashSet<>();
@@ -461,35 +460,34 @@ public class ReceivableService {
         Map<Long, Partner> partners = new HashMap<>();
         partnerRepository.findAllById(ids).forEach(p -> partners.put(p.getId(), p));
 
-        // ★★<b>자기 자신은 채권 대상이 아니다.</b> 사업자번호가 공급자(우리)와 같은 거래처는
-        //   같은 법인 안의 다른 사업부다 — 그쪽에서 받은 물건은 매입이 아니고,
-        //   거기 찍힌 수금도 고객이 준 돈이 아니라 **내부 정산**이다.
-        //   실데이터에서 `(주)대성학력개발연구소`(108-81-66057)가 그랬다. 우리 공급자 번호와 같다.
-        //   ‼️한쪽만 빼면 더 나빠진다 — 매입만 빼고 수금을 남기면 잔액이 −30.5억이 된다
-        //     (2026-10-21 실제로 그렇게 만들었다가 되돌렸다). 거래처 자체를 뺀다.
-        String ourBizNo = digitsOnly(supplier.bizNo());
-
+        // ★거래처를 **매입처/매출처**로 가른다 — 레거시 대성교재 화면이 그렇게 한다
+        //   (외상매출현황조회.vb:650 `CASE WHEN LEFT(거래처코드,1)='A' THEN '매입처' ELSE '매출처'`).
+        //   ‼️그 'A 접두어' 규칙은 **쓰지 않는다.** DSTxtBook DB 안에서만 성립하던 규칙이라,
+        //     두 법인을 한 DB에 합친 우리 데이터에선 안 맞는다 — A 거래처 425곳 중 267곳이
+        //     매출처다(2026-10-22 실측). **입고가 있으면 매입처**로 본다(겹치는 곳 3곳뿐).
+        //   ‼️예전엔 '사업자번호가 우리와 같으면 제외'로 A000001 한 곳만 걸렀는데,
+        //     그건 레거시에 없는 로직이었다. 레거시는 그 거래처도 **매입처로 그냥 집계**한다.
         List<ArStatusResponse.Row> rows = new ArrayList<>();
         long tOpen = 0, tSale = 0, tRet = 0, tTax = 0, tGen = 0, tColl = 0, tBal = 0, tTeacher = 0, tTeacherQty = 0;
-        long tPurchase = 0;
+        long tPurchase = 0, tPurchaseQty = 0;
         long tSaleQty = 0, tRetQty = 0;
+        List<ArStatusResponse.Row> purchaseRows = new ArrayList<>();
+        List<ArStatusResponse.Row> salesRows = new ArrayList<>();
         for (Long pid : ids) {
             Partner p = partners.get(pid);
             if (p == null) {
                 continue;
             }
-            // 자기 자신(같은 사업자번호)은 채권 원장에서 뺀다 — 위 주석 참고.
-            if (!ourBizNo.isEmpty() && ourBizNo.equals(digitsOnly(p.getBizNo()))) {
-                continue;
-            }
+            long[] priorPur = priorPurchase.getOrDefault(pid, EMPTY2);
             long opening = carry.getOrDefault(pid, 0L)
                     + priorSales.getOrDefault(pid, new long[8])[0]
-                    + priorPurchase.getOrDefault(pid, 0L)
+                    + priorPur[1]
                     - priorColl.getOrDefault(pid, 0L);
             // [gen, saleAmt, returnAmt, tax, teacherAmt, teacherQty, saleQty, returnQty]
             long[] s = sales.getOrDefault(pid, new long[8]);
             long collected = coll.getOrDefault(pid, 0L);
-            long purchased = purchase.getOrDefault(pid, 0L);
+            long[] pur = purchase.getOrDefault(pid, EMPTY2);
+            long purchasedQty = pur[0], purchased = pur[1];
             long balance = opening + s[0] + purchased - collected;
 
             Long assureAmount = p.getAssureAmount();
@@ -499,19 +497,27 @@ public class ReceivableService {
                 ratio = Math.round((double) balance / assureAmount * 100 * 10) / 10.0;
                 level = ratio >= 100 ? "OVER" : ratio >= 70 ? "WARN" : ratio > 50 ? "WATCH" : "NORMAL";
             }
-            rows.add(new ArStatusResponse.Row(pid, p.getCode(), p.getName(), p.getBossName(),
-                    opening, s[6], s[1], s[7], s[2], s[3], s[0], purchased, collected, balance, s[4], s[5],
+            // 기간 안에 매입(입고)이 있으면 매입처. 기간 밖 매입만 있는 곳도 매입처로 본다
+            // (이월에 그 매입이 녹아 있어서, 매출처로 묶으면 소계가 설명되지 않는다).
+            boolean isPurchaser = purchased != 0 || purchasedQty != 0 || priorPur[1] != 0;
+            String kind = isPurchaser ? PARTNER_KIND_PURCHASE : PARTNER_KIND_SALES;
+            ArStatusResponse.Row row = new ArStatusResponse.Row(pid, p.getCode(), p.getName(), p.getBossName(),
+                    kind, opening, s[6], s[1], s[7], s[2], s[3], s[0], purchasedQty, purchased,
+                    collected, balance, s[4], s[5],
                     byCat.getOrDefault(pid, List.of()),
-                    assureAmount, ratio, p.getAssureExpiry(), p.getAssureNote(), level));
+                    assureAmount, ratio, p.getAssureExpiry(), p.getAssureNote(), level);
+            rows.add(row);
+            (isPurchaser ? purchaseRows : salesRows).add(row);
 
             tOpen += opening; tSale += s[1]; tRet += s[2]; tTax += s[3]; tGen += s[0];
             tColl += collected; tBal += balance; tTeacher += s[4]; tTeacherQty += s[5];
-            tPurchase += purchased;
+            tPurchase += purchased; tPurchaseQty += purchasedQty;
             tSaleQty += s[6]; tRetQty += s[7];
         }
         rows.sort((a, b) -> a.partnerCode().compareTo(b.partnerCode()));
-        ArStatusResponse.Row total = new ArStatusResponse.Row(null, "합계", null, null,
-                tOpen, tSaleQty, tSale, tRetQty, tRet, tTax, tGen, tPurchase, tColl, tBal, tTeacher, tTeacherQty,
+        ArStatusResponse.Row total = new ArStatusResponse.Row(null, "합계", null, null, null,
+                tOpen, tSaleQty, tSale, tRetQty, tRet, tTax, tGen, tPurchaseQty, tPurchase,
+                tColl, tBal, tTeacher, tTeacherQty,
                 sumCategories(byCat.values()),
                 null, null, null, null, null);
         // ★이월 스냅샷이 없는 연도는 **없다고 말한다**. 예전엔 조용히 0으로 나가서,
@@ -523,7 +529,8 @@ public class ReceivableService {
             warnings.add(to.getYear() + "년 이월 스냅샷이 없습니다. 이월이 0으로 계산되어 "
                     + "전년 미수금이 잔액에 빠져 있습니다 — 마감관리에서 이월을 먼저 생성하세요.");
         }
-        return new ArStatusResponse(from, to, rows, total, warnings);
+        return new ArStatusResponse(from, to, rows, total,
+                subtotal("매입처 소계", purchaseRows), subtotal("매출처 소계", salesRows), warnings);
     }
 
     /**
@@ -827,6 +834,47 @@ public class ReceivableService {
         return (o == null) ? 0L : ((Number) o).longValue();
     }
 
+    /** 매입처(기간 내·기간 전 매입이 있는 거래처) / 매출처 구분값. */
+    public static final String PARTNER_KIND_PURCHASE = "PURCHASE";
+    public static final String PARTNER_KIND_SALES = "SALES";
+
+    /** getOrDefault 기본값 공유 — 루프마다 새 배열을 만들지 않는다. 읽기 전용으로만 쓴다. */
+    private static final long[] EMPTY2 = new long[2];
+
+    /**
+     * 매입처·매출처 소계행. 레거시 대성교재 화면의 GROUPING 소계와 같은 자리다
+     * (외상매출현황조회.vb:650 — 매입처 소계 / 매출처 소계 / 합계 3단).
+     * 대상이 없으면 null을 돌려준다 — 0으로 채운 빈 소계행을 그리면 화면에 없는 묶음이 생긴다.
+     */
+    private static ArStatusResponse.Row subtotal(String label, List<ArStatusResponse.Row> src) {
+        if (src.isEmpty()) {
+            return null;
+        }
+        long open = 0, saleQty = 0, sale = 0, retQty = 0, ret = 0, tax = 0, gen = 0;
+        long purQty = 0, pur = 0, coll = 0, bal = 0, teacher = 0, teacherQty = 0;
+        for (ArStatusResponse.Row r : src) {
+            open += r.opening(); saleQty += r.saleQty(); sale += r.saleAmount();
+            retQty += r.returnQty(); ret += r.returnAmount(); tax += r.tax(); gen += r.receivableGen();
+            purQty += r.purchaseQty(); pur += r.purchaseAmount(); coll += r.collected();
+            bal += r.balance(); teacher += r.teacherAmount(); teacherQty += r.teacherQty();
+        }
+        return new ArStatusResponse.Row(null, label, null, null, null,
+                open, saleQty, sale, retQty, ret, tax, gen, purQty, pur, coll, bal, teacher, teacherQty,
+                List.of(), null, null, null, null, null);
+    }
+
+    /**
+     * [partnerId, qty, amount] 목록 → Map&lt;partnerId, [수량, 금액]&gt;.
+     * ‼️{@link #toAmountMap}을 쓰면 안 된다 — 그건 r[1]을 금액으로 읽는데 여기선 r[1]이 수량이다.
+     */
+    private static Map<Long, long[]> toQtyAmountMap(List<Object[]> rows) {
+        Map<Long, long[]> m = new HashMap<>();
+        for (Object[] r : rows) {
+            m.put(num(r[0]), new long[] {num(r[1]), num(r[2])});
+        }
+        return m;
+    }
+
     /** [partnerId, amount] 목록 → Map. */
     private static Map<Long, Long> toAmountMap(List<Object[]> rows) {
         Map<Long, Long> m = new HashMap<>();
@@ -911,8 +959,4 @@ public class ReceivableService {
         return m;
     }
 
-    /** 사업자번호 비교용 — 하이픈 표기가 섞여 있어(108-81-66057 / 1088166057) 숫자만 남긴다. */
-    private static String digitsOnly(String s) {
-        return (s == null) ? "" : s.replaceAll("[^0-9]", "");
-    }
 }

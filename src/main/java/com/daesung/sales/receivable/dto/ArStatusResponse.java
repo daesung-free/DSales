@@ -13,6 +13,14 @@ public record ArStatusResponse(
         @Schema(description = "합계행") Row total,
 
         @Schema(description = """
+                매입처 소계 — **대상이 없으면 null**. 레거시 대성교재 화면의 GROUPING 소계와
+                같은 자리다(매입처 소계 / 매출처 소계 / 합계 3단). 판정은 `partnerKind` 참고.
+                ‼️빈 소계행을 0으로 채워 내려보내지 않는다 — 화면에 없는 묶음이 생긴다.""")
+        Row purchaseSubtotal,
+
+        @Schema(description = "매출처 소계 — 대상이 없으면 null.") Row salesSubtotal,
+
+        @Schema(description = """
                 경고 — 비어 있으면 이상 없음.
 
                 ★**이월 스냅샷이 없는 연도**를 조회하면 여기로 알린다. 예전엔 조용히 0으로 나가서,
@@ -27,6 +35,15 @@ public record ArStatusResponse(
             @Schema(description = "거래처명") String partnerName,
             @Schema(description = "사장명 — 재무팀 실파일 2번째 칸") String bossName,
             @Schema(description = """
+                    거래처 구분 — `PURCHASE`(매입처) / `SALES`(매출처). 소계행·합계행은 null.
+
+                    ★레거시 대성교재 화면이 매입처·매출처로 나눠 소계를 낸다. 다만 거기 쓰인
+                    **`거래처코드 첫 글자 'A'` 규칙은 쓰지 않는다** — DSTxtBook DB 안에서만
+                    성립하던 규칙이라 두 법인을 한 DB에 합친 뒤에는 안 맞는다
+                    (A 거래처 425곳 중 267곳이 매출처. 2026-10-22 실측).
+                    **매입(입고)이 있으면 매입처**로 본다 — 매출과 겹치는 곳은 3곳뿐이다.""")
+            String partnerKind,
+            @Schema(description = """
                     기초 — **시작일 전날까지의 잔액**이다(그해 이월 + 1/1~시작 전날 거래).
                     ‼️예전엔 '그해 이월'만 넣어서 **같은 날짜의 잔액이 시작일에 따라 달라졌다**
                     (프론트 실측 2026-10-15). 기간을 어떻게 잡든 종료일 기준 잔액은 같아야 한다.""")
@@ -37,11 +54,20 @@ public record ArStatusResponse(
             @Schema(description = "기간 반품액") long returnAmount,
             @Schema(description = "기간 세액(순)") long tax,
             @Schema(description = "기간 채권발생(매출+세액−반품)") long receivableGen,
+            @Schema(description = "기간 매입수량(입고). 레거시 대성교재 화면의 `입고수량` 칸.")
+            long purchaseQty,
             @Schema(description = """
-                    기간 **매입액**(입고). 레거시 외상매출현황의 `입고금액` 칸이다 —
-                    한 거래처 원장에 받을 돈(매출)과 줄 돈(매입)을 함께 본다
-                    (외상매출현황조회.vb:676 `이월+매출+반품+(입고+취소)−수금=잔액`).
-                    매입처는 이 칸으로 늘고 수금으로 준다.""")
+                    기간 **매입액**(입고). 레거시 대성교재 화면의 `입고금액` 칸이다 —
+                    한 거래처 원장에 받을 돈(매출)과 줄 돈(매입)을 함께 본다.
+                    매입처는 이 칸으로 늘고 수금으로 준다.
+
+                    ‼️레거시는 **법인마다 잔액 공식이 다르다.** 대성학력개발연구소 화면
+                    (`Refresh_DataGridView`, 외상매출현황조회.vb:177)의 잔액에는 입고가 **없고**,
+                    대성교재 화면(`Refresh_DataGridView_대성교재`, :676)에만 있다.
+                    우리는 두 법인을 한 DB에 담았는데 **수금에는 법인을 가릴 근거가 없어**
+                    (매출은 상품코드 접두어로 가릴 수 있으나 수금은 불가),
+                    숫자가 맞아떨어지는 **대성교재 공식으로 통합**했다 —
+                    매입처 6곳의 매입과 수금이 원 단위까지 일치한다.""")
             long purchaseAmount,
             @Schema(description = "기간 수금") long collected,
             @Schema(description = "잔액(이월+채권발생+매입−수금)") long balance,

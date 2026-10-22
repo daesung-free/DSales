@@ -500,10 +500,11 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
      * 그 수금은 <b>그 해 매입대금 정산</b>이고(금액이 그 해 입고액과 거의 일치), 짝이 되는
      * 매입이 없으니 한쪽 다리로 서 있던 것이다.
      *
-     * <p>반환 Object[]: [partnerId, 매입액].
+     * <p>반환 Object[]: [partnerId, 매입수량, 매입액].
      */
     @Query(value = """
-            SELECT partner_id, COALESCE(SUM(qty * COALESCE(unit_cost, 0)), 0)
+            SELECT partner_id, COALESCE(SUM(qty), 0),
+                   COALESCE(SUM(qty * COALESCE(unit_cost, 0)), 0)
             FROM inventory_txn
             WHERE deleted_at IS NULL AND partner_id IS NOT NULL
               AND txn_type = 'INBOUND' AND inbound_type = 'PURCHASE'

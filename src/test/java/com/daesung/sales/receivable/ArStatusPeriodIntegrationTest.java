@@ -178,12 +178,12 @@ class ArStatusPeriodIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
-    @DisplayName("★★자기 자신(같은 사업자번호)은 채권 원장에 안 선다")
-    void 자기자신은_채권이_아니다() {
-        // 레거시에 `(주)대성학력개발연구소`(108-81-66057)가 입고처로 있었는데,
-        // 우리 공급자 사업자번호와 **같다** — 같은 법인 안의 다른 사업부다.
-        // 그쪽에서 받은 물건은 매입이 아니고, 거기 찍힌 수금도 고객 돈이 아니라 내부 정산이다.
-        // ‼️한쪽만 빼면 더 나빠진다 — 매입만 빼고 수금을 남기면 잔액이 −30.5억이 된다.
+    @DisplayName("★★사업자번호가 우리와 같아도 채권 원장에서 빼지 않는다 — 레거시에 없는 로직이었다")
+    void 자기자신도_원장에_선다() {
+        // 2026-10-21에 "사업자번호가 공급자와 같으면 같은 법인이니 제외"로 만들었다가 되돌렸다.
+        // 레거시 어디에도 그런 분기가 없다 — 대성교재 외상매출현황은 `(주)대성학력개발연구소`도
+        // **매입처로 그냥 집계**한다(외상매출현황조회.vb:650 GROUPING 소계).
+        // 한 곳을 임의로 빼면 합계가 설명되지 않고, "왜 이 거래처만 없나"를 아무도 모른다.
         Long self = createId("/masters/clients", Map.of(
                 "code", "SELF" + SFX, "name", "우리 다른 사업부", "type", "NORMAL",
                 "bizNo", SUPPLIER_BIZ_NO));
@@ -193,11 +193,50 @@ class ArStatusPeriodIntegrationTest extends IntegrationTestSupport {
                 "collType", "CASH", "collAmt", 500_000))
                 .path("success").asBoolean()).isTrue();
 
+        JsonNode row = null;
         for (JsonNode r : data(get("/closing/ar-status?fromDate=" + YEAR + "-01-01&toDate="
                 + YEAR + "-12-31")).path("rows")) {
-            assertThat(r.hasNonNull("partnerId") && r.path("partnerId").asLong() == self)
-                    .as("자기 자신이 채권 목록에 있으면 안 된다: %s", r).isFalse();
+            if (r.hasNonNull("partnerId") && r.path("partnerId").asLong() == self) {
+                row = r;
+            }
         }
+        assertThat(row).as("사업자번호가 같아도 원장에 선다").isNotNull();
+        assertThat(row.path("collected").asLong()).isEqualTo(500_000);
+        assertThat(row.path("balance").asLong()).isEqualTo(-500_000);  // 매입 없이 수금만 → 음수
+    }
+
+    @Test
+    @DisplayName("매입처/매출처 구분과 소계 — 레거시 대성교재 화면의 GROUPING 자리")
+    void 매입처_매출처_소계() {
+        // 매입(입고)이 있으면 매입처. ‼️레거시의 `거래처코드 첫 글자 A` 규칙은 쓰지 않는다 —
+        // 두 법인을 한 DB에 합친 뒤에는 A 거래처 대부분이 매출처다(실측 425곳 중 267곳).
+        // ★매입처를 이 테스트 안에서 만든다 — 다른 테스트가 만든 것에 기대면 실행 순서에 묶인다.
+        Long buyFrom = createId("/masters/clients",
+                Map.of("code", "APG" + SFX, "name", "소계용 매입처", "type", "NORMAL"));
+        assertThat(post("/stock/inbound", Map.of(
+                "processedDate", YEAR + "-03-02", "supplierClientId", buyFrom,
+                "inboundType", "PURCHASE", "destinationWarehouseId", warehouse,
+                "items", List.of(Map.of("productId", product, "unitCost", 1000, "qty", 120))))
+                .path("success").asBoolean()).isTrue();
+
+        JsonNode d = data(get("/closing/ar-status?fromDate=" + YEAR + "-01-01&toDate=" + YEAR + "-12-31"));
+
+        JsonNode buyRow = null;
+        for (JsonNode r : d.path("rows")) {
+            if (r.hasNonNull("partnerId") && r.path("partnerId").asLong() == buyFrom) {
+                buyRow = r;
+            }
+        }
+        assertThat(buyRow).as("방금 만든 매입처가 목록에 선다").isNotNull();
+        assertThat(buyRow.path("purchaseAmount").asLong()).isEqualTo(120_000);
+        assertThat(buyRow.path("partnerKind").asText()).isEqualTo("PURCHASE");
+        assertThat(buyRow.path("purchaseQty").asLong()).as("입고수량도 보인다").isPositive();
+
+        // 소계 둘을 더하면 합계가 된다 — 갈라 놓고 합이 안 맞으면 둘 다 못 믿는다.
+        long sub = d.path("purchaseSubtotal").path("balance").asLong()
+                + d.path("salesSubtotal").path("balance").asLong();
+        assertThat(sub).isEqualTo(d.path("total").path("balance").asLong());
+        assertThat(d.path("purchaseSubtotal").path("partnerCode").asText()).isEqualTo("매입처 소계");
     }
 
     @Test
