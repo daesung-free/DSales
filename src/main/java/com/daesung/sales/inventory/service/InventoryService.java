@@ -604,7 +604,11 @@ public class InventoryService {
                         t.getWarehouse().getId(), t.getWarehouse().getName(),
                         t.getProduct().getId(), t.getProduct().getCode(), t.getProduct().getName(),
                         t.getProduct().getCatCode(), t.getProduct().getCatName(),
-                        t.getQty(), t.getInboundType(), t.getUnitCost(), t.getRefNo(), t.getMemo()))
+                        t.getQty(), t.getInboundType(),
+                        (t.getPartner() == null) ? null : t.getPartner().getId(),
+                        (t.getPartner() == null) ? null : t.getPartner().getCode(),
+                        (t.getPartner() == null) ? null : t.getPartner().getName(),
+                        t.getUnitCost(), t.getRefNo(), t.getMemo()))
                 .toList();
     }
 

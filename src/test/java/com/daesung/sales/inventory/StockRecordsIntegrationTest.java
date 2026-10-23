@@ -73,6 +73,36 @@ class StockRecordsIntegrationTest extends IntegrationTestSupport {
         // 16p 순매출의 매입액이 이 두 값에서 나온다 — 비면 이익률이 통째로 틀린다
         assertThat(r.path("inboundType").asText()).isEqualTo("PURCHASE");
         assertThat(r.path("unitCost").asLong()).isEqualTo(4000);
+
+        // ★입고처가 실려야 **매입/정상 구분의 근거**가 보인다.
+        //   이관분은 레거시 거래구분으로 갈랐는데, 입고처가 없어 화면에서
+        //   "왜 이게 매입인지"를 확인할 길이 없었다(프론트 실측 2026-10-22 3-1).
+        assertThat(r.path("supplierName").asText()).isEqualTo("인쇄");
+        assertThat(r.hasNonNull("supplierId")).isTrue();
+        assertThat(r.path("supplierCode").asText()).startsWith("SRS");
+    }
+
+    @Test
+    @DisplayName("입고처 없이 등록한 입고도 조회된다 — 입고처는 선택 입력이다")
+    void 입고처_없어도_조회된다() {
+        // ★전용 도서를 쓴다 — 공유 도서에 행을 더하면 다른 테스트의 건수 검증이 깨진다
+        //   (실제로 그렇게 깨뜨렸다).
+        Long solo = createId("/masters/products", Map.of("code", "SRN" + SFX, "name", "입고처없음도서",
+                "contentType", "SELF", "price", 10000, "supplyRate", 70));
+
+        // ‼️fetch join 을 INNER 로 걸면 이 행이 통째로 사라진다. LEFT 여야 한다.
+        assertThat(post("/stock/inbound", Map.of(
+                "processedDate", YEAR + "-05-09", "destinationWarehouseId", mainWh,
+                "items", List.of(Map.of("productId", solo, "unitCost", 1000, "qty", 7))))
+                .path("success").asBoolean()).isTrue();
+
+        // ‼️rows() 헬퍼는 공유 도서(product)로 서버에서 걸러낸다 — 그걸 타면 이 행이 안 나온다.
+        //   (단수 productId 와 복수 productIds 는 서버에서 merge 된다.)
+        List<JsonNode> hit = new java.util.ArrayList<>();
+        data(get("/stock/records?fromDate=" + YEAR + "-01-01&toDate=" + YEAR + "-12-31"
+                + "&kind=INBOUND&productId=" + solo)).forEach(hit::add);
+        assertThat(hit).as("입고처 없는 행도 목록에 있다").hasSize(1);
+        assertThat(hit.get(0).hasNonNull("supplierName")).as("입고처는 비어 있다").isFalse();
     }
 
     @Test

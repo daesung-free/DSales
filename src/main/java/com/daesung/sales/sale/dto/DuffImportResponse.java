@@ -31,6 +31,10 @@ public record DuffImportResponse(
 ) {
     @Schema(name = "DuffImportLine")
     public record Line(
+            @Schema(description = """
+                    이 줄의 **소스키**. 등록 요청의 `sourceKeys`·`overrides[].sourceKey` 에
+                    그대로 넣는다 — 체크한 줄만 등록하거나 값을 고칠 때 쓰는 키다.""")
+            String sourceKey,
             @Schema(description = "처리순번(신청번호)") int reqCd,
             @Schema(description = "신청일자") LocalDate reqDate,
             @Schema(description = "매출코드(거래처의 매출용 코드)") String machulCode,
@@ -47,6 +51,8 @@ public record DuffImportResponse(
                     + "판정은 'N'이냐 아니냐만 본다(N=비처리, 그 외=처리)", example = "1")
             String procType,
             @Schema(description = "청구구분(T=처리+비처리 / S=처리 / R=등록)") String chargeType,
+            @Schema(description = "신청과목수 — 레거시 목록의 컬럼(프론트 요청 2026-10-22 3-2 ⑥)")
+            int subjectCnt,
             @Schema(description = "신청인원") int reqInwon,
             @Schema(description = "처리인원") int procInwon,
             @Schema(description = "비처리인원") int unprocInwon,

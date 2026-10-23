@@ -121,6 +121,7 @@ public interface InventoryTxnRepository extends JpaRepository<InventoryTxn, Long
     @Query("""
             select t from InventoryTxn t
               join fetch t.product join fetch t.warehouse
+              left join fetch t.partner
              where t.txnType in :kinds
                and (cast(:fromDate as date) is null or t.tradeDate >= :fromDate)
                and (cast(:toDate as date) is null or t.tradeDate <= :toDate)

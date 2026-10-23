@@ -34,6 +34,16 @@ public record StockRecordRow(
         int qtyDelta,
         @Schema(description = "입고구분(NORMAL/PURCHASE). 입고 행에만 있다 — 이고·세트작업은 매입이 아니다")
         InboundType inboundType,
+        @Schema(description = "입고처 거래처 id. 없으면 null(입고처는 선택 입력이다)")
+        Long supplierId,
+        @Schema(description = "입고처 거래처코드") String supplierCode,
+        @Schema(description = """
+                입고처 거래처명.
+                ★<b>매입/정상 구분의 근거가 보여야 한다.</b> 이관분은 레거시 거래구분으로 갈랐는데,
+                응답에 입고처가 없어 화면에서 "왜 이게 매입인지"를 확인할 길이 없었다
+                (프론트 실측 2026-10-22 3-1). 같은 입고처가 매입·정상에 섞여 있으면 그것도 보여야
+                담당자가 되짚어 고칠 수 있다.""")
+        String supplierName,
         @Schema(description = "입고단가(원가). 매입입고에만 값이 있다 — 16p 순매출의 매입액이 여기서 나온다")
         Long unitCost,
         @Schema(description = "전표번호(입고/이고/세트작업 묶음 키)") String refNo,

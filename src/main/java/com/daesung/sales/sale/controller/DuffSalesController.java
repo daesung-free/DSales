@@ -60,21 +60,28 @@ public class DuffSalesController {
                 duffSalesImportService.importSales(fromDate, toDate, mode, onlyComplete, true));
     }
 
-    @Operation(summary = "매출일괄등록(더프) 실행",
+    @Operation(summary = "매출일괄등록(더프) 실행 — 레거시 방식(고르고 고쳐서 등록)",
             description = """
                     신청내역을 매출로 생성. 소스키(모드:신청:거래처:학교:과목) 멱등이라
                     재실행해도 이미 등록분은 스킵된다.
-                    인원 0 이하 건은 등록하지 않는다(정본 14p). 마감된 달로는 등록되지 않는다.""")
+                    인원 0 이하 건은 등록하지 않는다(정본 14p). 마감된 달로는 등록되지 않는다.
+
+                    ★<b>본문으로 받는다</b>(발주처 §1 "매출일괄등록은 기존 그대로 유지" + 레거시 매출가져오기.vb).
+                    · `sourceKeys` — 미리보기에서 **체크한 줄만** 등록(비우면 기간 전체)
+                    · `productId` — 담당자가 고른 도서를 **체크한 줄 전부에** 적용(레거시 아래 콤보박스)
+                    · `overrides[]` — 줄별 인원·정가·공급률·할인액·총금액 수정(레거시 '금액수정가능')
+                    · `salesDate` — 비우면 **신청일 기준**, 주면 그 날로 통일
+                    · `memo` — 등록되는 모든 줄에 붙는 공통 메모(원천 메모 뒤에 덧붙는다)
+
+                    ‼️미리보기와 **같은 기간·모드**를 함께 보내야 한다 — 범위가 다르면 그 소스키가
+                    목록에 없어 조용히 빠진다. 본문을 통째로 비우면 예전처럼 기간 전체를 등록한다.""")
     @PostMapping("/import")
     public ApiResponse<DuffImportResponse> importSales(
-            @Parameter(description = "신청일 시작(yyyy-MM-dd)") @RequestParam(required = false)
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
-            @Parameter(description = "신청일 종료(yyyy-MM-dd)") @RequestParam(required = false)
-            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
-            @Parameter(description = MODE_DESC) @RequestParam(required = false) DuffChargeMode mode,
-            @Parameter(description = COMPLETE_DESC)
-            @RequestParam(required = false, defaultValue = "false") boolean onlyComplete) {
-        return ApiResponse.success(
-                duffSalesImportService.importSales(fromDate, toDate, mode, onlyComplete, false));
+            @org.springframework.web.bind.annotation.RequestBody(required = false)
+            com.daesung.sales.sale.dto.DuffImportRequest body) {
+        com.daesung.sales.sale.dto.DuffImportRequest req = (body != null) ? body
+                : new com.daesung.sales.sale.dto.DuffImportRequest(
+                        null, null, null, null, null, null, null, null, null);
+        return ApiResponse.success(duffSalesImportService.importSales(req, false));
     }
 }
