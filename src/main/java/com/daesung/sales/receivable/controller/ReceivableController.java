@@ -481,8 +481,13 @@ public class ReceivableController {
                     ★**매출이 있는 거래처만** 나온다. 없는 곳까지 넣으면 0원짜리 명세서가
                     메일·PDF로 나가는 사고가 된다.
 
-                    ★각 원장에 `partnerCode`가 실려 있다 —
-                    PDF 파일명 `RESULT_{거래처코드}_{거래처명}_{기간}.pdf` 를 만들 때 쓴다.""")
+                    ★각 원장에 `partnerDsreCode`가 실려 있다 —
+                    발주처 지정 파일명 `RESULT_{DSRE 거래처코드}_{거래처명}_{yyyyMMdd}-{yyyyMMdd}.pdf`
+                    (예: `RESULT_10003_강남 하람도서_20260801-20260831.pdf`)를 만들 때 쓴다.
+
+                    ‼️`partnerCode`(우리 마스터 코드, `A10A195` 꼴)와 **다른 값**이다.
+                    그걸 쓰면 `RESULT_A10A195_…` 가 된다.
+                    비어 있으면 `POST /masters/clients/sync-dsre-code` 를 먼저 돌려야 한다.""")
     @GetMapping("/ar-ledger/duff/all")
     public ApiResponse<List<DuffLedgerResponse>> duffLedgerAll(
             @Parameter(description = "시작일(미지정 시 올해 1/1)") @RequestParam(required = false)

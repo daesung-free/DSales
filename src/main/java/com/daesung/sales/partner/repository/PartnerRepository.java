@@ -18,6 +18,12 @@ public interface PartnerRepository extends JpaRepository<Partner, Long> {
      */
     java.util.List<Partner> findByCodeIn(java.util.Collection<String> codes);
 
+    /**
+     * <b>DSRE 거래처코드</b>로 찾는다. 학교 마스터({@code schools.cust_code})가 이 코드를 쓴다 —
+     * 우리 {@code code}(DSLab 매출코드)와 체계가 달라 그쪽으로는 한 건도 안 붙는다.
+     */
+    java.util.List<Partner> findByDsreCodeIn(java.util.Collection<String> dsreCodes);
+
     Page<Partner> findByCodeContainingIgnoreCaseOrNameContainingIgnoreCase(
             String code, String name, Pageable pageable);
 

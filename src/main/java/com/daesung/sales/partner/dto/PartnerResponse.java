@@ -17,6 +17,11 @@ public record PartnerResponse(
         @Schema(description = "도시명") String cityName,
         @Schema(description = "신고명(상호만)") String name1,
         @Schema(description = "지역") String region,
+        @Schema(description = """
+                DSRE 거래처코드('10003' 꼴). `code`(DSLab 매출코드 'A10A195' 꼴)와 **다른 체계**다.
+                학교 마스터 조인·PDF 파일명이 이 값을 쓴다.
+                비어 있으면 `POST /masters/clients/sync-dsre-code` 로 채운다.""")
+        String dsreCode,
         @Schema(description = "관할지역") String zone2,
         @Schema(description = "거래처구분") String clientCategory,
         PartnerType type,
@@ -54,7 +59,7 @@ public record PartnerResponse(
      */
     public static PartnerResponse from(Partner p) {
         return new PartnerResponse(p.getId(), p.getCode(), p.getName(), p.getCityName(), p.getName1(),
-                p.getRegion(), p.getZone2(), p.getClientCategory(), p.getType(),
+                p.getRegion(), p.getDsreCode(), p.getZone2(), p.getClientCategory(), p.getType(),
                 p.getBizNo(), p.getBossName(), Masks.residentNo(p.getBossId()), p.getBizStatus(), p.getBizItem(),
                 p.getTel1(), p.getTel2(), p.getCellPhone(), p.getFax(), p.getEmail1(), p.getEmail2(),
                 p.getZip(), p.getAddr1(), p.getAddr2(),

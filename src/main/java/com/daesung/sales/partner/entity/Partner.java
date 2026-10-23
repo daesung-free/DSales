@@ -54,6 +54,24 @@ public class Partner extends BaseEntity {
     @Column(length = 50)
     private String region;
 
+    /**
+     * <b>DSRE2 거래처코드</b>({@code tbl_cust_info.CUST_CD}, '10003' 꼴).
+     *
+     * <p>★{@link #code}(DSLab 매출코드, 'A10A195' 꼴)와 <b>다른 체계</b>다.
+     * 학교 마스터({@code schools.cust_code})와 발주처 PDF 양식이 쓰는 쪽이 이것이라,
+     * 이 칸이 비면 학교/학원검색의 거래처명·지역이 빈 칸이 되고
+     * PDF 파일명도 만들 수 없다(발주처 §3② "{DSRE 거래처코드}", 예 `RESULT_10003_…`).
+     *
+     * <p>값은 {@code POST /masters/clients/sync-dsre-code} 가 운영 DSRE2 에서 읽어 채운다.
+     */
+    @Column(name = "dsre_code", length = 20)
+    private String dsreCode;
+
+    /** DSRE 동기화가 채우는 칸. 수기 수정 경로를 열지 않는다 — 출처가 DSRE 하나여야 한다. */
+    public void applyDsreCode(String dsreCode) {
+        this.dsreCode = dsreCode;
+    }
+
     /** 거래처구분(특약점/기타학원/B2B/대성/자사몰 등, 12p 조회 컬럼. 레거시 type1). PartnerType(NORMAL/CONSIGN)과 별개 축. */
     @Column(name = "client_category", length = 30)
     private String clientCategory;

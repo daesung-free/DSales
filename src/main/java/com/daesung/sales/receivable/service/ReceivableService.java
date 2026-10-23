@@ -266,7 +266,7 @@ public class ReceivableService {
         LocalDate from = (fromDate != null) ? fromDate : LocalDate.now().withDayOfYear(1);
         LocalDate to = (toDate != null) ? toDate : LocalDate.now();
 
-        return build(partnerId, partner.getCode(), partner.getName(), from, to,
+        return build(partnerId, partner.getCode(), partner.getName(), partner.getDsreCode(), from, to,
                 saleRepository.duffLedgerLines(partnerId, from, to));
     }
 
@@ -294,26 +294,29 @@ public class ReceivableService {
         Long curId = null;
         String curCode = null;
         String curName = null;
+        String curDsre = null;
 
         for (Object[] r : saleRepository.duffLedgerLines(null, from, to)) {
             Long pid = ((Number) r[9]).longValue();
             if (curId != null && !curId.equals(pid)) {
-                out.add(build(curId, curCode, curName, from, to, chunk));
+                out.add(build(curId, curCode, curName, curDsre, from, to, chunk));
                 chunk = new ArrayList<>();
             }
             curId = pid;
             curCode = str(r[10]);
             curName = str(r[11]);
+            curDsre = str(r[12]);
             chunk.add(r);
         }
         if (curId != null) {
-            out.add(build(curId, curCode, curName, from, to, chunk));
+            out.add(build(curId, curCode, curName, curDsre, from, to, chunk));
         }
         return out;
     }
 
     /** 거래처 한 곳의 더프모 원장(명세 + 소계 + 요약). 행은 이미 그 거래처 것만 들어온다. */
     private DuffLedgerResponse build(Long partnerId, String partnerCode, String partnerName,
+                                     String partnerDsreCode,
                                      LocalDate from, LocalDate to, List<Object[]> lines) {
         List<DuffLedgerResponse.Row> rows = new ArrayList<>();
         // 처리 구분별 합계 — 레거시는 같은 조건으로 SQL을 한 번 더 떠서(rollup) 만들었지만,
@@ -383,7 +386,7 @@ public class ReceivableService {
             summary.add(new DuffLedgerResponse.SummaryRow(null, true, totalQty, totalAmt));
         }
 
-        return new DuffLedgerResponse(partnerId, partnerCode, partnerName, from, to,
+        return new DuffLedgerResponse(partnerId, partnerCode, partnerName, partnerDsreCode, from, to,
                 rows, summary, totalQty, totalAmt);
     }
 

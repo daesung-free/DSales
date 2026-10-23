@@ -24,10 +24,18 @@ import java.util.List;
 @Schema(name = "DuffLedgerResponse", description = "외상매출장 더프모만(24p) — 모의고사 세부 명세")
 public record DuffLedgerResponse(
         @Schema(description = "거래처 id") Long partnerId,
-        @Schema(description = """
-                거래처코드. ★PDF 파일명이 이 값을 쓴다 —
-                `RESULT_{거래처코드}_{거래처명}_{시작}-{종료}.pdf`(레거시 외상매출장조회.vb:1680).""")
+        @Schema(description = "거래처코드(우리 마스터, DSLab 매출코드 'A10A195' 꼴)")
         String partnerCode,
+
+        @Schema(description = """
+                **DSRE 거래처코드**('10003' 꼴). ★<b>PDF 파일명이 쓰는 값은 이쪽이다</b> —
+                발주처 지정 `RESULT_{DSRE 거래처코드}_{거래처명}_{yyyyMMdd}-{yyyyMMdd}.pdf`,
+                예) `RESULT_10003_강남 하람도서_20260801-20260831.pdf`.
+
+                ‼️`partnerCode`(A10A195)와 **다른 체계**다. 처음에 그걸 실어 보냈는데
+                그대로 쓰면 `RESULT_A10A195_…` 가 된다.
+                비어 있으면 `POST /masters/clients/sync-dsre-code` 로 채운다.""")
+        String partnerDsreCode,
         @Schema(description = "거래처명") String partnerName,
         @Schema(description = "조회 시작일") LocalDate fromDate,
         @Schema(description = "조회 종료일") LocalDate toDate,

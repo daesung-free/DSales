@@ -89,9 +89,18 @@ public class SchoolService {
                 codes.add(r.getCustCode());
             }
         });
+        // ‼️**DSRE 코드로 찾는다.** 학교의 cust_code 는 DSRE 거래처코드('10003' 꼴)이고
+        //   우리 partners.code 는 DSLab 매출코드('A10A195' 꼴)라 **체계가 다르다** —
+        //   예전엔 code 로 찾아서 한 건도 안 붙었고, 거래처명1·지역명이 통째로 빈 칸이었다
+        //   (프론트 실측 2026-10-23 §6③). 값은 POST /masters/clients/sync-dsre-code 가 채운다.
+        //
+        //   ★code 로도 한 번 더 찾는다 — 수기로 등록한 학교는 우리 거래처코드를 적었을 수 있다.
+        //     DSRE 코드가 먼저고, 못 찾을 때만 우리 코드를 본다.
         java.util.Map<String, com.daesung.sales.partner.entity.Partner> partners =
                 new java.util.HashMap<>();
         if (!codes.isEmpty()) {
+            partnerRepository.findByDsreCodeIn(codes)
+                    .forEach(p -> partners.putIfAbsent(p.getDsreCode(), p));
             partnerRepository.findByCodeIn(codes)
                     .forEach(p -> partners.putIfAbsent(p.getCode(), p));
         }

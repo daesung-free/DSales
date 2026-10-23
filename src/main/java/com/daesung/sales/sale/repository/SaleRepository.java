@@ -304,7 +304,8 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
      *
      * <p>소계(학교 계·월 계)는 서비스에서 조립한다. 반환 Object[]:
      * [salesDate, schoolName, <b>examMonth(문자열 yyyy-MM)</b>, grade, procType,
-     *  unitPrice, supplyRate, qty, amount, <b>partnerId, partnerCode, partnerName</b>].
+     *  unitPrice, supplyRate, qty, amount,
+     *  <b>partnerId, partnerCode, partnerName, partnerDsreCode</b>].
      */
     @Query(value = """
             SELECT s.sales_date, COALESCE(s.school_name, ''),
@@ -321,7 +322,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
                    ) AS exam_month,
                    COALESCE(p.grade, ''), COALESCE(s.proc_type, ''),
                    s.unit_price, s.supply_rate, s.qty, COALESCE(s.supply_amount, 0),
-                   s.partner_id, pt.code, pt.name
+                   s.partner_id, pt.code, pt.name, pt.dsre_code
             FROM sales s
               JOIN products p ON p.id = s.product_id
               JOIN partners pt ON pt.id = s.partner_id

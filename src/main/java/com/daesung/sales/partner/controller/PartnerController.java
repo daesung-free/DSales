@@ -42,6 +42,12 @@ public class PartnerController {
     private final PartnerService partnerService;
     private final PartnerUploadService partnerUploadService;
     private final ExcelExportUtil excel;
+    /**
+     * DSRE 코드 동기화. ‼️<b>선택 주입</b>이다 — DSRE 연동이 꺼져 있으면 빈이 없다.
+     * 필수로 두면 연동을 끈 환경에서 <b>거래처 화면 전체</b>가 못 뜬다.
+     */
+    private final org.springframework.beans.factory.ObjectProvider<
+            com.daesung.sales.partner.service.DsrePartnerCodeSyncService> dsreCodeSyncProvider;
 
     @Operation(summary = "거래처 목록 조회",
             description = """
@@ -204,6 +210,38 @@ public class PartnerController {
                 "clientCategories", com.daesung.sales.common.code.MasterCodes.CLIENT_CATEGORY,
                 "regions", partnerService.usedRegions(),
                 "zones", partnerService.usedZones()));
+    }
+
+    @Operation(summary = "DSRE 거래처코드 동기화",
+            description = """
+                    운영 DSRE2 `tbl_cust_info` 를 읽어 거래처마다 **DSRE 코드**(`CUST_CD`)를 채운다.
+                    매칭키는 `MACHUL_CD` = 우리 거래처코드다.
+
+                    ### 왜 필요한가
+                    우리 거래처코드는 DSLab 매출코드(`A10A195` 꼴)인데,
+                    **학교 마스터와 발주처 양식은 DSRE 코드(`10003` 꼴)를 쓴다.**
+                    두 체계가 달라 `schools.cust_code = partners.code` 조인이 한 건도 안 붙었고,
+                    그래서 학교/학원검색의 거래처명1·지역명이 빈 칸이었다.
+                    PDF 파일명(`RESULT_10003_강남 하람도서_…`)도 같은 이유로 못 만들었다.
+
+                    ### 규율
+                    · DSRE 는 **읽기만** 한다. 쓰는 것은 우리 `partners.dsre_code` 하나다.
+                    · DSRE 에서 사라진 거래처의 코드도 **지우지 않는다** — 지우면 그 거래처의
+                      학교가 다시 빈 칸이 되는데 사라진 이유를 우리가 모른다.
+                    · 같은 DSRE 코드를 여럿이 쓰면 **막지 않고 목록으로 보고**한다
+                      (`duplicatedDsreCodes`). 막으면 동기화 전체가 실패한다.
+
+                    여러 번 돌려도 안전하다(같은 값이면 `unchanged`).
+                    DSRE 연동(`daesung.dsre.enabled=true`) 필요.""")
+    @PostMapping("/sync-dsre-code")
+    public ApiResponse<com.daesung.sales.partner.dto.DsreCodeSyncResult> syncDsreCode() {
+        var svc = dsreCodeSyncProvider.getIfAvailable();
+        if (svc == null) {
+            throw new com.daesung.sales.common.exception.BusinessException(
+                    com.daesung.sales.common.exception.ErrorCode.INVALID_INPUT,
+                    "DSRE 연동이 꺼져 있습니다(daesung.dsre.enabled). 서버 설정을 확인하세요.");
+        }
+        return ApiResponse.success(svc.sync());
     }
 
 }

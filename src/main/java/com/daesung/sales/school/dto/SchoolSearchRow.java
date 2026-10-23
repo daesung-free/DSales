@@ -60,9 +60,16 @@ public record SchoolSearchRow(
         String locName = (loc == null) ? name : (name == null ? loc : loc + " " + name);
         String name1 = (partner == null) ? null : blankToNull(partner.getName1());
         String name2 = (partner == null) ? null : blankToNull(partner.getName());
+        // ★지역명은 학교에 없으면 **거래처의 지역**으로 채운다.
+        //   schools.region 은 이관에서 아예 안 들어왔다(전 행 NULL) — 레거시 schData 에 그 칸이 없다.
+        //   거래처 지역(DSRE CITY_NM)이 사실상 같은 축이라, 비워 두는 것보다 낫다.
+        String region = blankToNull(s.getRegion());
+        if (region == null && partner != null) {
+            region = blankToNull(partner.getRegion());
+        }
         return new SchoolSearchRow(
                 s.getSchoolCode(), s.getSchoolName(), s.getCityCode(),
-                blankToNull(s.getRegion()), s.getCity(),
+                region, s.getCity(),
                 name1, (name2 != null) ? name2 : name,
                 loc, name, locName,
                 s.getMockPartnerName(), s.getIcPartnerName(),
