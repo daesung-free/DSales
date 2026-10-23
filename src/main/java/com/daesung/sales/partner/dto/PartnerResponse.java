@@ -40,7 +40,11 @@ public record PartnerResponse(
         @Schema(description = "만료 여부") boolean expired,
         @Schema(description = "담보금액") Long assureAmount,
         @Schema(description = "담보만기") LocalDate assureExpiry,
-        @Schema(description = "담보내용") String assureNote
+        @Schema(description = "담보내용") String assureNote,
+        @Schema(description = """
+                수정 버전 — **수정 요청에 그대로 되돌려 보내면** 다른 사람이 먼저 고친 것을
+                덮어쓰지 않는다(어긋나면 409). 안 보내면 예전처럼 그냥 덮어쓴다.""")
+        Long version
 ) {
     /**
      * 엔티티 → 응답. 사업자주민번호는 <b>여기서 마스킹</b>한다(DB-73).
@@ -55,6 +59,7 @@ public record PartnerResponse(
                 p.getTel1(), p.getTel2(), p.getCellPhone(), p.getFax(), p.getEmail1(), p.getEmail2(),
                 p.getZip(), p.getAddr1(), p.getAddr2(),
                 p.getStartDate(), p.getEndDate(), p.isExpired(),
-                p.getAssureAmount(), p.getAssureExpiry(), p.getAssureNote());
+                p.getAssureAmount(), p.getAssureExpiry(), p.getAssureNote(),
+                p.getVersion());
     }
 }

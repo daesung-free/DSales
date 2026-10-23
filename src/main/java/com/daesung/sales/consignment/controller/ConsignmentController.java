@@ -25,6 +25,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -39,6 +40,7 @@ public class ConsignmentController {
 
     private final ConsignmentService consignmentService;
     private final ExcelExportUtil excel;
+    private final com.daesung.sales.common.idempotency.IdempotencyService idempotency;
 
     @Operation(summary = "위탁출고 등록",
             description = "물류창고 → 위탁창고 이고(재고 이동) + 미결원장(consignment_out, OPEN) 생성. "
@@ -89,8 +91,18 @@ public class ConsignmentController {
                     + "화면이 alert을 띄운 뒤 담당자가 수기로 이어서 처리한다.")
     @PostMapping("/settle")
     @ResponseStatus(HttpStatus.CREATED)
-    public ApiResponse<ConsignSettleResponse> settle(@Valid @RequestBody ConsignSettleRequest req) {
-        return ApiResponse.success(consignmentService.settle(req));
+    public ApiResponse<ConsignSettleResponse> settle(
+            @Valid @RequestBody ConsignSettleRequest req,
+            @Parameter(description = """
+                    요청 1회 처리 키(선택). 같은 키로 다시 부르면 **처음과 똑같은 응답**이 나간다.
+                    ‼️확정 중 504·연결끊김이 나면 사용자는 다시 누르는데, 초과정산 차단을 걷어냈기 때문에
+                    서버가 막아 주지 않아 매출이 두 번 잡힌다. 화면은 요청마다 새 키를 만들고
+                    **재시도에는 같은 키**를 쓰면 된다. 키를 안 보내면 예전처럼 매번 실행된다.""")
+            @RequestHeader(name = "Idempotency-Key", required = false) String idemKey,
+            java.security.Principal principal) {
+        String actor = (principal == null) ? null : principal.getName();
+        return ApiResponse.success(idempotency.runOnce(idemKey, "CONSIGN_SETTLE",
+                ConsignSettleResponse.class, actor, () -> consignmentService.settle(req)));
     }
 
     @Operation(summary = "위탁 반품(미정산분)",

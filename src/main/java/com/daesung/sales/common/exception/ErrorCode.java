@@ -36,7 +36,10 @@ public enum ErrorCode {
     //                    남아 있었다(2026-09-11 제거). 다시 throw 하지 말 것.
     NEGATIVE_STOCK(HttpStatus.CONFLICT, "재고가 부족합니다."),
     RETURN_EXCEEDS(HttpStatus.CONFLICT, "반품 수량이 출고 잔여를 초과했습니다."),   // ✝️경고로만
-    OVER_SETTLEMENT(HttpStatus.CONFLICT, "정산 수량이 미결 잔여를 초과했습니다.");  // ✝️경고로만
+    OVER_SETTLEMENT(HttpStatus.CONFLICT, "정산 수량이 미결 잔여를 초과했습니다."),  // ✝️경고로만
+    // 같은 Idempotency-Key 의 요청이 아직 처리 중이거나, 저장된 응답을 복원하지 못한 경우.
+    // ★이때 **다시 실행하지 않는다** — 그게 이중처리다.
+    DUPLICATE_REQUEST(HttpStatus.CONFLICT, "이미 처리 중이거나 처리된 요청입니다.");
 
     private final HttpStatus status;
     private final String message;

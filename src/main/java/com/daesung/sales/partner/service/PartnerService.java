@@ -141,6 +141,11 @@ public class PartnerService {
     @Transactional
     public PartnerResponse update(Long id, PartnerUpdateRequest req) {
         Partner partner = getOrThrow(id);
+        // ★거래처 수정은 **전체 교체**다 — 일부만 보내면 나머지가 지워진다.
+        //   그래서 동시 수정이 특히 위험하다(실제로 부산지사 내용을 날린 적이 있다).
+        //   읽을 때 받은 버전을 보내 준 호출만 보호한다(안 보내면 기존 동작).
+        com.daesung.sales.common.idempotency.VersionGuard.check(
+                req.version(), partner.getVersion(), "거래처");
         Map<String, String> before = partner.auditSnapshot();
         partner.update(req.name(), req.cityName(), req.name1(), req.region(), MasterCodes.clientCategory(req.clientCategory()), req.type());
         partner.updateCredit(req.assureAmount(), req.assureExpiry(), req.assureNote());

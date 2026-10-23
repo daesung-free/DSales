@@ -121,7 +121,11 @@ public class ProductUploadService {
                             or(r.str(H_TYPE), existing.getProductType()),
                             or(r.intOrNull(H_SUPPLY), existing.getSupplyRate()),
                             r.boolOrNull(H_LEDGER), r.boolOrNull(H_PRICE_VIS), r.boolOrNull(H_WEB),
-                            r.boolOrNull(H_STOCK)));
+                            r.boolOrNull(H_STOCK),
+                            // ★업로드는 버전을 보내지 않는다 — 파일 한 장으로 수백 건을 고치는 경로라
+                            //   한 건이 그 사이 바뀌었다고 전체를 멈추면 담당자가 손쓸 방법이 없다.
+                            //   동시 수정 보호는 **화면 수정**에만 건다.
+                            null));
                     out.updated(r.rowNo(), code);
                 }
             } catch (BusinessException e) {

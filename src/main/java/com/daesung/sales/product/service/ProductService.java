@@ -131,6 +131,10 @@ public class ProductService {
     @Transactional
     public ProductResponse update(Long id, ProductUpdateRequest req) {
         Product product = getOrThrow(id);
+        // 도서 수정은 부분 수정이라 서로 다른 칸을 고치면 덜 위험하지만,
+        // 같은 칸을 동시에 고치면 여전히 나중 저장이 이긴다. 버전을 보내면 그걸 막는다.
+        com.daesung.sales.common.idempotency.VersionGuard.check(
+                req.version(), product.getVersion(), "도서");
         String grade = MasterCodes.grade(req.grade());
         // ★수정은 **부분 수정**이다(안 보낸 필드는 유지). 그래서 필수 애너테이션을 뗐는데,
         //   이름만은 빈 문자열을 막는다 — 이름 없는 상품은 목록·리포트에서 찾을 수 없다.

@@ -44,7 +44,11 @@ public record ProductResponse(
                 ‼️<b>비지 않는다.</b> 예전엔 한 번도 안 고친 도서가 비어 있어서, 전부 그런 상태면
                   화면이 **기준 자체를 못 잡았다**(프론트 실측 2026-10-21).
                   서버가 거르는 기준과 같은 값(`coalesce(updatedAt, createdAt)`)을 그대로 돌려준다.""")
-        java.time.LocalDateTime updatedAt
+        java.time.LocalDateTime updatedAt,
+        @io.swagger.v3.oas.annotations.media.Schema(description = """
+                수정 버전 — **수정 요청에 그대로 되돌려 보내면** 다른 사람이 먼저 고친 것을
+                덮어쓰지 않는다(어긋나면 409). 안 보내면 예전처럼 그냥 덮어쓴다.""")
+        Long version
 ) {
     /**
      * @param division 이 상품의 세부구분 마스터. null이면 미지정이거나 마스터에 없는 값 →
@@ -65,6 +69,7 @@ public record ProductResponse(
                 p.isLedgerVisible(), p.isPriceVisible(), p.isWebVisible(), p.isStockManaged(),
                 // ‼️서버가 `updatedSince` 로 거르는 기준과 **같은 값**을 준다 —
                 //   다르면 화면이 만든 기준으로 다시 물었을 때 같은 건이 또 오거나 빠진다.
-                (p.getUpdatedAt() != null) ? p.getUpdatedAt() : p.getCreatedAt());
+                (p.getUpdatedAt() != null) ? p.getUpdatedAt() : p.getCreatedAt(),
+                p.getVersion());
     }
 }

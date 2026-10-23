@@ -20,6 +20,16 @@ import lombok.NoArgsConstructor;
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class Product extends BaseEntity {
 
+    /**
+     * 낙관적 잠금 버전. 수정될 때마다 JPA 가 올린다.
+     * ‼️이 칸만으로는 못 막는다 — 요청마다 새로 읽으면 버전이 늘 일치한다.
+     * **클라이언트가 읽은 버전을 되돌려 보내야** 충돌이 드러난다(서비스에서 비교).
+     */
+    @jakarta.persistence.Version
+    @jakarta.persistence.Column(nullable = false)
+    private Long version;
+
+
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;

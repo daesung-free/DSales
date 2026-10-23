@@ -70,6 +70,12 @@ public record ProductUpdateRequest(
         Boolean webVisible,
 
         @Schema(description = "재고관리 여부(false=모의고사 등 인원기반, 매출 시 재고 미차감)", example = "true")
-        Boolean stockManaged
+        Boolean stockManaged,
+
+        @Schema(description = """
+                읽을 때 받은 수정 버전(선택). 보내면 그 사이 다른 사람이 고쳤는지 검사해
+                어긋나면 409 로 거부한다 — 앞사람 수정을 덮어쓰지 않는다.
+                안 보내면 예전처럼 그대로 저장한다(기존 호출 호환).""")
+        Long version
 ) {
 }

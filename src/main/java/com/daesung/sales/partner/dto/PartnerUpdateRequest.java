@@ -61,6 +61,11 @@ public record PartnerUpdateRequest(
         @Schema(description = "우편번호", example = "13588") String zip,
         @Schema(description = "관할지역 — '지역'과 별개 축", example = "경남권") String zone2,
         @Schema(description = "등록일(거래 시작)") LocalDate startDate,
-        @Schema(description = "만료일 — 값이 있으면 만료 거래처로 분류") LocalDate endDate
+        @Schema(description = "만료일 — 값이 있으면 만료 거래처로 분류") LocalDate endDate,
+        @Schema(description = """
+                읽을 때 받은 수정 버전(선택). 보내면 그 사이 다른 사람이 고쳤는지 검사해
+                어긋나면 409 로 거부한다 — 앞사람 수정을 덮어쓰지 않는다.
+                안 보내면 예전처럼 그대로 저장한다(기존 호출 호환).""")
+        Long version
 ) {
 }
