@@ -108,6 +108,42 @@ class NegativeStockBlockIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @org.junit.jupiter.api.Order(99)
+    @DisplayName("‼️재고를 채우는 작업엔 경고가 없다 — 반품은 느는 쪽인데 걸렸다")
+    void 증가작업은_경고없음() {
+        // ★자기 상품으로 논다 — 다른 테스트의 잔량에 기대면 순서가 바뀔 때 깨진다.
+        Map<String, Object> b = new HashMap<>();
+        b.put("code", "NSP" + SFX);
+        b.put("name", "증가검증도서");
+        b.put("contentType", "SELF");
+        b.put("price", 10000);
+        b.put("supplyRate", 70);
+        b.put("catCode", "N" + YEAR + "A");
+        b.put("catName", "음수분류");
+        Long p = createId("/masters/products", b);
+
+        // 입고 없이 50부 폐기 → 잔량 −50 (발주처 기준 정상 상태)
+        JsonNode out = post("/disposals", Map.of(
+                "processedDate", YEAR + "-03-01", "warehouseId", wh,
+                "items", List.of(Map.of("productId", p, "qty", 50))));
+        assertThat(out.path("success").asBoolean()).isTrue();
+        assertThat(out.path("data").path("warnings"))
+                .as("줄이는 작업에는 그대로 경고가 붙는다").isNotEmpty();
+
+        // 여기서 **입고**로 20부 채운다. 잔량은 −30 으로 여전히 음수지만 늘린 작업이다.
+        JsonNode in = post("/stock/inbound", Map.of(
+                "processedDate", YEAR + "-03-02", "supplierClientId", supplier,
+                "destinationWarehouseId", wh,
+                "items", List.of(Map.of("productId", p, "unitCost", 3000, "qty", 20))));
+        assertThat(in.path("success").asBoolean()).isTrue();
+
+        // ‼️예전엔 "잔량이 음수"만 보고 붙여서 여기에 경고가 달렸다.
+        //   이관 데이터에 음수 재고가 흔해 반품·입고마다 경고가 붙으면 아무도 안 본다.
+        assertThat(in.path("data").path("warnings"))
+                .as("재고를 채우는 작업엔 경고가 붙지 않는다: %s", in).isEmpty();
+    }
+
+    @Test
     @org.junit.jupiter.api.Order(2)
     @DisplayName("재고 범위 안이면 경고가 없다 — 경고가 늘 붙으면 아무도 안 본다")
     void 정상범위는_경고없음() {
