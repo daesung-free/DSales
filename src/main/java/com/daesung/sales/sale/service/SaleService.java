@@ -500,12 +500,35 @@ public class SaleService {
         // 세액은 보낸 값 우선, 없으면 기존 값 유지(자동산출 안 함 — 재무팀 확정).
         Integer tax = (req.tax() != null) ? req.tax()
                 : ((sale.getTax() == null) ? null : sale.getTax().intValue());
+        // ★★금액 산출 입력(수량·정가·공급률·할인액·세액)을 **하나도 안 바꾼 수정**이면
+        //   금액을 다시 계산하지 않고 **저장된 값을 그대로 둔다.**
+        //
+        //   ‼️안 그러면 메모만 고쳐도 금액이 0원이 된다. 이관 자료에 수량·정가·공급률이 0이고
+        //     금액만 있는 줄이 있기 때문이다(대부분 지자체 건. 올해 116줄·약 42.9억,
+        //     예: DL-364378 47,636,030원 — 프론트 실측 2026-10-23 §5).
+        //     0은 null 검사를 통과하므로 Amounts.of(0,0,0) → 0원으로 덮인다.
+        //
+        //   "보낸 값으로 맞춘다"는 이 API의 규칙은 유지한다 — 금액 입력을 하나라도 보내면
+        //   그때는 종전대로 다시 계산한다. 안 보낸 수정에까지 계산을 들이밀 이유가 없다.
+        boolean amountInputsChanged = req.qty() != null || req.unitPrice() != null
+                || req.supplyRate() != null || req.discountAmount() != null || req.tax() != null;
+
+        String before = summarizeAmounts(sale);
+        if (!amountInputsChanged) {
+            sale.applyRevision(newQty, unitPrice, supplyRate, discount,
+                    sale.getSupplyAmount(), sale.getTax(), sale.getTotalAmount(),
+                    (req.memo() != null) ? req.memo() : sale.getMemo(),
+                    (req.bookRound() != null) ? req.bookRound() : sale.getBookRound(),
+                    (req.procType() != null) ? req.procType() : sale.getProcType(),
+                    (req.packType() != null) ? req.packType() : sale.getPackType());
+            return finishUpdate(sale, req, id, oldQty, newQty, before);
+        }
+
         if (unitPrice == null || supplyRate == null) {
             throw new BusinessException(ErrorCode.INVALID_INPUT,
                     "정가·공급률이 비어 있어 금액을 다시 계산할 수 없습니다: " + sale.getSalesNo());
         }
 
-        String before = summarizeAmounts(sale);
         // 면세 상품에 세액이 들어오면 Amounts 가 거부한다(한 곳에서만 판정한다).
         Amounts amt = Amounts.of(unitPrice, supplyRate, newQty, sale.getProduct().isTaxFree(),
                 tax, discount);
@@ -516,11 +539,20 @@ public class SaleService {
                 (req.procType() != null) ? req.procType() : sale.getProcType(),
                 (req.packType() != null) ? req.packType() : sale.getPackType());
 
+        return finishUpdate(sale, req, id, oldQty, newQty, before);
+    }
+
+    /**
+     * 매출 수정의 마무리 — 금액 직접입력 반영 · 이력 기록 · 수량 변동분 재고 보정.
+     *
+     * <p>금액을 다시 계산한 경로와 그대로 둔 경로가 <b>같은 마무리</b>를 타야 한다.
+     * 갈라 두면 한쪽에만 재고 보정이나 이력이 빠진다.
+     */
+    private SaleResponse finishUpdate(Sale sale, SaleUpdateRequest req, Long id,
+                                      int oldQty, int newQty, String before) {
         // ‼️from/to 칸은 VARCHAR(30)이라 요약이 안 들어간다(실제로 1406으로 터졌다).
         //   상태축에는 수량만 넣고, 무엇이 어떻게 바뀌었는지는 사유 칸(500)에 전부 적는다.
         // ★공급가액 직접 입력(B-3). 보내면 계산값을 덮는다.
-        //   ‼️안 보내면 계산값으로 돌아간다 — 이 API 의 규칙이 "보낸 값으로 맞춘다"이기 때문이다.
-        //     손으로 맞춘 금액을 유지하려면 화면이 그 값을 함께 보내야 한다(설명에 적어 뒀다).
         if (req.supplyAmount() != null) {
             sale.overrideSupplyAmount(req.supplyAmount());
         }

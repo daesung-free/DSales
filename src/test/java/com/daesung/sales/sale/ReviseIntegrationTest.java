@@ -178,6 +178,46 @@ class ReviseIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("★★메모만 고쳐도 금액이 0원이 되던 것 — 42.9억이 걸려 있었다")
+    void 금액입력_안보내면_금액을_건드리지_않는다() {
+        // 이관 자료의 그 모양을 만든다 — **계산값과 저장금액이 다른 줄**.
+        //   실제 줄은 수량·정가·공급률이 0이고 금액만 있다(올해 116줄·약 42.9억,
+        //   예: DL-364378 47,636,030원). 정가는 @Positive 라 0으로 못 넣으니
+        //   공급률 0으로 같은 상태(계산값 0원)를 만든다.
+        Map<String, Object> item = new HashMap<>();
+        item.put("productId", bookPrice);
+        item.put("shipmentType", "NORMAL_SHIP");
+        item.put("unitPrice", 10_000);
+        item.put("supplyRate", 0);          // → 계산값 0원
+        item.put("qty", 1);
+        item.put("supplyAmount", 47_636_030L);
+        JsonNode r = post("/sales/entries", Map.of(
+                "salesDate", DATE, "partnerId", partner, "warehouseId", warehouse,
+                "items", List.of(item)));
+        assertThat(r.path("success").asBoolean()).as("등록: %s", r).isTrue();
+        long id = idOfSale(data(r).path("items").get(0).path("salesNo").asText());
+        assertThat(saleRow(id).path("supplyAmount").asLong()).isEqualTo(47_636_030L);
+
+        // ‼️메모만 고친다. 예전엔 여기서 금액이 0원이 됐다.
+        patch("/sales/" + id, Map.of("memo", "담당자 메모"));
+
+        JsonNode after = saleRow(id);
+        assertThat(after.path("supplyAmount").asLong())
+                .as("금액 입력을 안 보냈으니 저장된 금액 그대로")
+                .isEqualTo(47_636_030L);
+        assertThat(after.path("memo").asText()).isEqualTo("담당자 메모");
+
+        // 회차·성적처리처럼 금액과 무관한 칸도 마찬가지다.
+        patch("/sales/" + id, Map.of("bookRound", 2));
+        assertThat(saleRow(id).path("supplyAmount").asLong()).isEqualTo(47_636_030L);
+
+        // ★단, 금액 입력을 **보내면** 종전대로 다시 계산한다 — 이 규칙은 그대로다.
+        patch("/sales/" + id, Map.of("supplyRate", 70));
+        assertThat(saleRow(id).path("supplyAmount").asLong())
+                .as("공급률을 보냈으니 10,000 × 70% × 1").isEqualTo(7_000);
+    }
+
+    @Test
     @DisplayName("★매출번호는 바뀌지 않는다 — 거래명세서·작업요청서가 그 번호에 매달려 있다")
     void 매출번호_유지() {
         long id = sale(bookPrice, 5, 10_000);
