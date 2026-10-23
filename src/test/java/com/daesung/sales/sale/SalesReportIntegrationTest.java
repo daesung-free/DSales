@@ -233,6 +233,13 @@ class SalesReportIntegrationTest extends IntegrationTestSupport {
         assertThat(a011.path("netQty").asLong()).isEqualTo(8);
         assertThat(a011.path("teacherQty").asLong()).isEqualTo(3);
         assertThat(a011.path("returnRate").asDouble()).isEqualTo(20.0);
+
+        // ★금액 — 처리내역서(「거래처별 순매출 조회」)가 쓰는 칸이다. 정가 10,000 × 공급률 50% = 5,000.
+        assertThat(a011.path("saleAmount").asLong()).isEqualTo(50_000);     // 10부
+        assertThat(a011.path("returnAmount").asLong()).isEqualTo(10_000);   // 2부
+        assertThat(a011.path("netAmount").asLong()).isEqualTo(40_000);
+        // 교사용은 공급률 0으로 등록했다 — 수량은 3인데 금액은 0이다. 수량만 보면 알 수 없는 값이다.
+        assertThat(a011.path("teacherAmount").asLong()).isZero();
     }
 
     @Test

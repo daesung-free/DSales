@@ -729,8 +729,15 @@ public class SaleController {
     }
 
     @Operation(summary = "과목별매출현황",
-            description = "거래처×분류(catCode)×도서 단위 수량 현황. 매출·반품·순매출(매출−반품)·교사용 수량 + "
-                    + "반품률(%). 취소 제외. 거래처·분류 옵션 필터.")
+            description = """
+                    거래처×분류(catCode)×도서 단위 현황. 매출·반품·순매출(매출−반품)·교사용의
+                    **수량과 금액** + 반품률(%). 취소 제외. 거래처·분류 옵션 필터.
+
+                    ‼️<b>화면은 제외됐지만 이 엔드포인트는 지우지 않는다.</b>
+                    발주처가 과목별매출현황 화면을 신규 순매출조회로 대체했으나,
+                    **처리내역서**(레거시 `처리내역서.vb`, 인쇄물 제목은 「거래처별 순매출 조회」)가
+                    같은 축을 거래처로 rollup 해 쓴다 — 화면 담당이 명시적으로 존치를 요청했다(2026-08-11).
+                    금액 컬럼(`saleAmount`·`returnAmount`·`netAmount`)이 그 요청으로 추가된 것이다.""")
     @GetMapping("/category-summary")
     public ApiResponse<CategorySalesResponse> categorySummary(
             @Parameter(description = "시작일(yyyy-MM-dd)", required = true) @RequestParam(name = "fromDate")
@@ -790,8 +797,11 @@ public class SaleController {
                 new Col("거래처코드", "partnerCode"), new Col("거래처명", "partnerName"),
                 new Col("분류코드", "catCode"), new Col("분류명", "catName"),
                 new Col("도서코드", "bookCode"), new Col("도서명", "bookName"),
-                new Col("매출수량", "saleQty"), new Col("반품수량", "returnQty"), new Col("순매출수량", "netQty"),
-                new Col("교사용수량", "teacherQty"), new Col("반품률(%)", "returnRate"));
+                new Col("매출수량", "saleQty"), new Col("매출금액", "saleAmount"),
+                new Col("반품수량", "returnQty"), new Col("반품금액", "returnAmount"),
+                new Col("순매출수량", "netQty"), new Col("순매출금액", "netAmount"),
+                new Col("교사용수량", "teacherQty"), new Col("교사용금액", "teacherAmount"),
+                new Col("반품률(%)", "returnRate"));
         byte[] xlsx = excel.toXlsx("과목별매출현황", cols, saleReportService.categorySales(from, to, partnerId, catCode).rows());
         return excel.asDownload(xlsx, "과목별매출현황_" + from + "_" + to + ".xlsx");
     }

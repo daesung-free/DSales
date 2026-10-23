@@ -143,7 +143,10 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
                    p.catCode as catCode, p.catName as catName, p.code as bookCode, p.name as bookName,
                    sum(case when s.salesCategory = com.daesung.sales.salestype.entity.SalesCategory.SALE then s.qty else 0 end) as saleQty,
                    sum(case when s.salesCategory = com.daesung.sales.salestype.entity.SalesCategory.RETURN then s.qty else 0 end) as returnQty,
-                   sum(case when s.salesCategory = com.daesung.sales.salestype.entity.SalesCategory.FREE then s.qty else 0 end) as teacherQty
+                   sum(case when s.salesCategory = com.daesung.sales.salestype.entity.SalesCategory.FREE then s.qty else 0 end) as teacherQty,
+                   sum(case when s.salesCategory = com.daesung.sales.salestype.entity.SalesCategory.SALE then coalesce(s.supplyAmount, 0) else 0 end) as saleAmount,
+                   sum(case when s.salesCategory = com.daesung.sales.salestype.entity.SalesCategory.RETURN then coalesce(s.supplyAmount, 0) else 0 end) as returnAmount,
+                   sum(case when s.salesCategory = com.daesung.sales.salestype.entity.SalesCategory.FREE then coalesce(s.supplyAmount, 0) else 0 end) as teacherAmount
             from Sale s join s.product p join s.partner pt
             where s.canceled = false
               and s.salesDate between :from and :to

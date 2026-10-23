@@ -25,4 +25,10 @@ public interface CategorySalesAgg {
     long getReturnQty();
 
     long getTeacherQty();
+
+    long getSaleAmount();
+
+    long getReturnAmount();
+
+    long getTeacherAmount();
 }

@@ -866,7 +866,9 @@ public class SaleReportService {
             rows.add(new CategorySalesResponse.Row(
                     a.getPartnerId(), a.getPartnerCode(), a.getPartnerName(),
                     a.getCatCode(), a.getCatName(), a.getBookCode(), a.getBookName(),
-                    sale, ret, sale - ret, a.getTeacherQty(), rate));
+                    sale, ret, sale - ret, a.getTeacherQty(), rate,
+                    a.getSaleAmount(), a.getReturnAmount(),
+                    a.getSaleAmount() - a.getReturnAmount(), a.getTeacherAmount()));
         }
         return new CategorySalesResponse(from, to, partnerId, catCode, rows);
     }
