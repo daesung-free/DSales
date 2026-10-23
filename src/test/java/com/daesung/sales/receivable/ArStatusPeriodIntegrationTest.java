@@ -103,6 +103,27 @@ class ArStatusPeriodIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("★★해를 걸친 기간 — 기초는 시작일 연도로 잡는다(1년치 이중계상 회귀)")
+    void 해를_걸쳐도_기초가_맞다() {
+        // 프론트 실측 2026-10-22: 2025-12-30~2026-01-05 조회 시 이월이 4.50억 커졌다.
+        // 원인은 **이월은 종료일 연도, 앞 구간은 시작일 연도**를 보던 것.
+        // 다음 해 이월은 이미 "그 전해 말 잔액"인데 거기에 그 전해 거래를 또 얹고 있었다.
+        int nextYear = Integer.parseInt(YEAR) + 1;
+        assertThat(post("/closing/carryforward?fiscalYear=" + nextYear, null)
+                .path("success").asBoolean()).as("다음 해 이월 생성").isTrue();
+
+        // YEAR 의 마지막 거래는 9/10 이므로 12/29 잔액 = 연말 잔액 = 850,000.
+        long opening = row(YEAR + "-12-30", nextYear + "-01-05").path("opening").asLong();
+
+        // ‼️고치기 전에는 1,700,000 이었다 — 이월(850,000)에 그해 거래(850,000)를 다시 더했다.
+        assertThat(opening).as("기초는 12/29 잔액 하나뿐이다").isEqualTo(850_000);
+
+        // 걸친 기간에 거래가 없으니 잔액도 기초와 같아야 한다.
+        assertThat(row(YEAR + "-12-30", nextYear + "-01-05").path("balance").asLong())
+                .isEqualTo(850_000);
+    }
+
+    @Test
     @DisplayName("★★같은 날짜의 잔액은 시작일을 바꿔도 같다")
     void 시작일이_잔액을_바꾸지_않는다() {
         String end = YEAR + "-12-31";

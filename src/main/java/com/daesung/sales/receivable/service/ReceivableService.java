@@ -413,10 +413,6 @@ public class ReceivableService {
         LocalDate from = (fromDate != null) ? fromDate : LocalDate.now().withDayOfYear(1);
         LocalDate to = (toDate != null) ? toDate : LocalDate.now();
 
-        Map<Long, Long> carry = toAmountMap(carryforwardRepository.sumByYear(to.getYear(), partnerId));
-        Map<Long, long[]> sales = toSalesMap(saleRepository.receivableByPartner(from, to, partnerId));
-        Map<Long, Long> coll = toAmountMap(collectionRepository.sumByPartner(from, to, partnerId));
-
         // ★기초(opening)는 **시작일 전날까지의 잔액**이다 = 그해 이월 + 1/1~시작 전날 거래.
         //   ‼️예전엔 '그해 이월'만 넣어서, 같은 날짜의 잔액이 **시작일을 바꿀 때마다 달라졌다**
         //     (프론트 실측 2026-10-15 A-1: 1/1 시작 75,268,510 vs 7/1 시작 59,096,620 —
@@ -424,7 +420,20 @@ public class ReceivableService {
         //      balanceAsOf 로 맞게 계산하고 있어, **두 화면이 서로 다른 잔액**을 보여주고 있었다.
         //   ★행마다 balanceAsOf 를 부르지 않는다 — 거래처가 수백이면 질의가 그만큼 는다.
         //     기간 **앞쪽 구간**(1/1~시작 전날)을 한 번에 집계해 이월에 더한다.
-        LocalDate yearStart = LocalDate.of(from.getYear(), 1, 1);
+        //
+        // ★★이월의 연도는 **시작일 기준**이다({@code from.getYear()}).
+        //   ‼️예전엔 종료일 연도({@code to.getYear()})를 썼다. 같은 해 안에서는 둘이 같아 안 드러났지만,
+        //     **해를 걸친 기간**에서는 이월과 앞 구간이 서로 다른 해를 가리켜 **1년치가 이중으로** 더해졌다
+        //     (프론트 실측 2026-10-22: 2025-12-30~2026-01-05 조회 시 이월 365.26억,
+        //      맞는 값인 12/29 잔액은 369.76억 — 4.50억 차이. 경고도 없이 틀린 값이 나갔다).
+        //     2026 이월은 이미 "2025년말 잔액"인데 거기에 2025년 거래를 또 얹고 있었다.
+        //   아래 balanceAsOf 와 같은 규칙이다 — 두 화면이 갈리면 둘 다 못 믿는다.
+        int openingYear = from.getYear();
+        Map<Long, Long> carry = toAmountMap(carryforwardRepository.sumByYear(openingYear, partnerId));
+        Map<Long, long[]> sales = toSalesMap(saleRepository.receivableByPartner(from, to, partnerId));
+        Map<Long, Long> coll = toAmountMap(collectionRepository.sumByPartner(from, to, partnerId));
+
+        LocalDate yearStart = LocalDate.of(openingYear, 1, 1);
         Map<Long, long[]> priorSales = Map.of();
         Map<Long, Long> priorColl = Map.of();
         if (from.isAfter(yearStart)) {
@@ -441,9 +450,10 @@ public class ReceivableService {
         //   ‼️이월에도 같은 기준을 적용한다 — 안 그러면 연도 사이가 이어지지 않는다(A-2).
         Map<Long, long[]> purchase = toQtyAmountMap(
                 inventoryTxnRepository.purchaseByPartner(from, to, partnerId));
-        Map<Long, long[]> priorPurchase = (from.getDayOfYear() == 1) ? Map.of()
-                : toQtyAmountMap(inventoryTxnRepository.purchaseByPartner(
-                        LocalDate.of(from.getYear(), 1, 1), from.minusDays(1), partnerId));
+        // 앞 구간 조건은 priorSales·priorColl 과 **같아야** 한다 — 하나만 어긋나면 기초가 한쪽으로 쏠린다.
+        Map<Long, long[]> priorPurchase = from.isAfter(yearStart) ? toQtyAmountMap(
+                inventoryTxnRepository.purchaseByPartner(yearStart, from.minusDays(1), partnerId))
+                : Map.of();
 
         Set<Long> ids = new LinkedHashSet<>();
         ids.addAll(carry.keySet());
@@ -526,7 +536,9 @@ public class ReceivableService {
         //   **비어 있다는 사실**을 알린다. 만드는 것은 담당자가 [이월생성]으로 명시적으로 한다.
         List<String> warnings = new ArrayList<>();
         if (carry.isEmpty()) {
-            warnings.add(to.getYear() + "년 이월 스냅샷이 없습니다. 이월이 0으로 계산되어 "
+            // ★경고도 **기초를 읽은 그 해**를 말해야 한다 — 다른 해를 찍으면 담당자가 엉뚱한 해의
+            //   이월을 만들고도 값이 그대로라 영문을 모른다.
+            warnings.add(openingYear + "년 이월 스냅샷이 없습니다. 이월이 0으로 계산되어 "
                     + "전년 미수금이 잔액에 빠져 있습니다 — 마감관리에서 이월을 먼저 생성하세요.");
         }
         return new ArStatusResponse(from, to, rows, total,
