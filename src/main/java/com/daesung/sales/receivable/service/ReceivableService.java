@@ -676,9 +676,30 @@ public class ReceivableService {
             if (onlyReportable && led.lines().stream().noneMatch(l -> "DETAIL".equals(l.rowType()))) {
                 continue;
             }
+            // ★거래처코드 상한도 '신고대상'의 조건이다(화면 담당 전달 2026-10-23 §3③ —
+            //   "신고대상 = 기간 내 매출 금액 합 ≠ 0 **인 거래처, 거래처코드 'E110000' 미만**").
+            //   레거시 기준이고, 화면 목록이 이미 그 기준으로 맞춰져 있다 —
+            //   서버가 더 넓게 주면 **화면에 안 보이던 거래처에 메일·PDF가 나간다.**
+            if (onlyReportable && !reportableCode(r.partnerCode())) {
+                continue;
+            }
             out.add(led);
         }
         return out;
+    }
+
+    /**
+     * '신고대상' 거래처코드 조건 — <b>'E110000' 미만</b>(레거시 기준, 화면 담당 전달 2026-10-23 §3③).
+     *
+     * <p>문자열 비교다. 레거시 코드체계가 영문1자 + 숫자라 사전순이 곧 그 체계의 순서다.
+     * 'E110000' 이상은 신고 대상이 아닌 계열(내부·기타)로 쓰여 왔다.
+     *
+     * <p>‼️<b>코드가 없으면 대상이 아니다.</b> 비어 있는 코드를 통과시키면
+     * 정체를 모르는 거래처에 명세서가 나간다 — 되돌릴 수 없는 쪽으로 틀리지 않는다.
+     */
+    private static boolean reportableCode(String partnerCode) {
+        return partnerCode != null && !partnerCode.isBlank()
+                && partnerCode.trim().compareTo("E110000") < 0;
     }
 
     /**
