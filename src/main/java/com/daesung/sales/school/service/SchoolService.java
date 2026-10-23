@@ -42,6 +42,9 @@ public class SchoolService {
 
     private final SchoolRepository schoolRepository;
     private final com.daesung.sales.partner.repository.PartnerRepository partnerRepository;
+    /** 거래처 ↔ DSRE 코드 매핑(1:N). 학교의 cust_code 가 DSRE 코드라 이 표를 타야 붙는다. */
+    private final com.daesung.sales.partner.repository.PartnerDsreCodeRepository
+            partnerDsreCodeRepository;
     private final StatusHistoryService statusHistoryService;
 
     /** DSRE 연동은 daesung.dsre.enabled=true일 때만 빈이 존재 → 없을 수 있으므로 Provider로 주입. */
@@ -99,8 +102,26 @@ public class SchoolService {
         java.util.Map<String, com.daesung.sales.partner.entity.Partner> partners =
                 new java.util.HashMap<>();
         if (!codes.isEmpty()) {
-            partnerRepository.findByDsreCodeIn(codes)
-                    .forEach(p -> partners.putIfAbsent(p.getDsreCode(), p));
+            // ① DSRE 코드 — **매핑표(1:N)를 탄다.** 거래처 한 곳이 DSRE 코드를 여럿 갖는 일이
+            //    실재한다(운영 214행 중 5곳, 한 곳은 다섯 개). 거래처의 대표코드 한 칸만 보면
+            //    나머지 코드를 쓰는 학교가 통째로 안 붙는다 — 실측 145곳이 그랬다.
+            var maps = partnerDsreCodeRepository.findByDsreCodeIn(codes);
+            java.util.Set<Long> ids = new java.util.HashSet<>();
+            maps.forEach(m -> ids.add(m.getPartnerId()));
+            if (!ids.isEmpty()) {
+                java.util.Map<Long, com.daesung.sales.partner.entity.Partner> byId =
+                        new java.util.HashMap<>();
+                partnerRepository.findAllById(ids).forEach(p -> byId.put(p.getId(), p));
+                // ‼️**코드마다** 담는다. 거래처당 하나만 담으면 그 거래처의 다른 코드를 쓰는
+                //   학교가 그대로 빈 칸으로 남는다 — 1:N 으로 고친 의미가 없어진다.
+                maps.forEach(m -> {
+                    var p = byId.get(m.getPartnerId());
+                    if (p != null) {
+                        partners.putIfAbsent(m.getDsreCode(), p);
+                    }
+                });
+            }
+            // ② 우리 거래처코드 — 수기로 등록한 학교는 이쪽을 적었을 수 있다.
             partnerRepository.findByCodeIn(codes)
                     .forEach(p -> partners.putIfAbsent(p.getCode(), p));
         }

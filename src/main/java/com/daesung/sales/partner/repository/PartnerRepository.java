@@ -19,8 +19,12 @@ public interface PartnerRepository extends JpaRepository<Partner, Long> {
     java.util.List<Partner> findByCodeIn(java.util.Collection<String> codes);
 
     /**
-     * <b>DSRE 거래처코드</b>로 찾는다. 학교 마스터({@code schools.cust_code})가 이 코드를 쓴다 —
-     * 우리 {@code code}(DSLab 매출코드)와 체계가 달라 그쪽으로는 한 건도 안 붙는다.
+     * ‼️<b>이 메서드로 학교를 조인하지 말 것.</b> {@code partners.dsre_code} 는
+     * PDF 파일명처럼 하나만 써야 하는 자리의 <b>대표값</b>일 뿐이다.
+     *
+     * <p>거래처 하나가 DSRE 코드를 <b>여럿</b> 갖는 일이 실재한다(운영 214행 중 5곳,
+     * 한 곳은 다섯 개). 대표값으로 찾으면 나머지 코드를 쓰는 학교가 통째로 안 붙는다 —
+     * 실측 145곳이 그랬다. 조인은 {@code PartnerDsreCodeRepository}(1:N)를 쓴다.
      */
     java.util.List<Partner> findByDsreCodeIn(java.util.Collection<String> dsreCodes);
 

@@ -2,6 +2,8 @@ package com.daesung.sales.school;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.daesung.sales.partner.entity.PartnerDsreCode;
+import com.daesung.sales.partner.repository.PartnerDsreCodeRepository;
 import com.daesung.sales.partner.repository.PartnerRepository;
 import com.daesung.sales.support.IntegrationTestSupport;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -37,12 +39,18 @@ class SchoolPartnerJoinIntegrationTest extends IntegrationTestSupport {
 
     private static final String SFX = "-SPJ" + (System.nanoTime() % 1_000_000L);
     private static final String DSRE_CODE = "9" + (System.nanoTime() % 90_000L + 10_000L);
+    /** 같은 거래처의 **두 번째** DSRE 코드. 대표값보다 크게 둬 대표가 안 되도록 한다. */
+    private static final String SECOND_CODE = "99" + (System.nanoTime() % 9_000L + 1_000L);
 
     @Autowired
     private PartnerRepository partnerRepository;
 
+    @Autowired
+    private PartnerDsreCodeRepository mappingRepository;
+
     private String schoolByDsre;
     private String schoolByOurCode;
+    private String schoolBySecondCode;
     private String ourCode;
 
     @BeforeAll
@@ -58,8 +66,13 @@ class SchoolPartnerJoinIntegrationTest extends IntegrationTestSupport {
         //   detached 다 — 값만 바꾸고 두면 변경감지가 안 돌아 UPDATE 가 안 나간다
         //   (처음에 그렇게 짰다가 DSRE 경로만 빈 칸으로 떨어졌다).
         var p = partnerRepository.findById(partnerId).orElseThrow();
-        p.applyDsreCode(DSRE_CODE);
+        p.applyDsreCode(DSRE_CODE);          // 대표값(가장 작은 코드)
         partnerRepository.saveAndFlush(p);
+        // ★매핑은 1:N 이다 — 대표값 말고 **두 번째 코드**도 단다.
+        //   운영에 매출코드 하나에 DSRE 코드가 다섯 개인 거래처가 실재한다.
+        mappingRepository.save(PartnerDsreCode.of(partnerId, DSRE_CODE));
+        mappingRepository.save(PartnerDsreCode.of(partnerId, SECOND_CODE));
+        mappingRepository.flush();
 
         // ① 이관된 학교의 모양 — 거래처코드 칸에 **DSRE 코드**가 들어 있다.
         schoolByDsre = "SPJS1" + SFX;
@@ -68,6 +81,11 @@ class SchoolPartnerJoinIntegrationTest extends IntegrationTestSupport {
         // ② 수기로 등록한 학교 — 우리 거래처코드를 적었을 수 있다(폴백 경로).
         schoolByOurCode = "SPJS2" + SFX;
         createSchool(schoolByOurCode, ourCode);
+
+        // ③ ‼️같은 거래처의 **두 번째** DSRE 코드를 쓰는 학교.
+        //    대표값 한 칸만 보면 이 학교가 통째로 빈 칸이 된다(운영 실측 145곳이 그랬다).
+        schoolBySecondCode = "SPJS3" + SFX;
+        createSchool(schoolBySecondCode, SECOND_CODE);
     }
 
     private void createSchool(String code, String custCode) {
@@ -111,10 +129,22 @@ class SchoolPartnerJoinIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("★★대표값이 아닌 두 번째 DSRE 코드로도 붙는다 — 1:N 이다")
+    void 두번째코드로도_붙는다() {
+        // ‼️운영 DSRE 214행 중 5곳이 코드를 여럿 갖고 있다(한 곳은 다섯 개).
+        //   거래처의 대표코드 한 칸만 보면 이 학교들이 통째로 빈 칸이 된다 — 실측 145곳.
+        JsonNode r = row(schoolBySecondCode);
+        assertThat(r.path("partnerName1").asText()).as("두 번째 코드도 같은 거래처를 찾는다")
+                .isEqualTo("조인검증거래처");
+        assertThat(r.path("regionName").asText()).isEqualTo("강남관할");
+    }
+
+    @Test
     @DisplayName("‼️두 코드는 다른 값이다 — 같으면 이 테스트가 아무것도 증명하지 못한다")
     void 두_코드가_다르다() {
         assertThat(DSRE_CODE).isNotEqualTo(ourCode);
         assertThat(DSRE_CODE).as("DSRE 코드는 숫자 체계").matches("\\d+");
         assertThat(ourCode).as("우리 코드는 영문 접두").matches("[A-Za-z].*");
+        assertThat(SECOND_CODE).as("두 번째 코드도 대표값과 달라야 한다").isNotEqualTo(DSRE_CODE);
     }
 }
