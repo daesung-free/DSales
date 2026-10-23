@@ -468,6 +468,26 @@ public class ReceivableController {
         return excel.asDownload(xlsx, "외상매출장_더프모.xlsx");
     }
 
+    @Operation(summary = "외상매출장 '더프모만' 요약표 엑셀 다운로드",
+            description = """
+                    처리 구분별 수량·금액 + 총계. 레거시 `외상매출장조회.vb:778` 의
+                    `GROUP BY rollup(처리)` 그리드(`DataGridView_요약`)다.
+
+                    ★RESULT_ PDF 는 명세와 요약을 **같이** 찍는다(`ExportPDF_요약추가`, 1684행).
+                    PDF 생성 자체는 화면(프론트 인쇄 엔진)이 하므로 서버는 두 데이터를 댄다.""")
+    @GetMapping("/ar-ledger/duff/summary/export")
+    public ResponseEntity<byte[]> duffLedgerSummaryExport(
+            @RequestParam Long partnerId,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate) {
+        List<Col> cols = List.of(
+                new Col("처리", "procType"), new Col("총계", "total"),
+                new Col("수량", "qty"), new Col("금액", "amount"));
+        byte[] xlsx = excel.toXlsx("더프모_요약", cols,
+                receivableService.duffLedger(partnerId, fromDate, toDate).summary());
+        return excel.asDownload(xlsx, "외상매출장_더프모_요약.xlsx");
+    }
+
     @Operation(summary = "외상매출장 엑셀 다운로드", description = "단일 거래처 일자별 매출/반품/수금 명세 + 러닝밸런스.")
     @GetMapping("/ar-ledger/export")
     public ResponseEntity<byte[]> arLedgerExport(

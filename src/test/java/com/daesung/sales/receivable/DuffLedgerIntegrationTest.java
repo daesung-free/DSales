@@ -129,6 +129,58 @@ class DuffLedgerIntegrationTest extends IntegrationTestSupport {
         assertThat(ungraded).isEqualTo(5);   // 미지정 = 비처리
     }
 
+    @Test
+    @DisplayName("★요약표 — 처리 구분별 합계 + 총계(레거시 rollup(처리))")
+    void 요약표() {
+        JsonNode s = data(ledger()).path("summary");
+
+        // 처리 17 · 비처리 5 두 행 + 총계 1행. SOLID 는 우리 모델에 없으니 행도 없다.
+        assertThat(s).hasSize(3);
+
+        long 처리 = 0;
+        long 비처리 = 0;
+        JsonNode total = null;
+        for (JsonNode r : s) {
+            if (r.path("total").asBoolean()) {
+                total = r;
+            } else if ("처리".equals(r.path("procType").asText())) {
+                처리 = r.path("qty").asLong();
+            } else if ("비처리".equals(r.path("procType").asText())) {
+                비처리 = r.path("qty").asLong();
+            }
+        }
+        assertThat(처리).isEqualTo(17);
+        assertThat(비처리).isEqualTo(5);
+
+        assertThat(total).as("총계 행이 있다").isNotNull();
+        assertThat(total.hasNonNull("procType")).as("총계 행의 처리 칸은 비어 있다").isFalse();
+        assertThat(total.path("qty").asLong()).isEqualTo(22);
+        assertThat(total.path("qty").asLong()).isEqualTo(data(ledger()).path("totalQty").asLong());
+    }
+
+    @Test
+    @DisplayName("‼️요약 합 = 명세 합 — 따로 집계해 어긋나는 일이 없어야 한다")
+    void 요약과_명세가_같다() {
+        long detailAmt = detail().stream().mapToLong(r -> r.path("amount").asLong()).sum();
+        long summaryAmt = 0;
+        for (JsonNode r : data(ledger()).path("summary")) {
+            if (!r.path("total").asBoolean()) {
+                summaryAmt += r.path("amount").asLong();
+            }
+        }
+        assertThat(summaryAmt).isEqualTo(detailAmt);
+    }
+
+    @Test
+    @DisplayName("명세가 없으면 요약도 비운다 — 0원 총계만 찍으면 '0원 팔렸다'로 읽힌다")
+    void 빈조회는_총계도_없다() {
+        JsonNode d = data(get("/closing/ar-ledger/duff?partnerId=" + partner
+                + "&fromDate=2044-01-01&toDate=2044-12-31"));
+
+        assertThat(d.path("rows")).isEmpty();
+        assertThat(d.path("summary")).isEmpty();
+    }
+
     private JsonNode ledger() {
         return get("/closing/ar-ledger/duff?partnerId=" + partner
                 + "&fromDate=" + YEAR + "-01-01&toDate=" + YEAR + "-12-31");

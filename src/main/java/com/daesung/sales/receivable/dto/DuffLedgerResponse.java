@@ -28,9 +28,35 @@ public record DuffLedgerResponse(
         @Schema(description = "조회 시작일") LocalDate fromDate,
         @Schema(description = "조회 종료일") LocalDate toDate,
         @Schema(description = "명세 + 소계(학교(원) 계 · 월 계)") List<Row> rows,
+
+        @Schema(description = """
+                <b>요약표</b> — 처리 구분별 수량·금액과 총계(마지막 행).
+
+                근거: 레거시 `외상매출장조회.vb:778` 가 명세와 **별개 SQL**로
+                `GROUP BY rollup(처리)` 를 떠서 두 번째 그리드(`DataGridView_요약`)에 물린다.
+                그리고 더프모만 PDF 는 그 둘을 같이 찍는다(`ExportPDF_요약추가`, 1684행) —
+                요약이 없으면 RESULT_ 양식이 반쪽이다.""")
+        List<SummaryRow> summary,
+
         @Schema(description = "전체 수량 합") long totalQty,
         @Schema(description = "전체 금액 합") long totalAmount
 ) {
+    @Schema(name = "DuffLedgerSummaryRow", description = "처리 구분별 합계 1행")
+    public record SummaryRow(
+            @Schema(description = """
+                    처리 구분('처리'·'비처리'). 총계 행은 **null** 이다 — 레거시 rollup 의
+                    총계 행도 처리 칸이 비어 있다.
+
+                    ‼️레거시엔 'SOLID' 구분이 하나 더 있었지만 <b>우리 모델엔 그 값이 없다</b>
+                    (`sale.proc_type` 는 GRADED/미지정 두 갈래다). 없는 구분을 빈 행으로
+                    만들어 두지 않는다 — 늘 0인 행은 "아직 안 팔렸다"로 잘못 읽힌다.""")
+            String procType,
+            @Schema(description = "총계 행인가") boolean total,
+            @Schema(description = "수량 합") long qty,
+            @Schema(description = "금액 합") long amount
+    ) {
+    }
+
     @Schema(name = "DuffLedgerRow")
     public record Row(
             @Schema(description = "행 종류", allowableValues = {"DETAIL", "SCHOOL_SUBTOTAL", "MONTH_SUBTOTAL"})

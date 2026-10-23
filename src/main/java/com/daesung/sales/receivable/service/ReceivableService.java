@@ -35,6 +35,7 @@ import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeMap;
 import lombok.RequiredArgsConstructor;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -266,6 +267,10 @@ public class ReceivableService {
         LocalDate to = (toDate != null) ? toDate : LocalDate.now();
 
         List<DuffLedgerResponse.Row> rows = new ArrayList<>();
+        // 처리 구분별 합계 — 레거시는 같은 조건으로 SQL을 한 번 더 떠서(rollup) 만들었지만,
+        // 명세를 이미 다 읽고 있으므로 여기서 같이 센다. 두 번 조회하면 그 사이에 데이터가 바뀌어
+        // 명세와 요약의 합이 어긋날 수 있다.
+        Map<String, long[]> byProc = new TreeMap<>();
         long schoolQty = 0;
         long schoolAmt = 0;
         long monthQty = 0;
@@ -295,9 +300,14 @@ public class ReceivableService {
                 monthAmt = 0;
             }
 
+            String proc = procLabel(str(r[4]));
             rows.add(new DuffLedgerResponse.Row("DETAIL", null, date, school,
-                    examMonth(toLocalDate(r[2])), str(r[3]), procLabel(str(r[4])),
+                    examMonth(toLocalDate(r[2])), str(r[3]), proc,
                     intOrNull(r[5]), intOrNull(r[6]), qty, amt));
+
+            long[] acc = byProc.computeIfAbsent(proc, k -> new long[2]);
+            acc[0] += qty;
+            acc[1] += amt;
 
             schoolQty += qty;
             schoolAmt += amt;
@@ -315,7 +325,17 @@ public class ReceivableService {
             rows.add(DuffLedgerResponse.Row.subtotal("MONTH_SUBTOTAL", "월 계", null, monthQty, monthAmt));
         }
 
-        return new DuffLedgerResponse(partnerId, partner.getName(), from, to, rows, totalQty, totalAmt);
+        List<DuffLedgerResponse.SummaryRow> summary = new ArrayList<>();
+        byProc.forEach((proc, acc) ->
+                summary.add(new DuffLedgerResponse.SummaryRow(proc, false, acc[0], acc[1])));
+        // 총계는 **명세가 있을 때만** 붙인다. 빈 조회에 0원 총계만 찍히면
+        // "0원어치 팔렸다"로 읽혀, 조건이 틀렸다는 사실이 묻힌다.
+        if (!summary.isEmpty()) {
+            summary.add(new DuffLedgerResponse.SummaryRow(null, true, totalQty, totalAmt));
+        }
+
+        return new DuffLedgerResponse(partnerId, partner.getName(), from, to,
+                rows, summary, totalQty, totalAmt);
     }
 
     /**
