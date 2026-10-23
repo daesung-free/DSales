@@ -101,9 +101,11 @@ public class IdempotencyService {
         }
         try {
             return objectMapper.readValue(record.getResponseJson(), type);
-        } catch (Exception e) {
+        } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
             // 저장된 응답을 못 읽는다고 **다시 실행하면 안 된다** — 그게 이중처리다.
-            log.error("멱등 응답 복원 실패 scope={} type={}", record.getScope(), type.getSimpleName());
+            // ‼️로그에 DB 문자열(scope 등)을 인자로 넣지 않는다 — CRLF 위조 통로가 된다.
+            //   예외는 Throwable 로 넘긴다(스택이 남고 위조 대상이 아니다).
+            log.error("멱등 응답 복원 실패", e);
             throw new BusinessException(ErrorCode.DUPLICATE_REQUEST,
                     "이미 처리된 요청입니다. 결과를 조회 화면에서 확인해 주세요.");
         }
@@ -113,10 +115,10 @@ public class IdempotencyService {
         newTx.executeWithoutResult(s -> repository.findById(key).ifPresent(r -> {
             try {
                 r.complete(objectMapper.writeValueAsString(result));
-            } catch (Exception e) {
+            } catch (com.fasterxml.jackson.core.JsonProcessingException e) {
                 // 본문을 못 담아도 **키는 닫는다** — 재시도가 다시 실행되는 것보다 낫다.
                 // (replay 가 responseJson null 을 보고 409 로 막는다.)
-                log.error("멱등 응답 직렬화 실패 scope={}", r.getScope());
+                log.error("멱등 응답 직렬화 실패", e);
                 r.complete(null);
             }
             repository.save(r);

@@ -322,16 +322,6 @@ public class DuffSalesImportService {
     }
 
     private static DuffImportResponse.Line line(DuffSalesRow r, Charge c, long unit, long total,
-                                                String result, String salesNo) {
-        return line(r, c, unit, total, result, null, salesNo);
-    }
-
-    private static DuffImportResponse.Line line(DuffSalesRow r, Charge c, long unit, long total,
-                                                String result, String reason, String salesNo) {
-        return line(r, c, unit, total, result, reason, salesNo, null);
-    }
-
-    private static DuffImportResponse.Line line(DuffSalesRow r, Charge c, long unit, long total,
                                                 String result, String reason, String salesNo,
                                                 String sourceKey) {
         return new DuffImportResponse.Line(
