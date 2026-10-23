@@ -53,6 +53,8 @@ class SettleIdempotencyIntegrationTest extends IntegrationTestSupport {
         b.put("name", "멱등검증 교재");
         b.put("contentType", "SELF");
         b.put("price", 10000);
+        // ★위탁출고는 공급률이 없으면 등록이 막힌다 — 나갈 때 조건이 정해져야 정산할 수 있다.
+        b.put("supplyRate", 75);
         b.put("catCode", "I2095A01");
         b.put("catName", "멱등검증");
         b.put("taxFree", false);

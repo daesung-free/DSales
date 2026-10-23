@@ -250,7 +250,7 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
         Long consign = createId("/masters/warehouses", Map.of("code", "CS-CONS", "name", "위탁창고",
                 "type", "CONSIGN", "ownerClientId", partner));   // 위탁창고는 소속 거래처 필수
         Long p = createId("/masters/products",
-                Map.of("code", "CS-BK", "name", "위탁도서", "contentType", "SELF", "price", 10000));
+                Map.of("code", "CS-BK", "name", "위탁도서", "contentType", "SELF", "price", 10000, "supplyRate", 75));
         inbound(main, p);   // 물류창고 재고 100
 
         // 위탁출고 100 (물류→위탁)
@@ -291,7 +291,7 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
         Long partner = createId("/masters/clients", Map.of("code", "CX-CUST", "name", "취소거래처", "type", "NORMAL"));
         Long consign = createId("/masters/warehouses", Map.of("code", "CX-CONS", "name", "위탁",
                 "type", "CONSIGN", "ownerClientId", partner));   // 위탁창고는 소속 거래처 필수
-        Long p = createId("/masters/products", Map.of("code", "CX-BK", "name", "취소도서", "contentType", "SELF", "price", 10000));
+        Long p = createId("/masters/products", Map.of("code", "CX-BK", "name", "취소도서", "contentType", "SELF", "price", 10000, "supplyRate", 75));
         inbound(main, p);
 
         Long coId = data(post("/consignment/out", Map.of(
@@ -339,7 +339,10 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
         Long partner = createId("/masters/clients", Map.of("code", "CR-CUST", "name", "위탁반품거래처", "type", "NORMAL"));
         Long consign = createId("/masters/warehouses", Map.of("code", "CR-CONS", "name", "위탁",
                 "type", "CONSIGN", "ownerClientId", partner));   // 위탁창고는 소속 거래처 필수
-        Long p = createId("/masters/products", Map.of("code", "CR-BK", "name", "위탁반품도서", "contentType", "SELF"));
+        // ★정가·공급률이 있어야 위탁출고가 등록된다 — 나갈 때 조건이 정해져야 정산할 수 있다.
+        //   예전엔 둘 다 비어도 출고가 됐고, 그 미결은 정산 때 가서야 막혔다(이미 물건이 나간 뒤다).
+        Long p = createId("/masters/products", Map.of("code", "CR-BK", "name", "위탁반품도서",
+                "contentType", "SELF", "price", 10000, "supplyRate", 75));
         inbound(main, p);   // 물류 100
 
         // 위탁출고 100 → 물류 0, 위탁 100
@@ -381,7 +384,7 @@ class MasterFieldIntegrationTest extends IntegrationTestSupport {
         Long consign = createId("/masters/warehouses", Map.of("code", "CC-CONS", "name", "위탁",
                 "type", "CONSIGN", "ownerClientId", partner));   // 위탁창고는 소속 거래처 필수
         Long p = createId("/masters/products",
-                Map.of("code", "CC-BK", "name", "위탁동시성도서", "contentType", "SELF", "price", 10000));
+                Map.of("code", "CC-BK", "name", "위탁동시성도서", "contentType", "SELF", "price", 10000, "supplyRate", 75));
         inbound(main, p);   // 물류 100
 
         // 위탁출고 100 → 미결 잔여 100

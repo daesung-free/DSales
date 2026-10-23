@@ -146,12 +146,46 @@ class ConsignSettlementScenarioTest extends IntegrationTestSupport {
         assertThat(after.path("remainingQty").asInt()).as("잔여 복원").isEqualTo(100);
     }
 
+    @Test
+    @DisplayName("‼️공급률이 없으면 위탁출고를 막는다 — 나간 뒤에 알면 되돌릴 수 없다")
+    void 공급률없으면_출고거부() {
+        // 근거: 프론트 실측 2026-10-23 §6⑤ "공급률이 비어 있는(null) 위탁 출고가 있습니다.
+        //       정산 때 금액 기준을 확인 부탁드립니다."
+        //
+        // 예전엔 null 인 채로 저장됐고, 그 미결은 **정산할 때 비로소** 막혔다.
+        // 그때는 이미 물건이 위탁창고로 나간 뒤라 담당자가 되돌릴 수 없다.
+        // 매출등록(createEntries)은 처음부터 같은 조건으로 막고 있었다 — 규칙을 맞춘다.
+        Long p = createId("/masters/products", Map.of(
+                "code", "CS-NORATE" + SFX, "name", "공급률없는도서",
+                "contentType", "SELF", "price", 20000));   // ← supplyRate 없음
+        post("/stock/inbound", Map.of(
+                "processedDate", "2026-06-01", "supplierClientId", supplier,
+                "destinationWarehouseId", mainWh,
+                "items", List.of(Map.of("productId", p, "unitCost", 3000, "qty", 10))));
+
+        JsonNode r = post("/consignment/out", Map.of(
+                "processedDate", "2026-06-05", "partnerId", partner,
+                "fromWarehouseId", mainWh, "toWarehouseId", consignWh,
+                "items", List.of(Map.of("productId", p, "qty", 10))));
+
+        assertThat(r.path("success").asBoolean()).as("막혀야 한다: %s", r).isFalse();
+        assertThat(r.path("error").path("code").asText()).isEqualTo("INVALID_INPUT");
+        // 담당자가 어디를 고쳐야 하는지 메시지에 들어 있어야 한다.
+        assertThat(r.path("error").path("message").asText()).contains("공급률");
+
+        // ★막힌 건 미결도 안 남는다 — 반쯤 들어간 상태가 제일 나쁘다.
+        assertThat(pendingLine("CS-NORATE")).as("미결이 생기면 안 된다").isNull();
+    }
+
     // ── helpers ──
 
     /** 상품 생성 → 입고 → 위탁출고. 생성된 미결 라인을 반환. */
     private JsonNode ship(String code, int qty) {
         Long p = createId("/masters/products",
-                Map.of("code", code + SFX, "name", code, "contentType", "SELF", "price", 20000));
+                Map.of("code", code + SFX, "name", code, "contentType", "SELF", "price", 20000,
+                        // ★공급률이 있어야 위탁출고가 등록된다 — 나갈 때 조건이 정해져야
+                        //   나중에 정산할 수 있다(매출등록과 같은 규칙).
+                        "supplyRate", 75));
         post("/stock/inbound", Map.of(
                 "processedDate", "2026-06-01", "supplierClientId", supplier, "destinationWarehouseId", mainWh,
                 "items", List.of(Map.of("productId", p, "unitCost", 3000, "qty", qty))));

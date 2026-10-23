@@ -200,7 +200,9 @@ class VerificationScenarioIntegrationTest extends IntegrationTestSupport {
 
     private Long product(String code) {
         return createId("/masters/products",
-                Map.of("code", code, "name", code, "contentType", "SELF", "price", 20000));
+                Map.of("code", code, "name", code, "contentType", "SELF", "price", 20000,
+                        // ★위탁출고는 공급률이 없으면 등록이 막힌다(나갈 때 조건 확정).
+                        "supplyRate", 75));
     }
 
     private void inbound(Long p, int qty) {

@@ -122,6 +122,19 @@ public class ConsignmentService {
             if (supplyRate == null) {
                 supplyRate = product.getSupplyRate();
             }
+            // ‼️여기서 막는다 — **매출등록(createEntries)과 같은 규칙**이다.
+            //   예전엔 null 인 채로 저장했고, 그 미결은
+            //   · 미결 조회의 참고금액이 빈 칸이 되고(remainingSupply 가 null 을 준다)
+            //   · 정산할 때 비로소 "정가·공급률이 필요합니다"로 막힌다.
+            //   그때는 **이미 물건이 나간 뒤**라 담당자가 되돌릴 수 없다.
+            //   나가기 전에 조건을 확정하는 것이 위탁의 전제다(출고 시점 단가를 박아 두는 이유와 같다).
+            //   실제로 공급률이 빈 위탁 출고가 쌓여 있었다(프론트 실측 2026-10-23 §6⑤).
+            if (unitPrice == null || supplyRate == null) {
+                throw new BusinessException(ErrorCode.INVALID_INPUT,
+                        "정가·공급률이 없고 거래처별 단가 매핑도, 도서 기본 공급률도 없습니다. 상품="
+                                + product.getCode() + " 거래처=" + partner.getCode()
+                                + ". 위탁출고는 나갈 때 조건이 정해져야 나중에 정산할 수 있습니다.");
+            }
             Integer discount = (item.discountAmount() != null)
                     ? item.discountAmount() : partnerSupplyRateService.discountFor(product, partner.getId());
 
@@ -262,8 +275,15 @@ public class ConsignmentService {
             // (1) 정산분 → 매출 확정
             if (settleQty > 0) {
                 if (s.unitPrice() == null || s.supplyRate() == null) {
+                    // ★옛 미결에는 출고 시점 단가가 없을 수 있다(2026-10-23 이전 출고).
+                    //   그때는 담당자가 정산 화면에서 직접 넣는 수밖에 없다 — 지어내지 않는다.
+                    //   어디서 와야 하는 값인지 메시지에 적는다. "필요합니다"만으로는
+                    //   담당자가 어느 칸을 채워야 하는지 모른다.
                     throw new BusinessException(ErrorCode.INVALID_INPUT,
-                            "정산수량을 입력하면 정가·공급률이 필요합니다. 미결 id=" + s.consignmentOutId());
+                            "정산하려면 정가·공급률이 필요합니다. 미결 id=" + s.consignmentOutId()
+                                    + " (출고=" + co.getSourceOutNo() + "). 이 미결은 출고 시점 단가가"
+                                    + " 비어 있어 정산 화면에서 직접 입력해야 합니다"
+                                    + " — 지금 나가는 위탁출고는 등록 때 막고 있습니다.");
                 }
                 Product product = co.getProduct();
                 // 위탁정산도 거래처×대분류 할인액을 탄다(정산 시점이 매출 시점 — 위탁 회계기준 확정)
