@@ -24,6 +24,10 @@ import java.util.List;
 @Schema(name = "DuffLedgerResponse", description = "외상매출장 더프모만(24p) — 모의고사 세부 명세")
 public record DuffLedgerResponse(
         @Schema(description = "거래처 id") Long partnerId,
+        @Schema(description = """
+                거래처코드. ★PDF 파일명이 이 값을 쓴다 —
+                `RESULT_{거래처코드}_{거래처명}_{시작}-{종료}.pdf`(레거시 외상매출장조회.vb:1680).""")
+        String partnerCode,
         @Schema(description = "거래처명") String partnerName,
         @Schema(description = "조회 시작일") LocalDate fromDate,
         @Schema(description = "조회 종료일") LocalDate toDate,

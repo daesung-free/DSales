@@ -266,6 +266,55 @@ public class ReceivableService {
         LocalDate from = (fromDate != null) ? fromDate : LocalDate.now().withDayOfYear(1);
         LocalDate to = (toDate != null) ? toDate : LocalDate.now();
 
+        return build(partnerId, partner.getCode(), partner.getName(), from, to,
+                saleRepository.duffLedgerLines(partnerId, from, to));
+    }
+
+    /**
+     * 더프모 <b>전 거래처</b> — 거래처 하나당 응답 하나.
+     *
+     * <p>근거: 레거시 거래처 콤보 0번이 "전체 거래처"이고 <b>그걸 골랐을 때만</b>
+     * 「전 거래처 메일 일괄발송」·「PDF 일괄저장」이 켜진다(외상매출장조회.vb:97~106·121).
+     * 전체 조회는 부수 기능이 아니라 <b>일괄 발송의 전제</b>다 — 화면이
+     * "전체 거래처의 더프모는 아직 서버가 지원하지 않습니다"로 막혀 있던 지점이다.
+     *
+     * <p>★<b>한 번에 훑고 거래처별로 끊는다.</b> 거래처 수만큼 조회를 돌면 요청이
+     * 데이터 건수에 비례해 늘고, 그 사이 데이터가 바뀌면 거래처마다 기준 시점이 달라진다.
+     *
+     * <p>★매출이 <b>있는</b> 거래처만 나온다. 없는 곳까지 넣으면 0원짜리 명세서가
+     * 메일·PDF로 나가는 사고가 된다(기본 장부의 {@code onlyReportable}과 같은 결).
+     */
+    @Transactional(readOnly = true)
+    public List<DuffLedgerResponse> duffLedgerAll(LocalDate fromDate, LocalDate toDate) {
+        LocalDate from = (fromDate != null) ? fromDate : LocalDate.now().withDayOfYear(1);
+        LocalDate to = (toDate != null) ? toDate : LocalDate.now();
+
+        List<DuffLedgerResponse> out = new ArrayList<>();
+        List<Object[]> chunk = new ArrayList<>();
+        Long curId = null;
+        String curCode = null;
+        String curName = null;
+
+        for (Object[] r : saleRepository.duffLedgerLines(null, from, to)) {
+            Long pid = ((Number) r[9]).longValue();
+            if (curId != null && !curId.equals(pid)) {
+                out.add(build(curId, curCode, curName, from, to, chunk));
+                chunk = new ArrayList<>();
+            }
+            curId = pid;
+            curCode = str(r[10]);
+            curName = str(r[11]);
+            chunk.add(r);
+        }
+        if (curId != null) {
+            out.add(build(curId, curCode, curName, from, to, chunk));
+        }
+        return out;
+    }
+
+    /** 거래처 한 곳의 더프모 원장(명세 + 소계 + 요약). 행은 이미 그 거래처 것만 들어온다. */
+    private DuffLedgerResponse build(Long partnerId, String partnerCode, String partnerName,
+                                     LocalDate from, LocalDate to, List<Object[]> lines) {
         List<DuffLedgerResponse.Row> rows = new ArrayList<>();
         // 처리 구분별 합계 — 레거시는 같은 조건으로 SQL을 한 번 더 떠서(rollup) 만들었지만,
         // 명세를 이미 다 읽고 있으므로 여기서 같이 센다. 두 번 조회하면 그 사이에 데이터가 바뀌어
@@ -280,7 +329,7 @@ public class ReceivableService {
         String prevMonth = null;
         String prevSchool = null;
 
-        for (Object[] r : saleRepository.duffLedgerLines(partnerId, from, to)) {
+        for (Object[] r : lines) {
             LocalDate date = toLocalDate(r[0]);
             String school = str(r[1]);
             String month = (date == null) ? "" : String.format("%04d-%02d", date.getYear(), date.getMonthValue());
@@ -334,7 +383,7 @@ public class ReceivableService {
             summary.add(new DuffLedgerResponse.SummaryRow(null, true, totalQty, totalAmt));
         }
 
-        return new DuffLedgerResponse(partnerId, partner.getName(), from, to,
+        return new DuffLedgerResponse(partnerId, partnerCode, partnerName, from, to,
                 rows, summary, totalQty, totalAmt);
     }
 

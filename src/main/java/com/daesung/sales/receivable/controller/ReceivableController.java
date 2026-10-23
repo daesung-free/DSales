@@ -438,9 +438,9 @@ public class ReceivableController {
                     · 소계는 레거시 그대로 **학교(원) 계 → 월 계** 순으로 붙는다.
                     · 모의고사 판별은 **대분류**로 한다. 레거시는 `catCode LIKE 'M%A%'`처럼
                       코드 패턴으로 걸렀는데, 그러면 코드체계가 바뀔 때마다 깨진다.
-                    · ⚠️**시행월**은 그 상품·회차의 BOM 시행예정일에서 온다.
-                      레거시는 도서명을 잘라 만들었고 이름이 규칙에 안 맞으면 `##ERROR`가 찍혔다.
-                      우리는 파싱하지 않으므로 BOM에 시행예정일이 없으면 **비운다**.""")
+                    · **시행월**은 2단 경로다 — ① BOM 시행예정일, ② 없으면 도서명 맨 앞 'N월'
+                      (연도는 분류코드에서). 둘 다 없으면 비운다. 자세한 근거는 응답 필드 설명 참고.
+                    · **전 거래처**는 `GET /closing/ar-ledger/duff/all` — PDF 일괄저장의 전제다.""")
     @GetMapping("/ar-ledger/duff")
     public ApiResponse<DuffLedgerResponse> duffLedger(
             @Parameter(description = "거래처 id", required = true) @RequestParam Long partnerId,
@@ -466,6 +466,34 @@ public class ReceivableController {
         byte[] xlsx = excel.toXlsx("외상매출장_더프모", cols,
                 receivableService.duffLedger(partnerId, fromDate, toDate).rows());
         return excel.asDownload(xlsx, "외상매출장_더프모.xlsx");
+    }
+
+    @Operation(summary = "외상매출장 '더프모만' — 전 거래처",
+            description = """
+                    더프모 매출이 **있는 거래처 전부**를 거래처당 원장 하나로 내려준다.
+
+                    ★근거: 레거시 거래처 콤보 0번이 "전체 거래처"이고, **그걸 골랐을 때만**
+                    「전 거래처 메일 일괄발송」·「PDF 일괄저장」이 켜진다
+                    (외상매출장조회.vb:97~106·121). 전체 조회는 부수 기능이 아니라
+                    **일괄 발송의 전제**다 — 화면이 "전체 거래처의 더프모는 아직 서버가
+                    지원하지 않습니다"로 막혀 있던 지점이다.
+
+                    ★**매출이 있는 거래처만** 나온다. 없는 곳까지 넣으면 0원짜리 명세서가
+                    메일·PDF로 나가는 사고가 된다.
+
+                    ★각 원장에 `partnerCode`가 실려 있다 —
+                    PDF 파일명 `RESULT_{거래처코드}_{거래처명}_{기간}.pdf` 를 만들 때 쓴다.""")
+    @GetMapping("/ar-ledger/duff/all")
+    public ApiResponse<List<DuffLedgerResponse>> duffLedgerAll(
+            @Parameter(description = "시작일(미지정 시 올해 1/1)") @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
+            @Parameter(description = "종료일(미지정 시 오늘)") @RequestParam(required = false)
+            @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
+            @Parameter(description = "키워드 — 거래처코드·거래처명을 함께 훑는다(부분일치)")
+            @RequestParam(required = false) String keyword) {
+        return ApiResponse.success(Keywords.filter(
+                receivableService.duffLedgerAll(fromDate, toDate), keyword,
+                x -> new Object[]{x.partnerCode(), x.partnerName()}));
     }
 
     @Operation(summary = "외상매출장 '더프모만' 요약표 엑셀 다운로드",

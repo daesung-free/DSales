@@ -32,6 +32,12 @@ class DuffLedgerIntegrationTest extends IntegrationTestSupport {
     private Long mockSet;
     /** 폴백 검증 전용 거래처 — 다른 테스트의 합계(22부)를 건드리지 않으려고 분리한다. */
     private Long fallbackPartner;
+    /**
+     * 전 거래처 조회 검증용 — <b>같은 기간에</b> 두 번째 거래처가 있어야 한다.
+     * ‼️처음엔 이게 없어서, 거래처를 끊는 로직을 통째로 지워도 테스트가 통과했다
+     * (기간에 거래처가 하나뿐이면 끊을 일이 없다).
+     */
+    private Long otherPartner;
 
     @BeforeAll
     void seed() {
@@ -72,6 +78,22 @@ class DuffLedgerIntegrationTest extends IntegrationTestSupport {
         // 제외돼야 하는 둘: 교재 / 더프가 아닌 모의고사
         sale(YEAR + "-09-13", wh, textBook, 99, "A고", "GRADED", null);
         sale(YEAR + "-09-14", wh, nonDuff, 88, "A고", "GRADED", null);
+
+        // ★같은 기간(2043)의 두 번째 거래처 — 전 거래처 조회가 거래처를 제대로 끊는지 보려면
+        //   한 기간에 둘 이상이 있어야 한다. 코드를 'DFZ…'로 둬 정렬에서 우리 뒤에 오게 한다.
+        otherPartner = createId("/masters/clients",
+                Map.of("code", "DFZ" + SFX, "name", "둘째거래처", "type", "NORMAL"));
+        Map<String, Object> other = new java.util.HashMap<>();
+        other.put("productId", mockSet);
+        other.put("shipmentType", "NORMAL_SHIP");
+        other.put("unitPrice", 10000);
+        other.put("supplyRate", 100);
+        other.put("qty", 5);
+        other.put("schoolName", "Z고");
+        other.put("procType", "GRADED");
+        assertThat(post("/sales/entries", Map.of(
+                "salesDate", YEAR + "-09-20", "partnerId", otherPartner,
+                "warehouseId", wh, "items", List.of(other))).path("success").asBoolean()).isTrue();
 
         seedFallback(sup, wh);
     }
@@ -167,6 +189,62 @@ class DuffLedgerIntegrationTest extends IntegrationTestSupport {
 
         assertThat(graded).isEqualTo(17);    // 10 + 7
         assertThat(ungraded).isEqualTo(5);   // 미지정 = 비처리
+    }
+
+    @Test
+    @DisplayName("★전 거래처 — 거래처당 원장 하나(PDF 일괄저장의 전제)")
+    void 전거래처() {
+        // 이 테스트의 두 거래처는 기간이 갈려 있다(본 픽스처 2043 · 폴백 2042).
+        // 2043 으로 물으면 본 거래처만, 2042 면 폴백 거래처만 나와야 한다.
+        JsonNode all = data(get("/closing/ar-ledger/duff/all"
+                + "?fromDate=" + YEAR + "-01-01&toDate=" + YEAR + "-12-31"));
+
+        JsonNode mine = null;
+        JsonNode second = null;
+        for (JsonNode l : all) {
+            if (partner.equals(l.path("partnerId").asLong())) {
+                mine = l;
+            }
+            if (otherPartner.equals(l.path("partnerId").asLong())) {
+                second = l;
+            }
+        }
+        assertThat(mine).as("우리 거래처 원장이 들어 있다").isNotNull();
+
+        // ‼️**거래처가 끊기는지**가 이 테스트의 핵심이다. 같은 기간의 두 거래처가
+        //   각자 자기 합계로 떨어져 나와야 한다 — 안 끊으면 한 덩이로 뭉쳐
+        //   둘 중 하나가 통째로 사라지고 나머지 하나의 합계가 27(22+5)이 된다.
+        assertThat(second).as("같은 기간의 둘째 거래처도 따로 나온다").isNotNull();
+        assertThat(second.path("totalQty").asLong()).isEqualTo(5);
+
+        // 단건 조회와 **같은 값**이어야 한다 — 다르면 화면과 일괄발송이 어긋난다.
+        assertThat(mine.path("totalQty").asLong()).isEqualTo(22);
+        assertThat(mine.path("partnerCode").asText())
+                .as("PDF 파일명에 쓰는 거래처코드").isEqualTo("DFP" + SFX);
+
+        // 소계·요약도 단건과 같은 모양으로 붙는다(거래처 경계에서 끊기는지 본다).
+        assertThat(mine.path("summary")).isNotEmpty();
+        long schoolSum = 0;
+        for (JsonNode r : mine.path("rows")) {
+            if ("SCHOOL_SUBTOTAL".equals(r.path("rowType").asText())) {
+                schoolSum += r.path("qty").asLong();
+            }
+        }
+        assertThat(schoolSum).as("학교 계 합이 거래처 총량과 같다").isEqualTo(22);
+
+        // ‼️폴백 거래처는 2042 라 이 기간에 없어야 한다 — 거래처별로 안 끊으면 섞여 든다.
+        for (JsonNode l : all) {
+            assertThat(l.path("partnerId").asLong()).isNotEqualTo(fallbackPartner);
+        }
+    }
+
+    @Test
+    @DisplayName("매출 없는 거래처는 안 나온다 — 0원 명세서가 메일로 나가면 사고다")
+    void 매출없으면_제외() {
+        JsonNode all = data(get("/closing/ar-ledger/duff/all?fromDate=2044-01-01&toDate=2044-12-31"));
+        for (JsonNode l : all) {
+            assertThat(l.path("partnerId").asLong()).isNotIn(partner, fallbackPartner);
+        }
     }
 
     @Test

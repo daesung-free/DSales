@@ -297,9 +297,14 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
      * 판매일로 연도를 잡으면 한 해가 밀린다. 분류코드 {@code [영문1][연도4][…]} 형식은
      * {@code @CatCode}가 강제하고 있어 2~5자리를 연도로 쓸 수 있다.
      *
+     * <p>★{@code partnerId}가 <b>null이면 전 거래처</b>다. 레거시도 거래처 콤보 0번이
+     * "전체 거래처"이고, <b>그걸 골랐을 때만</b> 「전 거래처 메일 일괄발송」·「PDF 일괄저장」이
+     * 켜진다(외상매출장조회.vb:97~106·121). 즉 전체 조회는 부수 기능이 아니라
+     * <b>일괄 발송의 전제</b>다. 거래처별로 끊어 쓰도록 {@code pt.code} 로 먼저 정렬한다.
+     *
      * <p>소계(학교 계·월 계)는 서비스에서 조립한다. 반환 Object[]:
      * [salesDate, schoolName, <b>examMonth(문자열 yyyy-MM)</b>, grade, procType,
-     *  unitPrice, supplyRate, qty, amount].
+     *  unitPrice, supplyRate, qty, amount, <b>partnerId, partnerCode, partnerName</b>].
      */
     @Query(value = """
             SELECT s.sales_date, COALESCE(s.school_name, ''),
@@ -315,16 +320,19 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
                      END
                    ) AS exam_month,
                    COALESCE(p.grade, ''), COALESCE(s.proc_type, ''),
-                   s.unit_price, s.supply_rate, s.qty, COALESCE(s.supply_amount, 0)
+                   s.unit_price, s.supply_rate, s.qty, COALESCE(s.supply_amount, 0),
+                   s.partner_id, pt.code, pt.name
             FROM sales s
               JOIN products p ON p.id = s.product_id
+              JOIN partners pt ON pt.id = s.partner_id
               LEFT JOIN sales_divisions d ON d.code = p.sales_division
             WHERE s.canceled = false
               AND p.cat_code LIKE 'M%'
               AND (p.cat_code LIKE 'M%A%' OR p.cat_code LIKE 'M%B%' OR p.cat_code LIKE 'M%C%')
-              AND s.partner_id = :partnerId
+              AND (:partnerId IS NULL OR s.partner_id = :partnerId)
               AND s.sales_date BETWEEN :fromDate AND :toDate
-            ORDER BY EXTRACT(YEAR FROM s.sales_date), EXTRACT(MONTH FROM s.sales_date),
+            ORDER BY pt.code, s.partner_id,
+                     EXTRACT(YEAR FROM s.sales_date), EXTRACT(MONTH FROM s.sales_date),
                      COALESCE(s.school_name, ''), exam_month, p.grade, s.proc_type, s.id
             """, nativeQuery = true)
     List<Object[]> duffLedgerLines(@Param("partnerId") Long partnerId,
