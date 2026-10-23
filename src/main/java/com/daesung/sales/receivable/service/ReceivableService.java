@@ -385,12 +385,20 @@ public class ReceivableService {
         ids.addAll(gen.keySet());
         ids.addAll(coll.keySet());
 
+        // ★재생성 전 값을 떠 둔다 — **무엇이 바뀌었는지** 알려주기 위해서다.
+        //   ‼️이미 만든 이월을 다시 만들었는데 값이 달라졌다면, 스냅샷을 뜬 뒤에
+        //     전년 거래가 더 들어온 것이다. 그냥 덮으면 담당자는 잔액이 왜 변했는지 모른다
+        //     (프론트 실측 2026-10-22 ⑧ "이월을 만든 뒤 전년도 매출이 늦게 들어와도 표시가 없다").
+        //   재생성 자체는 막지 않는다 — 막으면 늦게 들어온 거래를 영영 반영할 수 없다.
+        Map<Long, Long> before = toAmountMap(carryforwardRepository.sumByYear(fiscalYear, null));
+
         int deleted = carryforwardRepository.deleteByFiscalYear(fiscalYear);
         carryforwardRepository.flush(); // 삭제 확정 후 삽입(유니크 제약 회피)
 
         LocalDateTime now = LocalDateTime.now();
         int generated = 0;
         long total = 0;
+        Map<Long, Long> made = new HashMap<>();
         for (Long pid : ids) {
             long balance = carry.getOrDefault(pid, 0L) + gen.getOrDefault(pid, 0L) - coll.getOrDefault(pid, 0L);
             if (balance == 0) {
@@ -400,8 +408,23 @@ public class ReceivableService {
             carryforwardRepository.save(ReceivableCarryforward.create(fiscalYear, partner, balance, now));
             generated++;
             total += balance;
+            made.put(pid, balance);
         }
-        return new CarryforwardResult(fiscalYear, deleted, generated, total);
+
+        // 바뀐 거래처 수·금액. 사라진 거래처(이전엔 잔액이 있었는데 이번엔 0)도 '바뀐' 것이다.
+        Set<Long> compared = new LinkedHashSet<>(before.keySet());
+        compared.addAll(made.keySet());
+        int changed = 0;
+        long changedAmount = 0;
+        for (Long pid : compared) {
+            long b = before.getOrDefault(pid, 0L);
+            long a = made.getOrDefault(pid, 0L);
+            if (b != a) {
+                changed++;
+                changedAmount += a - b;
+            }
+        }
+        return new CarryforwardResult(fiscalYear, deleted, generated, total, changed, changedAmount);
     }
 
     /**

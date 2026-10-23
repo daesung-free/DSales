@@ -103,6 +103,41 @@ class ArStatusPeriodIntegrationTest extends IntegrationTestSupport {
     }
 
     @Test
+    @DisplayName("이월 재생성 — 막지 않되 **무엇이 바뀌었는지** 알려준다")
+    void 이월_재생성_델타() {
+        int next = Integer.parseInt(YEAR) + 1;
+
+        // 처음 만들면 바뀐 것이 없다.
+        JsonNode first = data(post("/closing/carryforward?fiscalYear=" + next, null));
+        assertThat(first.path("changed").asInt()).as("최초 생성").isZero();
+        long firstTotal = first.path("totalCarryAmount").asLong();
+
+        // 그대로 다시 만들어도 값이 같으니 바뀐 것이 없다 — 재생성 자체는 막지 않는다.
+        assertThat(data(post("/closing/carryforward?fiscalYear=" + next, null))
+                .path("changed").asInt()).as("같은 값 재생성").isZero();
+
+        // ‼️스냅샷을 뜬 **뒤에** 전년 거래가 들어오면, 재생성에서 그 사실이 드러나야 한다.
+        //   예전엔 조용히 덮여서 담당자가 잔액이 왜 변했는지 알 수 없었다.
+        // ★전용 거래처를 쓴다 — 공유 거래처에 거래를 더하면 다른 테스트의 잔액 검증이 깨진다
+        //   (실제로 그렇게 깨뜨렸다). 이월은 전 거래처를 도므로 델타는 그대로 잡힌다.
+        Long other = createId("/masters/clients",
+                Map.of("code", "APQ" + SFX, "name", "이월델타거래처", "type", "NORMAL"));
+        Map<String, Object> it = new HashMap<>();
+        it.put("productId", product);
+        it.put("shipmentType", "NORMAL_SHIP");
+        it.put("unitPrice", 10000);
+        it.put("supplyRate", 70);
+        it.put("qty", 10);
+        assertThat(post("/sales/entries", Map.of(
+                "salesDate", YEAR + "-11-11", "partnerId", other, "warehouseId", warehouse,
+                "items", List.of(it))).path("success").asBoolean()).isTrue();
+        JsonNode again = data(post("/closing/carryforward?fiscalYear=" + next, null));
+        assertThat(again.path("changed").asInt()).as("바뀐 거래처 수").isPositive();
+        assertThat(again.path("changedAmount").asLong()).isEqualTo(70_000);
+        assertThat(again.path("totalCarryAmount").asLong()).isEqualTo(firstTotal + 70_000);
+    }
+
+    @Test
     @DisplayName("★★해를 걸친 기간 — 기초는 시작일 연도로 잡는다(1년치 이중계상 회귀)")
     void 해를_걸쳐도_기초가_맞다() {
         // 프론트 실측 2026-10-22: 2025-12-30~2026-01-05 조회 시 이월이 4.50억 커졌다.
