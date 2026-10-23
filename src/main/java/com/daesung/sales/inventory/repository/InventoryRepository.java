@@ -52,6 +52,19 @@ public interface InventoryRepository extends JpaRepository<Inventory, Long> {
      *
      * <p>반환 Object[]: [materialId, code, name, materialType, warehouseId, warehouseName, qty].
      */
+    /**
+     * 자재별 **전 창고 합계** 재고. 세트 가용재고 계산용.
+     *
+     * <p>★창고를 가리지 않는다 — 세트는 "회사 전체에 몇 개 만들 수 있나"를 보는 것이라
+     * 창고별로 쪼개면 각 창고 최소값의 합이 되어 실제보다 작게 나온다.
+     * 반환 Object[]: [materialId, qtySum].
+     */
+    @Query("select m.id, coalesce(sum(i.qty), 0) from Inventory i join i.material m "
+            + "where m.id in :materialIds group by m.id")
+    java.util.List<Object[]> sumByMaterialIds(
+            @org.springframework.data.repository.query.Param("materialIds")
+            java.util.Collection<Long> materialIds);
+
     @Query("select m.id, m.code, m.name, m.materialType, w.id, w.name, i.qty "
             + "from Inventory i join i.material m join i.warehouse w "
             + "where (:materialId is null or m.id = :materialId) "

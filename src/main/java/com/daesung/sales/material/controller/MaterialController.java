@@ -89,6 +89,26 @@ public class MaterialController {
         return ApiResponse.success(materialBomService.list(setProductId));
     }
 
+    @Operation(summary = "세트 가용재고(구성 회차 최소값)",
+            description = """
+                    만들 수 있는 세트 수 = **구성 회차별 시험지 재고 ÷ 세트당 소요수량**의 최소값.
+                    발주처 확정(2026-10-23) — "세트 재고는 구성 회차별 시험지 재고의 최소값.
+                    예) 1~4회 100/120/105/111 → 세트 100".
+
+                    ★세트는 따로 쌓아 두는 물건이 아니라 회차 시험지를 모아 만드는 것이라,
+                    **가장 모자란 회차**가 세트 수를 정한다. 어느 회차가 막고 있는지는
+                    `rounds[].bottleneck` 으로 표시된다.
+
+                    ‼️**시험지만 본다** — OMR·라벨은 세트 수를 정하는 축이 아니다.
+                    ‼️구성이 없으면 `availableSets` 가 **null** 이다(0과 다르다 —
+                    0은 "못 만든다", null 은 "구성이 안 잡혀 있다").
+                    ‼️재고가 음수면 세트도 음수로 낸다 — 0으로 올리면 모자란 사실이 묻힌다.""")
+    @GetMapping("/products/{setProductId}/set-stock")
+    public ApiResponse<com.daesung.sales.material.dto.SetStockResponse> setStock(
+            @PathVariable Long setProductId) {
+        return ApiResponse.success(materialBomService.setStock(setProductId));
+    }
+
     @Operation(summary = "세트 자재 매칭 추가",
             description = """
                     회차를 비우면 **공통**(세트 전체에 붙는 범용 자재)이다.

@@ -27,6 +27,7 @@ public class MaterialBomService {
     private final MaterialBomRepository materialBomRepository;
     private final MaterialService materialService;
     private final ProductRepository productRepository;
+    private final com.daesung.sales.inventory.repository.InventoryRepository inventoryRepository;
 
     @Transactional(readOnly = true)
     public MaterialBomResponse list(Long setProductId) {
@@ -88,5 +89,74 @@ public class MaterialBomService {
     private Product productOrThrow(Long id) {
         return productRepository.findById(id)
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND, "상품이 없습니다. id=" + id));
+    }
+
+    /**
+     * 세트 가용재고 — <b>구성 회차별 시험지 재고의 최소값</b>.
+     *
+     * <p>근거: 발주처 확정(2026-10-23) "세트 재고는 구성 회차별 시험지 재고의 최소값.
+     * 예) 1~4회 100/120/105/111 → 세트 100. 회차 단독판매도 동일 기준."
+     *
+     * <p>★<b>세트는 따로 쌓아 두는 물건이 아니다.</b> 회차 시험지를 모아 만드는 것이라
+     * "몇 세트 나갈 수 있나"는 <b>가장 모자란 회차</b>가 정한다.
+     *
+     * <p>‼️<b>시험지만 본다.</b> OMR·라벨·단행본은 세트 수를 정하는 축이 아니다 —
+     * 발주처 문구가 "구성 회차별 <b>시험지</b> 재고"다. 다른 자재까지 넣으면
+     * 라벨이 모자라서 세트가 0으로 보이는 일이 생긴다.
+     *
+     * <p>‼️재고가 <b>음수</b>면 세트도 음수로 낸다. 0으로 올리면 "만들 수 있다"로 읽혀
+     * 모자란 사실이 묻힌다(재고 음수를 막지 않기로 한 것과 같은 결).
+     */
+    @Transactional(readOnly = true)
+    public com.daesung.sales.material.dto.SetStockResponse setStock(Long setProductId) {
+        Product set = productRepository.findById(setProductId)
+                .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
+                        "상품이 없습니다. id=" + setProductId));
+
+        List<MaterialBom> boms = materialBomRepository.findBySet(setProductId).stream()
+                .filter(b -> b.getMaterial().getMaterialType()
+                        == com.daesung.sales.product.entity.MaterialType.EXAM_PAPER)
+                .toList();
+        if (boms.isEmpty()) {
+            // 구성이 없으면 null — 0과 다르다. 0은 "못 만든다", null 은 "구성이 안 잡혀 있다"다.
+            return new com.daesung.sales.material.dto.SetStockResponse(
+                    set.getId(), set.getCode(), set.getName(), null, List.of());
+        }
+
+        java.util.Map<Long, Integer> stock = new java.util.HashMap<>();
+        for (Object[] r : inventoryRepository.sumByMaterialIds(
+                boms.stream().map(b -> b.getMaterial().getId()).distinct().toList())) {
+            stock.put((Long) r[0], ((Number) r[1]).intValue());
+        }
+
+        List<com.daesung.sales.material.dto.SetStockResponse.Round> rounds = new java.util.ArrayList<>();
+        Integer min = null;
+        for (MaterialBom b : boms) {
+            int qty = stock.getOrDefault(b.getMaterial().getId(), 0);
+            // 소요수량으로 나눈다 — 예시(소요 1)에서는 그대로 재고가 되고, 2 이상이면 그만큼 준다.
+            int possible = Math.floorDiv(qty, b.getQtyPerSet());
+            min = (min == null) ? possible : Math.min(min, possible);
+            Product round = b.getRoundProduct();
+            rounds.add(new com.daesung.sales.material.dto.SetStockResponse.Round(
+                    (round == null) ? null : round.getId(),
+                    (round == null) ? "(공통)" : round.getCode(),
+                    (round == null) ? "공통 자재" : round.getName(),
+                    b.getMaterial().getId(), b.getMaterial().getCode(), b.getMaterial().getName(),
+                    qty, b.getQtyPerSet(), possible, false));
+        }
+
+        // 병목 표시 — 어느 회차가 세트 수를 정했는지 화면이 바로 짚을 수 있게 한다.
+        final int bottleneck = min;
+        List<com.daesung.sales.material.dto.SetStockResponse.Round> marked = rounds.stream()
+                .map(r -> r.possibleSets() == bottleneck
+                        ? new com.daesung.sales.material.dto.SetStockResponse.Round(
+                                r.roundProductId(), r.roundProductCode(), r.roundProductName(),
+                                r.materialId(), r.materialCode(), r.materialName(),
+                                r.stockQty(), r.qtyPerSet(), r.possibleSets(), true)
+                        : r)
+                .toList();
+
+        return new com.daesung.sales.material.dto.SetStockResponse(
+                set.getId(), set.getCode(), set.getName(), min, marked);
     }
 }
