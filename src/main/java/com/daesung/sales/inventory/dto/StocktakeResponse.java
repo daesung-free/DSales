@@ -12,7 +12,12 @@ public record StocktakeResponse(
         @Schema(description = "창고명") String warehouseName,
         @Schema(description = "실사일자") LocalDate stocktakeDate,
         @Schema(description = "차이가 발생해 조정된 품목 수") int adjustedCount,
-        @Schema(description = "실사 명세") List<Line> lines
+        @Schema(description = "실사 명세") List<Line> lines,
+        @Schema(description = """
+                경고 — **막지 않고 알리기만 한다**. 비어 있으면 이상 없음.
+                `PERIOD_LOCKED` 는 마감된 달에 등록한 경우다(발주처 2026-10-23: 차단 안 함, 안내만).
+                ‼️전표 단위 경고라 상품·창고 칸이 비어 있다 — 코드로 갈라 읽을 것.""")
+        java.util.List<StockWarning> warnings
 ) {
     @Schema(name = "StocktakeLine")
     public record Line(

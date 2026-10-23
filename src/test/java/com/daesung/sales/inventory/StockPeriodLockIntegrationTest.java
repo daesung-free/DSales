@@ -13,15 +13,20 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 
 /**
- * 마감된 달에는 재고 <b>등록</b>도 막는다(프론트 실측 2026-10-22 ④).
+ * 마감된 달에도 재고 <b>등록은 막지 않고 경고만</b> 싣는다.
  *
- * <p>‼️예전엔 취소·삭제·수정만 막혀 있었다. 그래서 <b>마감월에 새로 넣는 것은 되는데
- * 되돌릴 수는 없는</b> 상태였다 — 잘못 넣으면 고칠 길이 없다. 둘 다 막히거나 둘 다 열리거나여야 한다.
+ * <p>근거: 발주처 확정(2026-10-23) — "마감된 달 처리 : 입고·대체·폐기 등록 <b>차단 안 함,
+ * 안내 메시지만</b>". 재고 음수를 막지 않기로 한 것(2026-08-31)과 같은 결이다 —
+ * 막으면 처리가 안 되는 게 아니라 <b>시스템 밖에서 처리된다</b>.
  *
- * <p>매출·수금·위탁·물류비·세무는 처음부터 등록을 막고 있었다. 재고만 예외일 이유가 없었다.
+ * <p>‼️2026-10-22에 "등록은 되는데 취소는 안 되는 비대칭이 나쁘다"는 판단으로 막았다가 되돌렸다.
+ * 그건 <b>회신 대기 중이던 항목</b>이었고, 우리가 정할 일이 아니었다.
+ *
+ * <p>★<b>수정·취소·삭제는 그대로 막는다.</b> 되돌림은 마감 숫자를 흔든다 —
+ * 그래서 이 테스트는 "등록은 되고 되돌림은 막힌다"를 <b>같이</b> 본다.
  */
 @TestInstance(TestInstance.Lifecycle.PER_CLASS)
-@DisplayName("마감월 재고 등록 차단(입고·이고·폐기·실사)")
+@DisplayName("마감월 재고 등록 — 차단 아님, 경고만")
 class StockPeriodLockIntegrationTest extends IntegrationTestSupport {
 
     private static final String SFX = "-PL" + (System.nanoTime() % 1_000_000L);
@@ -56,7 +61,6 @@ class StockPeriodLockIntegrationTest extends IntegrationTestSupport {
         b.put("set", false);
         book = createId("/masters/products", b);
 
-        // 마감 전에 재고를 미리 넣어 둔다(이고·폐기·실사가 재고 부족으로 막히면 검증이 흐려진다).
         assertThat(inbound(YEAR + "-03-02").path("success").asBoolean()).isTrue();
     }
 
@@ -67,40 +71,65 @@ class StockPeriodLockIntegrationTest extends IntegrationTestSupport {
                 "items", List.of(Map.of("productId", book, "unitCost", 1000, "qty", 500))));
     }
 
-    private static void assertLocked(JsonNode r, String what) {
-        assertThat(r.path("success").asBoolean()).as("%s 는 마감월에 막혀야 한다: %s", what, r).isFalse();
-        assertThat(r.path("error").path("code").asText()).as(what).isEqualTo("PERIOD_LOCKED");
+    /** 성공했고, PERIOD_LOCKED 경고가 실려 있어야 한다. */
+    private static void assertWarnedNotBlocked(JsonNode r, String what) {
+        assertThat(r.path("success").asBoolean()).as("%s 는 막히면 안 된다: %s", what, r).isTrue();
+        boolean warned = false;
+        for (JsonNode w : r.path("data").path("warnings")) {
+            if ("PERIOD_LOCKED".equals(w.path("code").asText())) {
+                warned = true;
+            }
+        }
+        assertThat(warned).as("%s 에 PERIOD_LOCKED 경고가 실려야 한다: %s", what, r).isTrue();
     }
 
     @Test
-    @DisplayName("입고·이고·폐기·실사 등록이 모두 PERIOD_LOCKED")
-    void 마감월에는_등록도_막힌다() {
-        post("/closing/periods/lock", Map.of("year", YEAR, "month", MONTH, "memo", "재고등록 차단 검증"));
+    @DisplayName("★입고·이고·폐기·실사 등록이 마감월에도 되고, 경고가 실린다")
+    void 마감월에도_등록된다() {
+        post("/closing/periods/lock", Map.of("year", YEAR, "month", MONTH, "memo", "재고등록 경고 검증"));
         try {
-            assertLocked(inbound(DATE), "입고");
+            assertWarnedNotBlocked(inbound(DATE), "입고");
 
-            assertLocked(post("/stock/transfer", Map.of(
+            assertWarnedNotBlocked(post("/stock/transfer", Map.of(
                     "processedDate", DATE, "fromWarehouseId", warehouse, "toWarehouseId", warehouse2,
                     "items", List.of(Map.of("productId", book, "qty", 10)))), "이고");
 
-            assertLocked(post("/disposals", Map.of(
+            assertWarnedNotBlocked(post("/disposals", Map.of(
                     "processedDate", DATE, "warehouseId", warehouse,
                     "items", List.of(Map.of("productId", book, "qty", 5, "reason", "파손")))), "폐기");
 
-            assertLocked(post("/stock/stocktakes", Map.of(
+            assertWarnedNotBlocked(post("/stock/stocktakes", Map.of(
                     "stocktakeDate", DATE, "warehouseId", warehouse,
-                    "items", List.of(Map.of("productId", book, "countedQty", 490)))), "실사");
+                    "items", List.of(Map.of("productId", book, "countedQty", 480)))), "실사");
         } finally {
             post("/closing/periods/unlock", Map.of("year", YEAR, "month", MONTH, "memo", "테스트 정리"));
         }
-
-        // ★마감을 풀면 다시 된다 — 막는 것이 날짜가 아니라 **마감 상태**임을 확인한다.
-        assertThat(inbound(DATE).path("success").asBoolean()).as("마감 해제 후 입고").isTrue();
     }
 
     @Test
-    @DisplayName("마감되지 않은 달은 그대로 등록된다 — 과하게 막지 않았는지 함께 본다")
-    void 마감_안된_달은_된다() {
-        assertThat(inbound(YEAR + "-05-10").path("success").asBoolean()).isTrue();
+    @DisplayName("‼️되돌림(전표 삭제)은 그대로 막힌다 — 마감 숫자를 흔들기 때문")
+    void 되돌림은_막힌다() {
+        JsonNode in = inbound(YEAR + "-06-05");
+        assertThat(in.path("success").asBoolean()).isTrue();
+        String no = data(in).path("inboundNo").asText();
+
+        post("/closing/periods/lock", Map.of("year", YEAR, "month", 6, "memo", "되돌림 차단 검증"));
+        try {
+            JsonNode del = del("/stock/vouchers/" + no, Map.of("reason", "마감 후 시도"));
+            assertThat(del.path("success").asBoolean()).as("삭제는 막혀야 한다: %s", del).isFalse();
+            assertThat(del.path("error").path("code").asText()).isEqualTo("PERIOD_LOCKED");
+        } finally {
+            post("/closing/periods/unlock", Map.of("year", YEAR, "month", 6, "memo", "테스트 정리"));
+        }
+    }
+
+    @Test
+    @DisplayName("마감 안 된 달은 경고도 없다 — 아무 때나 뜨면 경고가 무시된다")
+    void 마감_아니면_경고없다() {
+        JsonNode r = inbound(YEAR + "-05-10");
+        assertThat(r.path("success").asBoolean()).isTrue();
+        for (JsonNode w : r.path("data").path("warnings")) {
+            assertThat(w.path("code").asText()).isNotEqualTo("PERIOD_LOCKED");
+        }
     }
 }

@@ -34,12 +34,17 @@ public class StocktakeService {
     private final ProductRepository productRepository;
     private final InventoryService inventoryService;
     private final com.daesung.sales.closing.service.PeriodLockService periodLockService;
+    private final com.daesung.sales.inventory.service.StockWarningCollector stockWarningCollector;
 
     /** 재고실사 등록+적용. 상품마다 대조 후 차이가 있으면 ADJUST 조정. 한 트랜잭션. */
     @Transactional
     public StocktakeResponse register(StocktakeRequest req) {
-        // 실사도 재고를 움직인다(차이조정 ADJUST) — 마감된 달이면 막는다. 위 등록들과 같은 규칙이다.
-        periodLockService.assertNotLocked(req.stocktakeDate());
+        // 실사도 재고를 움직인다(차이조정 ADJUST). 마감된 달이어도 **막지 않고 경고만** 싣는다 —
+        // 발주처 확정(2026-10-23) "마감된 달 처리 : 등록 차단 안 함, 안내 메시지만".
+        if (periodLockService.isLocked(req.stocktakeDate())) {
+            stockWarningCollector.add(
+                    com.daesung.sales.inventory.dto.StockWarning.periodLocked(req.stocktakeDate()));
+        }
         Warehouse warehouse = warehouseRepository.findById(req.warehouseId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                         "창고가 없습니다. id=" + req.warehouseId()));
@@ -70,6 +75,7 @@ public class StocktakeService {
         stocktakeRepository.save(stocktake); // 헤더+라인 cascade
 
         return new StocktakeResponse(stocktake.getId(), stocktakeNo,
-                warehouse.getId(), warehouse.getName(), req.stocktakeDate(), adjustedCount, lines);
+                warehouse.getId(), warehouse.getName(), req.stocktakeDate(), adjustedCount, lines,
+                stockWarningCollector.drain());
     }
 }

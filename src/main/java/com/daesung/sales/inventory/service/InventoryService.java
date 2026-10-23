@@ -69,11 +69,15 @@ public class InventoryService {
     /** 일반 입고. 품목마다 (1) 재고이벤트 INBOUND 기록 + (2) 재고 잔량 가산을 한 트랜잭션으로. */
     @Transactional
     public InboundResponse inbound(InboundRequest req) {
-        // ★마감된 달에는 **등록도 막는다.**
-        //   ‼️예전엔 취소·삭제·수정만 막혀 있어, 마감월에 새로 넣는 것은 되는데 되돌릴 수는 없었다 —
-        //     잘못 넣으면 고칠 길이 없는 상태였다(프론트 실측 2026-10-22).
-        //     매출·수금·위탁·물류비·세무는 이미 등록부터 막고 있다. 재고만 예외일 이유가 없다.
-        periodLockService.assertNotLocked(req.processedDate());
+        // ★마감된 달이어도 **등록은 막지 않는다** — 경고만 싣는다.
+        //   근거: 발주처 확정(2026-10-23) "마감된 달 처리 : 입고·대체·폐기 등록 차단 안 함, 안내 메시지만".
+        //   ‼️2026-10-22에 "등록은 되는데 취소는 안 되는 비대칭이 나쁘다"는 판단으로 막았다가 되돌렸다.
+        //     그건 회신 대기 중이던 항목이었고, 우리가 정할 일이 아니었다.
+        //   재고 음수를 막지 않기로 한 것과 같은 결이다 — 막으면 처리가 안 되는 게 아니라
+        //   **시스템 밖에서 처리된다**. 수정·취소·삭제는 그대로 막는다(되돌림은 마감 숫자를 흔든다).
+        if (periodLockService.isLocked(req.processedDate())) {
+            stockWarningCollector.add(com.daesung.sales.inventory.dto.StockWarning.periodLocked(req.processedDate()));
+        }
         Warehouse warehouse = warehouseRepository.findById(req.destinationWarehouseId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                         "창고가 없습니다. id=" + req.destinationWarehouseId()));
@@ -113,17 +117,22 @@ public class InventoryService {
                     product.getId(), product.getCode(), item.qty(), currentQty));
         }
         InboundType type = (req.inboundType() != null) ? req.inboundType() : InboundType.NORMAL;
-        return new InboundResponse(inboundNo, warehouse.getId(), warehouse.getName(), type, lines);
+        return new InboundResponse(inboundNo, warehouse.getId(), warehouse.getName(), type, lines,
+                stockWarningCollector.drain());
     }
 
     /** 단순 이고(창고 이동). 출발창고 −qty(음수재고 방지), 도착창고 +qty. 매출 미발생. */
     @Transactional
     public TransferResponse transfer(TransferRequest req) {
-        // ★마감된 달에는 **등록도 막는다.**
-        //   ‼️예전엔 취소·삭제·수정만 막혀 있어, 마감월에 새로 넣는 것은 되는데 되돌릴 수는 없었다 —
-        //     잘못 넣으면 고칠 길이 없는 상태였다(프론트 실측 2026-10-22).
-        //     매출·수금·위탁·물류비·세무는 이미 등록부터 막고 있다. 재고만 예외일 이유가 없다.
-        periodLockService.assertNotLocked(req.processedDate());
+        // ★마감된 달이어도 **등록은 막지 않는다** — 경고만 싣는다.
+        //   근거: 발주처 확정(2026-10-23) "마감된 달 처리 : 입고·대체·폐기 등록 차단 안 함, 안내 메시지만".
+        //   ‼️2026-10-22에 "등록은 되는데 취소는 안 되는 비대칭이 나쁘다"는 판단으로 막았다가 되돌렸다.
+        //     그건 회신 대기 중이던 항목이었고, 우리가 정할 일이 아니었다.
+        //   재고 음수를 막지 않기로 한 것과 같은 결이다 — 막으면 처리가 안 되는 게 아니라
+        //   **시스템 밖에서 처리된다**. 수정·취소·삭제는 그대로 막는다(되돌림은 마감 숫자를 흔든다).
+        if (periodLockService.isLocked(req.processedDate())) {
+            stockWarningCollector.add(com.daesung.sales.inventory.dto.StockWarning.periodLocked(req.processedDate()));
+        }
         if (req.fromWarehouseId().equals(req.toWarehouseId())) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "출발/도착 창고가 같습니다.");
         }
@@ -408,11 +417,15 @@ public class InventoryService {
     /** 폐기. 품목마다 재고 즉시 차감(음수재고 방지) + DISPOSE 이벤트. 폐기번호(P) 채번. 한 트랜잭션. */
     @Transactional
     public DisposalResponse dispose(DisposalRequest req) {
-        // ★마감된 달에는 **등록도 막는다.**
-        //   ‼️예전엔 취소·삭제·수정만 막혀 있어, 마감월에 새로 넣는 것은 되는데 되돌릴 수는 없었다 —
-        //     잘못 넣으면 고칠 길이 없는 상태였다(프론트 실측 2026-10-22).
-        //     매출·수금·위탁·물류비·세무는 이미 등록부터 막고 있다. 재고만 예외일 이유가 없다.
-        periodLockService.assertNotLocked(req.processedDate());
+        // ★마감된 달이어도 **등록은 막지 않는다** — 경고만 싣는다.
+        //   근거: 발주처 확정(2026-10-23) "마감된 달 처리 : 입고·대체·폐기 등록 차단 안 함, 안내 메시지만".
+        //   ‼️2026-10-22에 "등록은 되는데 취소는 안 되는 비대칭이 나쁘다"는 판단으로 막았다가 되돌렸다.
+        //     그건 회신 대기 중이던 항목이었고, 우리가 정할 일이 아니었다.
+        //   재고 음수를 막지 않기로 한 것과 같은 결이다 — 막으면 처리가 안 되는 게 아니라
+        //   **시스템 밖에서 처리된다**. 수정·취소·삭제는 그대로 막는다(되돌림은 마감 숫자를 흔든다).
+        if (periodLockService.isLocked(req.processedDate())) {
+            stockWarningCollector.add(com.daesung.sales.inventory.dto.StockWarning.periodLocked(req.processedDate()));
+        }
         Warehouse warehouse = warehouseRepository.findById(req.warehouseId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                         "창고가 없습니다. id=" + req.warehouseId()));

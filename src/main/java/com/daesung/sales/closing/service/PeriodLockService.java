@@ -42,6 +42,22 @@ public class PeriodLockService {
     }
 
     /**
+     * 마감 여부만 묻는다 — <b>막지 않는 쪽</b>이 쓴다.
+     *
+     * <p>근거: 발주처 확정(2026-10-23) "마감된 달 처리 : 입고·대체·폐기 등록 <b>차단 안 함,
+     * 안내 메시지만</b>". 재고 음수를 막지 않기로 한 것(2026-08-31)과 같은 결이다 —
+     * 실무가 마감 뒤에도 물건을 넣고 빼는데, 막으면 처리가 안 되는 게 아니라
+     * <b>시스템 밖에서 처리된다</b>.
+     *
+     * <p>‼️매출·수금·위탁·세무는 그대로 {@link #assertNotLocked} 로 <b>막는다</b>.
+     * 그쪽은 마감 숫자가 바뀌면 신고가 틀어진다. 재고만 예외다.
+     */
+    @Transactional(readOnly = true)
+    public boolean isLocked(LocalDate date) {
+        return periodLockCache.isLocked(date.getYear(), date.getMonthValue());
+    }
+
+    /**
      * 월마감(잠금). 없으면 생성 후 잠금. 캐시 무효화. 상태변경 이력 기록.
      *
      * <p>★<b>물류작업비를 함께 굳힌다</b>(발주처 회신 2026-08-21 "과거 데이터 고정").
