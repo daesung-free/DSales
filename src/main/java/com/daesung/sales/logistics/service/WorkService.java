@@ -50,7 +50,8 @@ public class WorkService {
      */
     public List<WorkResultRow> workResults(LocalDate from, LocalDate to, String tradeClass,
                                            Long partnerId, Boolean printed, Boolean acknowledged,
-                                           WarehouseType warehouseType) {
+                                           WarehouseType warehouseType,
+                                           List<com.daesung.sales.dsre.gateway.OrderState> statuses) {
         // ★역할별 기본값(발주처 확정 3-2 나): "물류에서 실제 발송하는 상품은 모두 본사물류창고이므로
         //   출고창고는 본사물류창고만 디폴트, 본사 출고담당(관리자)은 전체/본사물류/위탁 선택 가능".
         //   물류는 요청에 무엇을 넣든 본사물류창고로 강제한다 — 프론트도 필터를 관리자 전용으로 만들었고,
@@ -73,8 +74,24 @@ public class WorkService {
                     .merge(blankToEtc(a.getTradeClass()), a.getQty(), Long::sum);
         }
 
+        // ★진행상태 필터(발주처 확정 2026-10-23 #17 "조회조건에 진행상태 포함, 여러 개 선택").
+        //   ‼️**삭제는 지정할 때만 나온다.** 평소 목록에 섞이면 처리할 수 없는 건이 섞여
+        //     담당자가 매번 걸러야 한다. 지울 때만 보여 주는 쪽이 맞다.
+        java.util.Set<com.daesung.sales.dsre.gateway.OrderState> wanted =
+                (statuses == null || statuses.isEmpty()) ? null : new java.util.HashSet<>(statuses);
+        boolean wantCanceled = wanted != null
+                && wanted.contains(com.daesung.sales.dsre.gateway.OrderState.CANCELED);
+
+        List<Shipment> found = wantCanceled
+                ? shipmentRepository.findAllIncludingDeleted(from, to, tradeClass, partnerId,
+                        boolToInt(printed), boolToInt(acknowledged), null)
+                : shipmentRepository.search(from, to, tradeClass, partnerId, printed, acknowledged, null);
+
         List<WorkResultRow> rows = new ArrayList<>();
-        for (Shipment s : shipmentRepository.search(from, to, tradeClass, partnerId, printed, acknowledged, null)) {
+        for (Shipment s : found) {
+            if (wanted != null && !wanted.contains(s.progressState())) {
+                continue;
+            }
             String k = key(s.getTradeDate(), s.getPartner().getId(), s.getSchoolCode(), s.getTradeClass());
             List<ShipmentWarehouseAgg> whs = whByKey.getOrDefault(k, List.of());
 
@@ -94,6 +111,7 @@ public class WorkService {
                     s.getSchoolCode(), s.getSchoolName(),
                     s.getPrintedAt() != null,
                     s.getAcknowledgedAt() != null, s.getAcknowledgedBy(),
+                    s.progressState(), s.progressState().label(), s.getDeletedAt() != null,
                     s.getCompletedAt() != null, s.getSentDate(),
                     whNames.isEmpty() ? null : whNames,
                     q, total, s.getBoxCount(), s.getSendMemo(), s.getMemo()));
@@ -236,5 +254,10 @@ public class WorkService {
      */
     private static Integer toFlag(Boolean v) {
         return (v == null) ? null : (v ? 1 : 0);
+    }
+
+    /** 네이티브 쿼리는 Boolean 을 못 받는다 — 0/1 로 바꾼다. null 은 그대로 '전체'다. */
+    private static Integer boolToInt(Boolean b) {
+        return (b == null) ? null : (b ? 1 : 0);
     }
 }

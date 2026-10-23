@@ -295,6 +295,14 @@ public class WorkController {
             @RequestParam(required = false) Boolean acknowledged,
             @Parameter(description = "출고창고 구분 MAIN(본사물류창고)/CONSIGN(위탁창고). 미지정=전체(관리자만)")
             @RequestParam(required = false) WarehouseType warehouseType,
+            @Parameter(description = """
+                    진행상태 **다중선택** — PREPARING(상품준비중)/READY_TO_SHIP(발송준비중)/
+                    SHIPPED(발송완료)/CANCELED(삭제). 미지정=삭제를 뺀 전체.
+                    ‼️**삭제는 지정할 때만 나온다** — 평소 목록에 섞이면 처리할 수 없는 건을
+                    담당자가 매번 걸러야 한다.
+                    예) `statuses=SHIPPED,CANCELED`""")
+            @RequestParam(required = false)
+            List<com.daesung.sales.dsre.gateway.OrderState> statuses,
             @Parameter(description = "키워드 — 코드·명칭을 함께 훑는다(부분일치)")
             @RequestParam(required = false) String keyword,
             @org.springdoc.core.annotations.ParameterObject
@@ -312,7 +320,8 @@ public class WorkController {
         //   DB 페이징으로 더 내리려면 출고창고 필터(조회 뒤 판정)를 상관 서브쿼리로 바꿔야 하는데,
         //   같은 모양을 판매채널에서 했다가 0.08초 → 45초가 된 적이 있어 여기서는 하지 않는다.
         List<WorkResultRow> all = Keywords.filter(
-                workService.workResults(fromDate, toDate, tradeClass, partnerId, printed, acknowledged, warehouseType),
+                workService.workResults(fromDate, toDate, tradeClass, partnerId, printed,
+                        acknowledged, warehouseType, statuses),
                 keyword,
                 r -> new Object[]{r.partnerCode(), r.partnerName(), r.schoolCode(), r.schoolName(),
                         r.warehouseName()});
@@ -333,19 +342,25 @@ public class WorkController {
             @RequestParam(required = false) Long partnerId,
             @RequestParam(required = false) Boolean printed,
             @RequestParam(required = false) Boolean acknowledged,
-            @RequestParam(required = false) WarehouseType warehouseType) {
+            @RequestParam(required = false) WarehouseType warehouseType,
+            @Parameter(description = "진행상태 다중선택 — 미지정=삭제 제외 전체")
+            @RequestParam(required = false)
+            List<com.daesung.sales.dsre.gateway.OrderState> statuses) {
         List<Col> cols = List.of(
                 new Col("분류", "tradeClass"), new Col("거래일자", "tradeDate"),
                 new Col("거래순번", "tradeSeq"),
                 new Col("거래처코드", "partnerCode"), new Col("거래처명", "partnerName"),
                 new Col("학교코드", "schoolCode"), new Col("학교명", "schoolName"),
                 new Col("출력", "printed"), new Col("확인", "acknowledged"),
-                new Col("확인자", "acknowledgedBy"), new Col("완료", "completed"),
+                new Col("확인자", "acknowledgedBy"),
+                // ★완료·삭제는 진행상태로 통합됐다(발주처 2026-10-23 #17). 진행상태를 앞에 둔다.
+                new Col("진행상태", "statusLabel"),
                 new Col("발송일", "sentDate"), new Col("출고창고", "warehouseName"),
                 new Col("수량", "totalQty"),
                 new Col("Box", "boxCount"), new Col("발송메모", "sendMemo"), new Col("비고", "memo"));
         byte[] xlsx = excel.toXlsx("작업결과", cols,
-                workService.workResults(fromDate, toDate, tradeClass, partnerId, printed, acknowledged, warehouseType));
+                workService.workResults(fromDate, toDate, tradeClass, partnerId, printed,
+                        acknowledged, warehouseType, statuses));
         return excel.asDownload(xlsx, "작업결과.xlsx");
     }
 

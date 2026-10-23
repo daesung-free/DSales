@@ -23,7 +23,26 @@ public record WorkResultRow(
         @Schema(description = "출력 여부(작업요청서 출력됨)") boolean printed,
         @Schema(description = "확인 여부(출력 다음 단계). 우리가 신설한 축이다") boolean acknowledged,
         @Schema(description = "확인 처리자") String acknowledgedBy,
-        @Schema(description = "완료 여부. ⚠️레거시에 쓰기 경로가 없어 항상 false") boolean completed,
+        @Schema(description = """
+                ★**진행상태 6단계** — 발주처 확정(2026-10-23 #17) "한 컬럼 6단계,
+                완료·삭제 컬럼은 진행상태로 통합".
+                값: `PREPARING`(상품준비중) · `READY_TO_SHIP`(발송준비중) ·
+                `SHIPPED`(발송완료) · `CANCELED`(삭제).
+                ‼️`RECEIVED`(접수완료)·`INSPECTING`(상품검수)는 **여기서 나오지 않는다** —
+                DSRE2 소관(주문 접수 단계)이고, 작업결과는 출고 작업 목록이라
+                매출·출고가 선 뒤에야 행이 생긴다.""")
+        com.daesung.sales.dsre.gateway.OrderState status,
+        @Schema(description = "진행상태 한글 표기 — 화면이 매핑표를 들고 있지 않도록 서버가 준다")
+        String statusLabel,
+        @Schema(description = """
+                삭제 여부. `status=CANCELED` 와 같은 값이다 —
+                진행상태로 통합됐지만, 줄 색칠처럼 따로 쓰는 곳이 있어 함께 둔다.""")
+        boolean deleted,
+        @Schema(description = """
+                완료 여부. ⚠️**판정에 쓰지 말 것.** 이관분 46,218건이 가짜 1900-01-01 로 채워져
+                사실상 전건 참이었고(V97 에서 비웠다), 레거시에서 실제로 쓰인 건 13건뿐이다.
+                진행상태는 `status` 를 볼 것.""")
+        boolean completed,
         @Schema(description = "발송일") LocalDate sentDate,
         @Schema(description = "출고창고(여러 창고에서 나갔으면 쉼표로 이어 붙인다). 창고 기록 전 매출은 비어 있다")
         String warehouseName,

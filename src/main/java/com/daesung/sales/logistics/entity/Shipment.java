@@ -116,6 +116,39 @@ public class Shipment extends BaseEntity {
     @Column(name = "tracking_no", length = 50)
     private String trackingNo;
 
+    /**
+     * 진행상태 6단계 중 이 발송이 어디인지. 발주처 확정(2026-10-23 #17) —
+     * "진행상태 한 컬럼 6단계 / 완료·삭제 컬럼은 진행상태로 통합".
+     *
+     * <p>판정 순서가 곧 우선순위다. 앞에서 걸리면 뒤는 보지 않는다.
+     * <pre>
+     *   삭제됨            → 삭제(CANCELED)      레거시 sendData.isDelete 가 여기로 왔다
+     *   발송일 있음        → 발송완료(SHIPPED)
+     *   출력됨            → 발송준비중(READY_TO_SHIP)   거래명세서를 뽑은 시점
+     *   그 밖            → 상품준비중(PREPARING)
+     * </pre>
+     *
+     * <p>‼️<b>접수완료·상품검수는 여기서 나오지 않는다.</b> 그 둘은 DSRE2 소관(주문 접수 단계)이고,
+     * 작업결과는 <b>출고 작업 목록</b>이라 매출·출고가 선 뒤에야 행이 생긴다 —
+     * 가장 이른 단계가 상품준비중이다.
+     *
+     * <p>‼️'완료'(completedAt)는 판정에 쓰지 않는다. 이관분 46,218건이 가짜 1900-01-01 로
+     * 채워져 사실상 전건 참이었고(V97 에서 비웠다), 레거시에서 실제로 쓰인 건 13건뿐이다.
+     * 발주처도 "완료인데 출력·발송일 없는 건 → 전환 로직 확인"이라고 짚었다.
+     */
+    public com.daesung.sales.dsre.gateway.OrderState progressState() {
+        if (getDeletedAt() != null) {
+            return com.daesung.sales.dsre.gateway.OrderState.CANCELED;
+        }
+        if (sentDate != null) {
+            return com.daesung.sales.dsre.gateway.OrderState.SHIPPED;
+        }
+        if (printedAt != null) {
+            return com.daesung.sales.dsre.gateway.OrderState.READY_TO_SHIP;
+        }
+        return com.daesung.sales.dsre.gateway.OrderState.PREPARING;
+    }
+
     public static Shipment of(String tradeClass, LocalDate tradeDate, Partner partner,
                               String schoolCode, String schoolName, String memo) {
         Shipment s = new Shipment();
