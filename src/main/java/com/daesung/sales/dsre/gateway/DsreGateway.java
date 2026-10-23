@@ -129,29 +129,6 @@ public interface DsreGateway {
     int changeState(int reqCd, String fromCode, String toCode);
 
     /**
-     * 발송완료 처리. DSRE2 발송처리 화면({@code FM_LOGI_DeliveryMng.Set_WorkState/Use_Resource})이
-     * 하는 일을 그대로 한다 — <b>신청 전부를 한 트랜잭션</b>으로.
-     *
-     * <ul>
-     *   <li>발송준비중(W): STATE→D · 자재 현재고 차감 · 자재 출고내역 기록 · 발송일 기록 → {@code CHANGED}</li>
-     *   <li>이미 발송완료(D): 발송일만 고친다 → {@code DATE_ONLY}</li>
-     *   <li>그 밖의 상태: 건드리지 않는다 → {@code SKIPPED}(단계를 건너뛰어 발송완료로 만들지 않는다)</li>
-     * </ul>
-     *
-     * <p>하나라도 SQL 이 실패하면 전부 되돌아간다(반쪽 발송 = 상태는 D 인데 자재는 그대로, 를 막는다).
-     */
-    java.util.List<DsreShipResult> ship(java.util.List<Integer> reqCds, java.time.LocalDate delDate, String actor);
-
-    /**
-     * 발송취소. {@link #ship}의 역 — 발송완료(D)인 신청만 STATE→W · 자재 현재고 복원 ·
-     * 출고내역 삭제 · 발송일 비움. 그 밖의 상태는 {@code SKIPPED}. 한 트랜잭션.
-     *
-     * <p>복원 수량은 <b>출고내역({@code tbl_materials_dtl})에 실제로 적힌 값</b>으로 한다.
-     * 발송 뒤 신청 수량이 바뀌었어도 뺀 만큼만 돌려놓기 위해서다.
-     */
-    java.util.List<DsreShipResult> unship(java.util.List<Integer> reqCds, String actor);
-
-    /**
      * 신청 가능한 시행 목록(주문 등록 1단계). 판매중인 것만 — 종료된 시행으로는 신청할 수 없다.
      *
      * @param keyword 시행명·상품명 부분일치. null이면 전체
