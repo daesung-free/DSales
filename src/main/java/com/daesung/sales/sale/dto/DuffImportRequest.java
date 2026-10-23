@@ -63,7 +63,16 @@ public record DuffImportRequest(
             @Schema(description = """
                     총금액을 직접 지정. ‼️주면 정가·공급률·인원으로 **계산하지 않고 이 값을 쓴다** —
                     담당자가 끝수를 맞춘 금액이 계산으로 덮이면 안 된다.""")
-            Long totalAmount
+            Long totalAmount,
+
+            @Schema(description = """
+                    **줄별 메모**(프론트 실측 2026-10-23 §4② — "레거시는 공통 메모와 별개로
+                    줄마다 메모 칸이 있었다").
+
+                    공통 메모(`memo`)와 **함께** 실린다. 저장되는 모양은
+                    `원천 메모 / 줄 메모 / 공통 메모` 순이다 —
+                    원천(DSRE)을 지우면 그 줄이 왜 그렇게 들어왔는지 되짚을 수 없다.""")
+            String memo
     ) {
     }
 

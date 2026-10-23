@@ -119,9 +119,19 @@ public class DuffSalesImportService {
                                 com.daesung.sales.common.exception.ErrorCode.NOT_FOUND,
                                 "상품이 없습니다. id=" + req.productId()));
 
-        // 실제 적재만 마감 검사 — 미리보기는 마감된 달도 들여다볼 수 있어야 한다.
-        if (!dryRun) {
-            periodLockService.assertNotLocked(to);
+        // ★★마감 검사는 **줄마다 실제 거래일**로 한다(프론트 실측 2026-10-23 §4①).
+        //
+        //   ‼️예전엔 미리보기 끝 날짜(to) 하나로만 봤다. 그래서 둘 다 틀렸다 —
+        //     ① 거래일이 마감된 달이어도 끝 날짜만 열려 있으면 **들어갔다**
+        //     ② 지난달이 마감됐으면 거래일을 오늘로 지정해도 **막혔다**
+        //   거래일은 req.salesDate() 로 통일되거나, 비우면 줄마다 신청일(reqDate)이라
+        //   한 호출 안에서도 달이 섞인다.
+        //
+        //   ★거래일을 통일해 보낸 경우에는 **미리 한 번** 본다. 수백 줄을 다 돌고 나서
+        //     전부 PERIOD_LOCKED 로 떨어뜨리면 담당자는 뭘 잘못했는지 알기 어렵다.
+        //   미리보기(dryRun)는 마감된 달도 들여다볼 수 있어야 하므로 검사하지 않는다.
+        if (!dryRun && req.salesDate() != null) {
+            periodLockService.assertNotLocked(req.salesDate());
         }
 
         List<DuffImportResponse.Line> lines = new ArrayList<>();
@@ -243,19 +253,30 @@ public class DuffSalesImportService {
                 continue;
             }
 
+            LocalDate tradeDate = tradeDateOf(req.salesDate(), row.reqDate(), to);
+
+            // ★그 줄이 귀속될 달이 마감됐으면 **그 줄만** 건너뛴다.
+            //   전체를 실패시키지 않는 이유: 신청일이 섞여 들어오는 일괄 작업이라,
+            //   오래된 신청 한 줄 때문에 이번 달 것까지 통째로 막히면 쓸 수가 없다.
+            //   조용히 빼지도 않는다 — 사유를 실어 보내 화면이 그대로 보여 준다.
+            if (periodLockService.isLocked(tradeDate)) {
+                skipped++;
+                lines.add(line(shown, charge, unit, total, "SKIPPED",
+                        "거래일(" + tradeDate + ")이 마감된 달입니다. 마감을 해제하거나 "
+                                + "거래일자를 열린 달로 지정하세요.", null, sourceKey));
+                continue;
+            }
+
             // 세액은 자동산출하지 않는다(발주처 확정 2026-08-06). DSRE에 입력 경로가 없어 0.
             long tax = 0L;
             String salesNo = "I-" + to.format(YYYYMMDD) + "-"
                     + sequenceService.next(SequenceService.SEQ_INVOICE);
-            // 거래일자 — 지정하면 그 날로 통일, 비우면 **신청일 기준**(레거시 '신청일기준' 체크박스).
-            LocalDate tradeDate = (req.salesDate() != null) ? req.salesDate()
-                    : (row.reqDate() != null ? row.reqDate() : to);
             Sale sale = Sale.createBulk(salesNo, tradeDate,
                     partner, product, ShipmentType.NORMAL_SHIP, SalesCategory.SALE,
                     price, rate, charge.inwon(),
                     total, tax, total + tax,
                     // 공통 메모를 주면 원천 메모 뒤에 붙인다 — 원천을 지우면 되짚을 수 없다.
-                    joinMemo(row.memo(), req.memo()), sourceKey);
+                    joinMemo(row.memo(), (fix == null) ? null : fix.memo(), req.memo()), sourceKey);
             sale.applyUploadDetail(row.schoolCode(), row.schoolName(), null);
             sale.linkOrder(row.reqCd());   // 주문 목록이 "무슨 매출이 됐나"를 역참조한다
             sale.applyDiscount(discount);
@@ -321,6 +342,27 @@ public class DuffSalesImportService {
         return (row.discount() > 0) ? row.discount() : null;
     }
 
+    /**
+     * 그 줄의 <b>거래일자</b> — 매출이 귀속될 날이고, <b>마감 검사의 기준</b>이다.
+     *
+     * <ul>
+     *   <li>담당자가 거래일자를 지정했으면 그 날로 통일한다.</li>
+     *   <li>비우면 <b>신청일 기준</b>(레거시 '신청일기준' 체크박스). 줄마다 다르다.</li>
+     *   <li>신청일도 없으면 조회 끝 날짜로 떨어진다.</li>
+     * </ul>
+     *
+     * <p>‼️<b>별도 메서드로 둔 이유</b>: 마감 검사가 예전엔 조회 끝 날짜(to) 하나만 봐서,
+     * 거래일이 마감된 달이어도 끝 날짜만 열려 있으면 들어갔다(프론트 실측 2026-10-23 §4①).
+     * DSRE 연동은 CI에서 꺼져 있어 이 경로를 통합테스트로 못 짚는다 —
+     * 규칙만이라도 순수 함수로 꺼내 단위테스트로 고정한다.
+     */
+    static LocalDate tradeDateOf(LocalDate specified, LocalDate reqDate, LocalDate to) {
+        if (specified != null) {
+            return specified;
+        }
+        return (reqDate != null) ? reqDate : to;
+    }
+
     private static DuffImportResponse.Line line(DuffSalesRow r, Charge c, long unit, long total,
                                                 String result, String reason, String salesNo,
                                                 String sourceKey) {
@@ -336,10 +378,23 @@ public class DuffSalesImportService {
     }
 
     /** 원천 메모 + 담당자 공통 메모. 원천을 지우지 않는다 — 지우면 어느 신청이었는지 되짚을 수 없다. */
-    private static String joinMemo(String rowMemo, String common) {
-        if (common == null || common.isBlank()) {
-            return rowMemo;
+    /**
+     * 저장할 메모 — {@code 원천(DSRE) / 줄별 / 공통} 순으로 이어 붙인다.
+     *
+     * <p>★<b>원천을 지우지 않는다.</b> 그 줄이 왜 그렇게 들어왔는지 되짚는 유일한 단서다.
+     * <p>줄별 메모는 프론트 실측 2026-10-23 §4② — "레거시는 공통 메모와 별개로
+     * 줄마다 메모 칸이 있었다".
+     */
+    static String joinMemo(String rowMemo, String lineMemo, String common) {
+        StringBuilder sb = new StringBuilder();
+        for (String part : new String[]{rowMemo, lineMemo, common}) {
+            if (part != null && !part.isBlank()) {
+                if (sb.length() > 0) {
+                    sb.append(" / ");
+                }
+                sb.append(part.trim());
+            }
         }
-        return (rowMemo == null || rowMemo.isBlank()) ? common : rowMemo + " / " + common;
+        return (sb.length() == 0) ? null : sb.toString();
     }
 }
