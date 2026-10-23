@@ -107,6 +107,28 @@ public class AuthService {
                 .ifPresent(u -> refreshTokenStore.revokeAllByUser(u.getId()));
     }
 
+    /**
+     * refresh 토큰만으로 로그아웃한다 — <b>access 토큰이 만료된 뒤에도</b> 끊어낼 수 있어야 한다.
+     *
+     * <p>‼️예전엔 로그아웃이 인증을 요구해서, 토큰이 만료된 상태로 로그아웃하면 401 이 나고
+     * <b>재로그인 쿠키(14일)가 그대로 남았다</b>. 공용 PC 에서 다음 사람이 앞사람 세션을
+     * 이어받을 수 있었다(프론트 실측 2026-10-22).
+     *
+     * <p>회전으로 이미 폐기된 토큰({@code findUsedUserId})도 받아 준다 — 그 토큰을 들고 있다는 것
+     * 자체가 그 계정의 세션을 쥐고 있었다는 뜻이라, 끊어 주는 쪽이 안전하다.
+     * 토큰이 아예 모르는 값이면 아무것도 하지 않는다(쿠키 삭제는 컨트롤러가 무조건 한다).
+     */
+    public void logoutByRefreshToken(String refreshToken) {
+        String hash = sha256(refreshToken);
+        Long userId = refreshTokenStore.findUserId(hash);
+        if (userId == null) {
+            userId = refreshTokenStore.findUsedUserId(hash);
+        }
+        if (userId != null) {
+            refreshTokenStore.revokeAllByUser(userId);
+        }
+    }
+
     private TokenResponse issueTokens(AppUser user) {
         String access = jwtProvider.generateAccessToken(user.getId(), user.getUsername(), user.getRole());
         String refreshRaw = UUID.randomUUID().toString().replace("-", "")

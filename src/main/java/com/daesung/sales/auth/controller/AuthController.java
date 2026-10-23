@@ -113,10 +113,23 @@ public class AuthController {
     }
 
     @Operation(summary = "로그아웃",
-            description = "현재 사용자의 모든 refresh 토큰 무효화 + refresh 쿠키 삭제(access는 만료까지 유효).")
+            description = "현재 사용자의 모든 refresh 토큰 무효화 + refresh 쿠키 삭제(access는 만료까지 유효).<br>"
+                    + "★<b>access 토큰이 만료돼도 동작한다</b> — 인증이 없으면 refresh 쿠키로 끊는다. "
+                    + "쿠키조차 없으면 서버에서 지울 세션은 없지만 쿠키 삭제 응답은 그대로 나간다.")
     @PostMapping("/logout")
-    public ApiResponse<Void> logout(Principal principal, HttpServletResponse response) {
-        authService.logout(principal.getName());
+    public ApiResponse<Void> logout(
+            Principal principal,
+            @CookieValue(name = REFRESH_COOKIE, required = false) String cookieToken,
+            HttpServletResponse response) {
+        // ‼️예전엔 principal 을 그냥 역참조해서, 토큰이 만료된 상태의 로그아웃이 401 로 끝나고
+        //   재로그인 쿠키(14일)가 남았다 — 공용 PC 에서 다음 사람이 세션을 이어받을 수 있었다.
+        if (principal != null) {
+            authService.logout(principal.getName());
+        } else if (cookieToken != null && !cookieToken.isBlank()) {
+            authService.logoutByRefreshToken(cookieToken);
+        }
+        // ★쿠키 삭제는 **무조건** 한다. 서버에서 지울 것을 못 찾았더라도
+        //   브라우저에 남은 재로그인 수단은 없애는 것이 이 API 의 최소 보장이다.
         response.addHeader(HttpHeaders.SET_COOKIE, refreshCookie("", Duration.ZERO).toString());
         return ApiResponse.success(null);
     }

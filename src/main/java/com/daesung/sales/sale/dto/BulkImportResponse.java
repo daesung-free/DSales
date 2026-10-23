@@ -14,7 +14,13 @@ public record BulkImportResponse(
     @Schema(name = "BulkImportLine")
     public record Line(
             @Schema(description = "DSRE 소스키(req:lst:dtl:구분)") String sourceKey,
-            @Schema(description = "구분(SALE=매출/GIFT=증정/TEACHER_USE=무상)") String kind,
+            @Schema(description = """
+                    출고유형 — `NORMAL_SHIP`(매출) / `GIFT`(증정) / `TEACHER_USE`(무상·교사용).
+                    DSRE 의 신청구분 M/J/B 에 각각 대응한다.
+                    ‼️예전엔 여기에 회계구분을 실어 보내 **증정과 교사용이 둘 다 `FREE`** 로 뭉개졌다.""")
+            String kind,
+            @Schema(description = "회계구분 — `SALE` / `FREE` / `RETURN`. 증정·교사용은 둘 다 FREE 다.")
+            String salesCategory,
             @Schema(description = "거래처") String partner,
             @Schema(description = "도서") String book,
             @Schema(description = "수량") int qty,

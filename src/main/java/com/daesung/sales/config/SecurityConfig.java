@@ -46,6 +46,11 @@ public class SecurityConfig {
                         .requestMatchers(
                                 "/api/v1/auth/login",
                                 "/api/v1/auth/refresh",
+                                // ★로그아웃도 공개다 — access 토큰이 만료된 뒤에도 끊어낼 수 있어야 한다.
+                                //   인증을 요구하면 만료 상태의 로그아웃이 401 로 끝나고
+                                //   재로그인 쿠키(14일)가 남는다(공용 PC 세션 인계).
+                                //   남이 호출해도 그 사람을 로그아웃시킬 뿐, 권한이 올라가지 않는다.
+                                "/api/v1/auth/logout",
                                 "/api/v1/auth/bootstrap-admin").permitAll()
                         .requestMatchers(
                                 "/swagger-ui/**", "/swagger-ui.html", "/v3/api-docs/**",

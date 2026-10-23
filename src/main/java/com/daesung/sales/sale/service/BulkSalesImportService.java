@@ -84,24 +84,24 @@ public class BulkSalesImportService {
 
                 if (partner == null || product == null) {
                     unmapped++;
-                    lines.add(line(sourceKey, k.category(), row, k.qty(), supply, "UNMAPPED", null));
+                    lines.add(line(sourceKey, k, row, k.qty(), supply, "UNMAPPED", null));
                     continue;
                 }
                 // ★주문 등록 화면에서 매출까지 함께 세운 신청은 소스키가 없어 아래 검사를 통과한다.
                 //   신청번호로 한 번 더 막는다(프론트 확인 질문 2026-10-01).
                 if (saleRepository.existsByReqCdAndCanceledFalse(row.reqCd())) {
                     skipped++;
-                    lines.add(line(sourceKey, k.category(), row, k.qty(), supply, "SKIPPED", null));
+                    lines.add(line(sourceKey, k, row, k.qty(), supply, "SKIPPED", null));
                     continue;
                 }
                 if (saleRepository.existsByBulkImportKey(sourceKey)) {
                     skipped++;
-                    lines.add(line(sourceKey, k.category(), row, k.qty(), supply, "SKIPPED", null));
+                    lines.add(line(sourceKey, k, row, k.qty(), supply, "SKIPPED", null));
                     rowWritten = true; // 이미 등록된 적 있음 → write-back은 시도
                     continue;
                 }
                 if (dryRun) {
-                    lines.add(line(sourceKey, k.category(), row, k.qty(), supply, "PREVIEW", null));
+                    lines.add(line(sourceKey, k, row, k.qty(), supply, "PREVIEW", null));
                     continue;
                 }
                 // DSRE 작업리스트에 세액 항목이 없다 → 0. 세액은 자동산출하지 않는다(발주처 확정).
@@ -115,7 +115,7 @@ public class BulkSalesImportService {
                 saleRepository.save(sale);
                 imported++;
                 rowWritten = true;
-                lines.add(line(sourceKey, k.category(), row, k.qty(), supply, "IMPORTED", salesNo));
+                lines.add(line(sourceKey, k, row, k.qty(), supply, "IMPORTED", salesNo));
             }
 
             // write-back: 해당 도서행 처리 후 state='T'(중복방지). dryRun은 안 함.
@@ -126,8 +126,15 @@ public class BulkSalesImportService {
         return new BulkImportResponse(dryRun, imported, skipped, unmapped, lines);
     }
 
-    private static BulkImportResponse.Line line(String key, SalesCategory cat, BooklistImportRow row,
+    /**
+     * ‼️{@code kind} 는 <b>출고유형</b>(NORMAL_SHIP/GIFT/TEACHER_USE)이다 — 회계구분이 아니다.
+     * 예전엔 {@link SalesCategory} 를 실어 보내서 <b>증정(J)과 교사용(B)이 둘 다 {@code FREE}</b> 로
+     * 뭉개졌고, 화면에서 구분할 길이 소스키 끝글자뿐이었다(프론트 실측 2026-10-22).
+     * DTO 설명은 처음부터 GIFT/TEACHER_USE 라고 적혀 있었다 — 문서와 코드가 갈려 있었다.
+     */
+    private static BulkImportResponse.Line line(String key, Kind kind, BooklistImportRow row,
                                                 int qty, long supply, String result, String salesNo) {
-        return new BulkImportResponse.Line(key, cat.name(), row.custName(), row.bookName(), qty, supply, result, salesNo);
+        return new BulkImportResponse.Line(key, kind.shipmentType().name(), kind.category().name(),
+                row.custName(), row.bookName(), qty, supply, result, salesNo);
     }
 }

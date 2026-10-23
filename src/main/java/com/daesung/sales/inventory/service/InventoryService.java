@@ -69,6 +69,11 @@ public class InventoryService {
     /** 일반 입고. 품목마다 (1) 재고이벤트 INBOUND 기록 + (2) 재고 잔량 가산을 한 트랜잭션으로. */
     @Transactional
     public InboundResponse inbound(InboundRequest req) {
+        // ★마감된 달에는 **등록도 막는다.**
+        //   ‼️예전엔 취소·삭제·수정만 막혀 있어, 마감월에 새로 넣는 것은 되는데 되돌릴 수는 없었다 —
+        //     잘못 넣으면 고칠 길이 없는 상태였다(프론트 실측 2026-10-22).
+        //     매출·수금·위탁·물류비·세무는 이미 등록부터 막고 있다. 재고만 예외일 이유가 없다.
+        periodLockService.assertNotLocked(req.processedDate());
         Warehouse warehouse = warehouseRepository.findById(req.destinationWarehouseId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                         "창고가 없습니다. id=" + req.destinationWarehouseId()));
@@ -114,6 +119,11 @@ public class InventoryService {
     /** 단순 이고(창고 이동). 출발창고 −qty(음수재고 방지), 도착창고 +qty. 매출 미발생. */
     @Transactional
     public TransferResponse transfer(TransferRequest req) {
+        // ★마감된 달에는 **등록도 막는다.**
+        //   ‼️예전엔 취소·삭제·수정만 막혀 있어, 마감월에 새로 넣는 것은 되는데 되돌릴 수는 없었다 —
+        //     잘못 넣으면 고칠 길이 없는 상태였다(프론트 실측 2026-10-22).
+        //     매출·수금·위탁·물류비·세무는 이미 등록부터 막고 있다. 재고만 예외일 이유가 없다.
+        periodLockService.assertNotLocked(req.processedDate());
         if (req.fromWarehouseId().equals(req.toWarehouseId())) {
             throw new BusinessException(ErrorCode.INVALID_INPUT, "출발/도착 창고가 같습니다.");
         }
@@ -398,6 +408,11 @@ public class InventoryService {
     /** 폐기. 품목마다 재고 즉시 차감(음수재고 방지) + DISPOSE 이벤트. 폐기번호(P) 채번. 한 트랜잭션. */
     @Transactional
     public DisposalResponse dispose(DisposalRequest req) {
+        // ★마감된 달에는 **등록도 막는다.**
+        //   ‼️예전엔 취소·삭제·수정만 막혀 있어, 마감월에 새로 넣는 것은 되는데 되돌릴 수는 없었다 —
+        //     잘못 넣으면 고칠 길이 없는 상태였다(프론트 실측 2026-10-22).
+        //     매출·수금·위탁·물류비·세무는 이미 등록부터 막고 있다. 재고만 예외일 이유가 없다.
+        periodLockService.assertNotLocked(req.processedDate());
         Warehouse warehouse = warehouseRepository.findById(req.warehouseId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                         "창고가 없습니다. id=" + req.warehouseId()));

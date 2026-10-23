@@ -33,10 +33,13 @@ public class StocktakeService {
     private final WarehouseRepository warehouseRepository;
     private final ProductRepository productRepository;
     private final InventoryService inventoryService;
+    private final com.daesung.sales.closing.service.PeriodLockService periodLockService;
 
     /** 재고실사 등록+적용. 상품마다 대조 후 차이가 있으면 ADJUST 조정. 한 트랜잭션. */
     @Transactional
     public StocktakeResponse register(StocktakeRequest req) {
+        // 실사도 재고를 움직인다(차이조정 ADJUST) — 마감된 달이면 막는다. 위 등록들과 같은 규칙이다.
+        periodLockService.assertNotLocked(req.stocktakeDate());
         Warehouse warehouse = warehouseRepository.findById(req.warehouseId())
                 .orElseThrow(() -> new BusinessException(ErrorCode.NOT_FOUND,
                         "창고가 없습니다. id=" + req.warehouseId()));
