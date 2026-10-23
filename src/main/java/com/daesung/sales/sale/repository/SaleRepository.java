@@ -819,19 +819,27 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
 
     /**
      * 발송 단위(일자·거래처·학교)의 상품군별 수량. 작업결과 화면의 '교재'·'IC' 컬럼.
-     * 근거: 작업결과.vb — 레거시도 sendData에 salesData를 조인해 tradeClass별로 합산한다.
+     * 근거: 작업결과.vb:115 — 레거시도 sendData에 salesData를 조인해 tradeClass별로 합산한다.
      * 취소·반품은 제외한다(내보내는 작업이 아니다).
+     *
+     * <p>★거래분류는 <b>매출 행의 값</b>({@code s.tradeClass})이다 — 상품의 세부구분이 아니다.
+     * ‼️예전엔 {@code p.salesDivision} 으로 맞췄는데, 발송 한 건에 여러 세부구분 상품이
+     * 섞여 들어가 거의 안 붙었다(2026년 2,219건 중 341건만 매칭.
+     * 발송 '기타고사'↔상품 'D모의고사' 65,081건, 발송 '대성교재'↔상품 '기타고사' 41,457건.
+     * '대성교재'라는 세부구분은 상품에 아예 없다). 바꾼 뒤 2,215/2,221 이 붙는다.
+     * {@code coalesce} 로 상품 세부구분을 뒤에 두는 이유는 <b>이 칸이 생기기 전에 등록된
+     * 신규 매출</b> 때문이다 — 그쪽은 발송도 상품 세부구분으로 만들어져 있어 짝이 맞는다.
      */
     @Query("""
             select s.salesDate as tradeDate, s.partner.id as partnerId,
                    coalesce(s.schoolCode, '') as schoolCode,
-                   coalesce(p.salesDivision, '') as tradeClass,
+                   coalesce(s.tradeClass, p.salesDivision, '') as tradeClass,
                    sum(s.qty) as qty
               from Sale s join s.product p
              where s.canceled = false
                and s.salesCategory <> com.daesung.sales.salestype.entity.SalesCategory.RETURN
                and s.salesDate between :from and :to
-             group by s.salesDate, s.partner.id, coalesce(s.schoolCode, ''), coalesce(p.salesDivision, '')
+             group by s.salesDate, s.partner.id, coalesce(s.schoolCode, ''), coalesce(s.tradeClass, p.salesDivision, '')
             """)
     List<ShipmentQtyAgg> shipmentQty(@Param("from") LocalDate from, @Param("to") LocalDate to);
 
@@ -842,7 +850,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     @Query("""
             select s.salesDate as tradeDate, s.partner.id as partnerId,
                    coalesce(s.schoolCode, '') as schoolCode,
-                   coalesce(p.salesDivision, '') as tradeClass,
+                   coalesce(s.tradeClass, p.salesDivision, '') as tradeClass,
                    p.catCode as catCode, p.code as productCode, p.name as productName,
                    s.bookRound as bookRound,
                    s.unitPrice as unitPrice, s.supplyRate as supplyRate,
@@ -851,7 +859,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
              where s.canceled = false
                and s.salesCategory <> com.daesung.sales.salestype.entity.SalesCategory.RETURN
                and s.salesDate between :from and :to
-             group by s.salesDate, s.partner.id, coalesce(s.schoolCode, ''), coalesce(p.salesDivision, ''),
+             group by s.salesDate, s.partner.id, coalesce(s.schoolCode, ''), coalesce(s.tradeClass, p.salesDivision, ''),
                       p.catCode, p.code, p.name, s.bookRound, s.unitPrice, s.supplyRate
              order by p.catCode, p.code
             """)
@@ -871,13 +879,13 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     @Query("""
             select s.salesDate as tradeDate, s.partner.id as partnerId,
                    coalesce(s.schoolCode, '') as schoolCode,
-                   coalesce(p.salesDivision, '') as tradeClass,
+                   coalesce(s.tradeClass, p.salesDivision, '') as tradeClass,
                    s.reqCd as reqCd
               from Sale s join s.product p
              where s.canceled = false and s.reqCd is not null
                and s.salesDate between :from and :to
              group by s.salesDate, s.partner.id, coalesce(s.schoolCode, ''),
-                      coalesce(p.salesDivision, ''), s.reqCd
+                      coalesce(s.tradeClass, p.salesDivision, ''), s.reqCd
              order by s.reqCd
             """)
     List<WorkOrderReqCd> workOrderReqCds(@Param("from") LocalDate from, @Param("to") LocalDate to);
@@ -986,14 +994,14 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
     @Query("""
             select s.salesDate as tradeDate, s.partner.id as partnerId,
                    coalesce(s.schoolCode, '') as schoolCode,
-                   coalesce(p.salesDivision, '') as tradeClass,
+                   coalesce(s.tradeClass, p.salesDivision, '') as tradeClass,
                    w.id as warehouseId, w.name as warehouseName, w.type as warehouseType
               from Sale s join s.product p join s.warehouse w
              where s.canceled = false
                and s.salesCategory <> com.daesung.sales.salestype.entity.SalesCategory.RETURN
                and s.salesDate between :from and :to
              group by s.salesDate, s.partner.id, coalesce(s.schoolCode, ''),
-                      coalesce(p.salesDivision, ''), w.id, w.name, w.type
+                      coalesce(s.tradeClass, p.salesDivision, ''), w.id, w.name, w.type
             """)
     List<ShipmentWarehouseAgg> shipmentWarehouses(@Param("from") LocalDate from, @Param("to") LocalDate to);
 }

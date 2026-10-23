@@ -137,6 +137,19 @@ public class Sale extends com.daesung.sales.common.entity.SoftDeletableEntity {
     @Column(name = "bulk_import_key", length = 60)
     private String bulkImportKey;
 
+    /**
+     * 거래분류(레거시 {@code salesData.tradeClass}) — <b>발송과 잇는 키</b>.
+     *
+     * <p>상품의 세부구분을 <b>등록 시점에 베껴 둔다</b>. 레거시가 그랬고, 이유가 있다 —
+     * 상품 마스터의 세부구분은 나중에 바뀔 수 있는데, 그때 과거 발송과의 연결이 끊기면 안 된다.
+     * ‼️이 칸이 없어서 발송↔매출을 <b>상품의 세부구분</b>으로 맞추고 있었고,
+     * 발송 한 건에 여러 세부구분이 섞이는 탓에 작업결과가 2,219건 중 1,878건에서
+     * 수량·출고창고를 못 찾았다(프론트 실측 2026-10-22).
+     * 이관분은 레거시 값으로 채웠고, 비어 있으면 상품 세부구분으로 떨어진다.
+     */
+    @Column(name = "trade_class", length = 20)
+    private String tradeClass;
+
     /** 학교/학원 코드(레거시 salesData.schCode). 매출 업로드 등에서 세부 거래단위. */
     @Column(name = "school_code", length = 30)
     private String schoolCode;
@@ -171,6 +184,8 @@ public class Sale extends com.daesung.sales.common.entity.SoftDeletableEntity {
         s.salesDate = salesDate;
         s.partner = partner;
         s.product = product;
+        // 발송과 잇는 키 — 등록 시점의 세부구분을 베껴 둔다(위 필드 주석 참고).
+        s.tradeClass = (product == null) ? null : product.getSalesDivision();
         s.salesType = salesType;
         s.shipmentType = shipmentType;
         s.salesCategory = salesCategory;
@@ -195,6 +210,7 @@ public class Sale extends com.daesung.sales.common.entity.SoftDeletableEntity {
         s.salesDate = salesDate;
         s.partner = partner;
         s.product = product;
+        s.tradeClass = (product == null) ? null : product.getSalesDivision();
         s.salesType = SalesType.CONSIGN_SALES;
         s.shipmentType = ShipmentType.CONSIGN_SHIP;
         s.salesCategory = SalesCategory.SALE;
