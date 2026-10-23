@@ -302,7 +302,7 @@ public class ReceivableService {
 
             String proc = procLabel(str(r[4]));
             rows.add(new DuffLedgerResponse.Row("DETAIL", null, date, school,
-                    examMonth(toLocalDate(r[2])), str(r[3]), proc,
+                    str(r[2]), str(r[3]), proc,
                     intOrNull(r[5]), intOrNull(r[6]), qty, amt));
 
             long[] acc = byProc.computeIfAbsent(proc, k -> new long[2]);
@@ -336,15 +336,6 @@ public class ReceivableService {
 
         return new DuffLedgerResponse(partnerId, partner.getName(), from, to,
                 rows, summary, totalQty, totalAmt);
-    }
-
-    /**
-     * 시행월(yyyy-MM). BOM 시행예정일이 없으면 <b>비운다</b> —
-     * 레거시처럼 도서명을 잘라 만들면 이름 규칙이 어긋나는 순간 엉뚱한 값이 찍힌다(그쪽은 '##ERROR'였다).
-     */
-    private static String examMonth(LocalDate examDate) {
-        return (examDate == null) ? null
-                : String.format("%04d-%02d", examDate.getYear(), examDate.getMonthValue());
     }
 
     /** 성적처리 구분 → 화면 표기. 미지정은 '비처리'(37p와 같은 규칙). */

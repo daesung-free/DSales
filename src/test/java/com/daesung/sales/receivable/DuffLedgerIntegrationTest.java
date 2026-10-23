@@ -30,6 +30,8 @@ class DuffLedgerIntegrationTest extends IntegrationTestSupport {
 
     private Long partner;
     private Long mockSet;
+    /** 폴백 검증 전용 거래처 — 다른 테스트의 합계(22부)를 건드리지 않으려고 분리한다. */
+    private Long fallbackPartner;
 
     @BeforeAll
     void seed() {
@@ -70,6 +72,44 @@ class DuffLedgerIntegrationTest extends IntegrationTestSupport {
         // 제외돼야 하는 둘: 교재 / 더프가 아닌 모의고사
         sale(YEAR + "-09-13", wh, textBook, 99, "A고", "GRADED", null);
         sale(YEAR + "-09-14", wh, nonDuff, 88, "A고", "GRADED", null);
+
+        seedFallback(sup, wh);
+    }
+
+    /**
+     * 시행월 폴백용 — BOM 시행예정일이 <b>없는</b> 상품 4종.
+     * 연도를 2042로 띄워 위 2043 픽스처와 섞이지 않게 한다.
+     */
+    private void seedFallback(Long sup, Long wh) {
+        fallbackPartner = createId("/masters/clients",
+                Map.of("code", "DFF" + SFX, "name", "폴백거래처", "type", "NORMAL"));
+
+        record Case(String code, String name, String school) {
+        }
+        List<Case> cases = List.of(
+                new Case("DFF1" + SFX, "11월 고2 수능 (전영역)", "폴백고"),   // 정상
+                new Case("DFF2" + SFX, "월례고사", "월례고"),                 // '월'은 있으나 앞이 숫자 아님
+                new Case("DFF3" + SFX, "25 고1 국어_1영역", "연도표기고"),     // 25=연도, '월' 없음
+                new Case("DFF4" + SFX, "고3 평가고사", "평가고"));             // 시행월 개념 없음
+
+        for (Case c : cases) {
+            Long p = createId("/masters/products", Map.of(
+                    "code", c.code(), "name", c.name(), "contentType", "SELF",
+                    "price", 10000, "supplyRate", 100, "grade", "고3",
+                    "catCode", "M2042A01", "catName", "폴백검증",
+                    "salesDivision", "모의고사", "stockManaged", false));
+            Map<String, Object> item = new java.util.HashMap<>();
+            item.put("productId", p);
+            item.put("shipmentType", "NORMAL_SHIP");
+            item.put("unitPrice", 10000);
+            item.put("supplyRate", 100);
+            item.put("qty", 1);
+            item.put("schoolName", c.school());
+            assertThat(post("/sales/entries", Map.of(
+                    "salesDate", "2042-05-10", "partnerId", fallbackPartner,
+                    "warehouseId", wh, "items", List.of(item)))
+                    .path("success").asBoolean()).as("폴백 픽스처 매출: %s", c.name()).isTrue();
+        }
     }
 
     @Test
@@ -127,6 +167,40 @@ class DuffLedgerIntegrationTest extends IntegrationTestSupport {
 
         assertThat(graded).isEqualTo(17);    // 10 + 7
         assertThat(ungraded).isEqualTo(5);   // 미지정 = 비처리
+    }
+
+    @Test
+    @DisplayName("★시행월 폴백 — BOM이 없으면 도서명 'N월', 연도는 분류코드")
+    void 시행월_폴백() {
+        // BOM 시행예정일이 없는 상품. 이름이 "11월 …", 분류는 M2042A01 → 2042-11
+        JsonNode d = data(get("/closing/ar-ledger/duff?partnerId=" + fallbackPartner
+                + "&fromDate=2042-01-01&toDate=2042-12-31"));
+
+        java.util.Map<String, String> byName = new java.util.HashMap<>();
+        for (JsonNode r : d.path("rows")) {
+            if ("DETAIL".equals(r.path("rowType").asText())) {
+                byName.put(r.path("schoolName").asText(), r.path("examMonth").asText(""));
+            }
+        }
+        // ① 정상 — "11월 고2 수능" + M2042A01
+        assertThat(byName.get("폴백고")).as("도서명에서 시행월이 나온다").isEqualTo("2042-11");
+
+        // ② ‼️'월'은 있지만 앞이 숫자가 아니다(레거시는 여기서 '월'을 찍었다)
+        assertThat(byName.get("월례고")).as("월례고사 같은 이름은 안 찍는다").isEmpty();
+
+        // ③ ‼️"25 고1 국어" — 25는 월이 아니라 연도다. '월' 글자가 없어 안 걸린다
+        assertThat(byName.get("연도표기고")).as("25월 같은 값을 만들지 않는다").isEmpty();
+
+        // ④ 시행월 개념이 없는 상품(고3 평가고사) — 빈 칸이 정답
+        assertThat(byName.get("평가고")).as("이름에 정보가 없으면 비운다").isEmpty();
+    }
+
+    @Test
+    @DisplayName("‼️BOM 시행예정일이 있으면 그쪽이 이긴다 — 도서명은 2순위")
+    void BOM이_우선() {
+        // mockSet 은 BOM examDate 2043-09-05 를 갖고 이름엔 '월'이 없다.
+        assertThat(detail().get(0).path("examMonth").asText())
+                .as("BOM 시행예정일").isEqualTo(YEAR + "-09");
     }
 
     @Test

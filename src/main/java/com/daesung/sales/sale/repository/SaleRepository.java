@@ -277,14 +277,43 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
      * 레거시 실데이터 4,600건이 100% 따르는 것을 확인한 것이다. 2~5자리가 숫자라
      * {@code 'M%A%'}의 A는 접미부에서만 걸린다.
      *
+     * <p><b>시행월(yyyy-MM)은 2단 경로다 — BOM 시행예정일이 1순위, 도서명이 2순위.</b>
+     * BOM에만 기대면 <b>전 행이 빈 칸</b>이 된다. 이관 데이터에 세트구성 시행예정일을
+     * 넣은 상품이 없기 때문이다(화면이 "빈 칸 시행월"로 두 달째 띄우고 있던 결함).
+     *
+     * <p>2순위 근거 — 운영 추출본 전수 확인(2026-10-23):
+     * <pre>
+     *   2026년 더프 매출 5,112건 중 도서명에서 시행월이 나오는 건  4,983 (97%)
+     *   남는 129건 = 「고3 평가고사」 127(시행월 개념이 없는 상품) + 도서명 오기 2
+     * </pre>
+     * 즉 <b>틀린 값이 찍히는 건은 0건</b>이고, 못 채우는 3%는 BOM에 넣으면 1순위로 채워진다.
+     *
+     * <p>★레거시({@code LEFT(bookName, CHARINDEX('월', bookName))})보다 <b>좁게</b> 잡는다.
+     * 그쪽은 첫 '월'까지 무조건 잘라서 {@code 월례고사} 같은 이름이 '월'로 찍혔다.
+     * 우리는 <b>맨 앞 1~2자리 숫자 + '월'</b>이고 그 수가 1~12일 때만 쓴다.
+     *
+     * <p>★연도는 <b>분류코드</b>에서 온다(판매일이 아니다). 2026-01에 팔린
+     * "11월 고2 수능"은 분류가 {@code M2025A…}인 <b>2025년 11월</b> 시행분이다 —
+     * 판매일로 연도를 잡으면 한 해가 밀린다. 분류코드 {@code [영문1][연도4][…]} 형식은
+     * {@code @CatCode}가 강제하고 있어 2~5자리를 연도로 쓸 수 있다.
+     *
      * <p>소계(학교 계·월 계)는 서비스에서 조립한다. 반환 Object[]:
-     * [salesDate, schoolName, examDate, grade, procType, unitPrice, supplyRate, qty, amount].
+     * [salesDate, schoolName, <b>examMonth(문자열 yyyy-MM)</b>, grade, procType,
+     *  unitPrice, supplyRate, qty, amount].
      */
     @Query(value = """
             SELECT s.sales_date, COALESCE(s.school_name, ''),
-                   (SELECT MIN(b.exam_date) FROM bom_items b
-                     WHERE b.parent_product_id = s.product_id
-                       AND b.round = s.book_round AND b.deleted_at IS NULL) AS exam_date,
+                   COALESCE(
+                     (SELECT DATE_FORMAT(MIN(b.exam_date), '%Y-%m') FROM bom_items b
+                       WHERE b.parent_product_id = s.product_id
+                         AND b.round = s.book_round AND b.deleted_at IS NULL),
+                     CASE WHEN p.name REGEXP '^[0-9]{1,2}월'
+                           AND CAST(REGEXP_SUBSTR(p.name, '^[0-9]{1,2}') AS UNSIGNED) BETWEEN 1 AND 12
+                           AND p.cat_code REGEXP '^[A-Za-z][0-9]{4}'
+                          THEN CONCAT(SUBSTRING(p.cat_code, 2, 4), '-',
+                                      LPAD(REGEXP_SUBSTR(p.name, '^[0-9]{1,2}'), 2, '0'))
+                     END
+                   ) AS exam_month,
                    COALESCE(p.grade, ''), COALESCE(s.proc_type, ''),
                    s.unit_price, s.supply_rate, s.qty, COALESCE(s.supply_amount, 0)
             FROM sales s
@@ -296,7 +325,7 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
               AND s.partner_id = :partnerId
               AND s.sales_date BETWEEN :fromDate AND :toDate
             ORDER BY EXTRACT(YEAR FROM s.sales_date), EXTRACT(MONTH FROM s.sales_date),
-                     COALESCE(s.school_name, ''), exam_date, p.grade, s.proc_type, s.id
+                     COALESCE(s.school_name, ''), exam_month, p.grade, s.proc_type, s.id
             """, nativeQuery = true)
     List<Object[]> duffLedgerLines(@Param("partnerId") Long partnerId,
                                    @Param("fromDate") LocalDate fromDate,

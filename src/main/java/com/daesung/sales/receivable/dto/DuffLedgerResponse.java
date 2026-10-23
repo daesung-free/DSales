@@ -65,10 +65,21 @@ public record DuffLedgerResponse(
             @Schema(description = "거래일자(명세행)") LocalDate date,
             @Schema(description = "학교(원)명") String schoolName,
             @Schema(description = """
-                    시행월(yyyy-MM). 그 상품·회차의 **BOM 시행예정일**에서 온다.
-                    ⚠️레거시는 도서명을 잘라 만들었고({@code LEFT(bookName, CHARINDEX('월', bookName))})
-                    이름이 규칙에 안 맞으면 값이 깨졌다. 우리는 파싱하지 않으므로,
-                    BOM에 시행예정일이 없으면 채우지 않고 **비운다**(엉뚱한 값보다 빈 값이 낫다).""")
+                    시행월(yyyy-MM). **2단 경로** —
+                    ① 그 상품·회차의 **BOM 시행예정일**(1순위)
+                    ② 없으면 **도서명 맨 앞의 'N월'**(2순위). 연도는 분류코드에서 온다
+                       (판매일이 아니다 — 2026-01에 팔린 "11월 고2 수능"은 분류 M2025A… 의 2025-11 시행분).
+
+                    ‼️처음엔 ①만 보고 비웠는데, 이관 데이터에 BOM 시행예정일을 넣은 상품이 없어
+                    **전 행이 빈 칸**이었다. 운영 추출본 전수 확인 결과 2026년 더프 매출 5,112건 중
+                    **4,983건(97%)**이 도서명에서 나오고, 남는 129건은 「고3 평가고사」 127건
+                    (시행월 개념이 없는 상품)과 도서명 오기 2건이다 — **틀린 값이 찍히는 건은 0건**.
+
+                    ★레거시({@code LEFT(bookName, CHARINDEX('월', bookName))})보다 좁게 잡는다.
+                    그쪽은 첫 '월'까지 무조건 잘라 {@code 월례고사}가 '월'로 찍혔다. 우리는
+                    **맨 앞 1~2자리 숫자 + '월'**이고 그 수가 1~12일 때만 쓴다.
+
+                    둘 다 없으면 **비운다**. 빈 칸은 "BOM에 시행예정일을 넣어야 한다"는 신호다.""")
             String examMonth,
             @Schema(description = "학년(상품 마스터)") String grade,
             @Schema(description = "처리 구분(처리/비처리). 매출등록의 성적처리 구분에서 온다") String procType,
