@@ -206,6 +206,9 @@ class ExcelExportIntegrationTest extends IntegrationTestSupport {
         var rev = read("/closing/revenue-report/export?taxType=TAXABLE&fromDate=" + YEAR + "-01-01&toDate=" + YEAR + "-12-31");
         assertHeader(rev, "수익신고", "거래처명");
         assertFilled(rev, "수익신고", 3);
+        // ★월 가로펼침(레거시 수익신고.vb:295). 픽스처 매출이 YEAR-03 한 건이라 그 달 칸이 선다.
+        //   예전 엑셀은 총계 7칸뿐이라 화면과 다른 표가 내려갔다.
+        assertHeader(rev, "수익신고", "순번", "건수(33.03)", "순매출금액(33.03)", "세액(33.03)");
 
         var filing = read("/closing/tax-filing/export?fromYearMonth=" + YEAR + "-01&toYearMonth=" + YEAR + "-12");
         assertHeader(filing, "계산서월별신고", "월");

@@ -68,21 +68,82 @@ public class TaxController {
     }
 
     @Operation(summary = "수익신고 엑셀 다운로드",
-            description = "드라이브 '수익신고' 형식(거래처별 총건수·순매출·세액). "
-                    + "조회와 같이 **taxType 필수**(과세/면세 양식이 다르다 — 발주처 1차회신 #11).")
+            description = """
+                    레거시 `수익신고.vb:281~297` 양식 그대로 —
+                    고정 8칸(순번·거래처코드·거래처명·사업자번호·성명·총건수·총순매출금액·총세액) 뒤에
+                    **월마다 `건수·순매출금액·세액` 3칸을 가로로 펼친다**(헤더는 `건수(26.06)` 꼴).
+
+                    ★이 가로펼침은 발주처 1차회신(2026-10-02 #11)이 "월별 구분은 옆으로 펼친 표로
+                    기존대로 사용"으로 확정한 것이다. 예전 엑셀은 총계 7칸뿐이라
+                    **화면과 다른 표**가 내려갔다 — 재무팀은 기존 파일과 눈으로 대조하는 환경이다.
+
+                    ‼️레거시와 같이 **12개월까지만** 펼친다(`vb:293` "12개월을 벗어나면 패스").
+                    더 긴 기간을 조회하면 넘치는 달은 칸이 빠지고, 총계는 기간 전체로 남는다.
+
+                    조회와 같이 **taxType 필수**(과세/면세 양식이 다르다 — #11).""")
     @GetMapping("/revenue-report/export")
     public ResponseEntity<byte[]> revenueReportExport(
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate fromDate,
             @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate toDate,
             @RequestParam String taxType) {
-        List<Col> cols = List.of(
+        RevenueReportResponse r = taxService.revenueReport(fromDate, toDate, taxType);
+
+        // 펼칠 달 = 데이터에 실제로 나온 달(오름차순), 레거시와 같이 12개까지.
+        List<String> months = r.rows().stream()
+                .flatMap(p -> p.months().stream())
+                .map(RevenueReportResponse.MonthEntry::yearMonth)
+                .distinct().sorted().limit(12).toList();
+
+        List<Col> cols = new java.util.ArrayList<>(List.of(
+                new Col("순번", "seq"),
                 new Col("거래처코드", "partnerCode"), new Col("거래처명", "partnerName"),
                 new Col("사업자번호", "bizNo"), new Col("대표자성명", "bossName"),
                 new Col("총건수", "totalCount"),
-                new Col("총순매출금액", "totalNetSupply"), new Col("총세액", "totalNetTax"));
-        byte[] xlsx = excel.toXlsx("수익신고", cols, taxService.revenueReport(fromDate, toDate, taxType).rows(),
-                Heading.period("수익신고", fromDate, toDate));
+                new Col("총순매출금액", "totalNetSupply"), new Col("총세액", "totalNetTax")));
+        for (String ym : months) {
+            String label = "(" + ym.substring(2, 4) + "." + ym.substring(4) + ")";
+            cols.add(new Col("건수" + label, "c_" + ym));
+            cols.add(new Col("순매출금액" + label, "s_" + ym));
+            cols.add(new Col("세액" + label, "t_" + ym));
+        }
+
+        List<Object> body = new java.util.ArrayList<>(r.rows().size() + 1);
+        int seq = 0;
+        for (RevenueReportResponse.PartnerRevenue p : r.rows()) {
+            body.add(flatten(p, months, ++seq));
+        }
+        // 합계행도 같은 모양으로 붙인다 — 레거시 그리드도 마지막 줄이 합계다.
+        if (r.total() != null) {
+            body.add(flatten(r.total(), months, 0));
+        }
+
+        byte[] xlsx = excel.toXlsx("수익신고", cols, body, Heading.period("수익신고", fromDate, toDate));
         return excel.asDownload(xlsx, "수익신고.xlsx");
+    }
+
+    /** 거래처 1행 → 고정칸 + 월 칸을 펼친 평면 맵. 값이 없는 달은 <b>비운다</b>(0을 찍지 않는다). */
+    private static java.util.Map<String, Object> flatten(
+            RevenueReportResponse.PartnerRevenue p, List<String> months, int seq) {
+        java.util.Map<String, Object> m = new java.util.LinkedHashMap<>();
+        m.put("seq", (seq == 0) ? "합계" : seq);
+        m.put("partnerCode", p.partnerCode());
+        m.put("partnerName", p.partnerName());
+        m.put("bizNo", p.bizNo());
+        m.put("bossName", p.bossName());
+        m.put("totalCount", p.totalCount());
+        m.put("totalNetSupply", p.totalNetSupply());
+        m.put("totalNetTax", p.totalNetTax());
+        if (p.months() != null) {
+            for (RevenueReportResponse.MonthEntry e : p.months()) {
+                if (!months.contains(e.yearMonth())) {
+                    continue;   // 12개월 상한에서 잘린 달
+                }
+                m.put("c_" + e.yearMonth(), e.count());
+                m.put("s_" + e.yearMonth(), e.netSupply());
+                m.put("t_" + e.yearMonth(), e.netTax());
+            }
+        }
+        return m;
     }
 
     @Operation(summary = "계산서 반품/취소 10일 분기 조정 명세",
