@@ -709,6 +709,35 @@ public interface SaleRepository extends JpaRepository<Sale, Long> {
                                    @Param("taxType") String taxType);
 
     /**
+     * <b>단독 상품</b>(수불부노출 Y)의 기간 출고수량 — 물류 작업비의 '인원' 자리에 들어간다.
+     *
+     * <p>근거: 발주처 확정(2026-10-23 #10) "Y(단독)→'인원' 자리에 매출프로그램 출고수량".
+     *
+     * <p>★<b>출고된 것만 센다</b> — 매출(SALE)과 무상(FREE)이다. 물류 작업은 물건이 나갈 때
+     * 생기므로 둘 다 작업이 있었다. 반품(RETURN)은 빼는 게 아니라 <b>회수 물류비</b>라는
+     * 다른 축에서 따로 센다(레거시도 출고/회수를 라디오로 갈라 놓았다).
+     *
+     * <p>‼️<b>병행(N) 상품은 제외한다.</b> 그쪽은 DSRE 신청 기준으로 이미 집계돼 온다 —
+     * 여기서 또 세면 금액이 두 배가 된다(발주처가 콕 집어 경고한 지점).
+     *
+     * <p>반환 Object[]: [productId, productCode, productName, grade, partnerCode, partnerName, qty].
+     */
+    @Query("""
+            select p.id, p.code, p.name, coalesce(p.grade, ''),
+                   pt.code, pt.name, sum(s.qty)
+              from Sale s join s.product p join s.partner pt
+             where s.canceled = false
+               and s.deletedAt is null
+               and p.ledgerVisible = true
+               and s.salesCategory <> com.daesung.sales.salestype.entity.SalesCategory.RETURN
+               and s.salesDate between :from and :to
+             group by p.id, p.code, p.name, coalesce(p.grade, ''), pt.code, pt.name
+             having sum(s.qty) > 0
+             order by p.code, pt.code
+            """)
+    List<Object[]> standaloneShippedQty(@Param("from") LocalDate from, @Param("to") LocalDate to);
+
+    /**
      * 계산서·세금계산서 월별신고(38p): 월×발행유형으로 매출/반품/세액 집계. 취소 제외.
      * 발행유형 3종 — 앞 조건이 이긴다(배타):
      * <pre>

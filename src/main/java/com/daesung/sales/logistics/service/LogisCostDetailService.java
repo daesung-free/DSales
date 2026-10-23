@@ -37,6 +37,7 @@ public class LogisCostDetailService {
 
     private final DsreGateway dsreGateway;
     private final LogisCostSnapshotRepository snapshotRepository;
+    private final StandaloneLogisCostService standaloneLogisCostService;
     private final LogisCostManualRepository manualRepository;
     private final CurrentAuditor currentAuditor;
 
@@ -48,7 +49,19 @@ public class LogisCostDetailService {
         // 원천: 마감월이면 굳혀 둔 값, 아니면 실시간 계산.
         // 필터·접기는 그 뒤로 <b>완전히 같은 코드</b>를 탄다 — 두 경로가 갈리면
         // 마감 전후로 같은 달 숫자가 달라진다.
-        List<LogisCostDetailRow> raw = loadRows(from, to, dtlCds);
+        List<LogisCostDetailRow> raw = new ArrayList<>(loadRows(from, to, dtlCds));
+
+        // ★단독 상품(수불부노출 Y)을 더한다 — 발주처 확정 2026-10-23 #10.
+        //   '인원' 자리에 **매출프로그램 출고수량**이 들어가고, 계산식·단가는 기존 그대로다.
+        //   ‼️**이중계산 방지** — 병행(N) 상품은 위 loadRows 가 DSRE 신청 기준으로 이미 가져온다.
+        //     standaloneShippedQty 가 `ledgerVisible = true` 만 세므로 두 집합은 겹치지 않는다.
+        //     한 상품이 양쪽에 다 잡히면 금액이 두 배가 된다(발주처가 콕 집어 경고한 지점).
+        //   ‼️시행코드(dtlCd) 필터가 걸린 조회에는 더하지 않는다 — 그 필터는 DSRE 시행 축이고
+        //     단독 상품에는 시행이 없다. 넣으면 "시행을 골랐는데 상관없는 행이 섞이는" 화면이 된다.
+        if (dtlCds == null || dtlCds.isEmpty()) {
+            raw.addAll(standaloneLogisCostService.rows(from, to));
+        }
+
         List<LogisCostDetailRow> src = raw.stream().filter(r -> r.matches(mode, includeCancel)).toList();
 
         // 1) 요청한 축으로 접는다. 신청 축이면 원본 그대로, 거래처 축이면 신청을 합친다.
