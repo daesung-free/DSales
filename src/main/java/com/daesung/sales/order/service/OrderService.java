@@ -194,7 +194,8 @@ public class OrderService {
             boolean ok = dsreGateway.ship(List.of(reqCd), LocalDate.now(), currentAuditor.username())
                     .stream().anyMatch(com.daesung.sales.dsre.gateway.DsreShipResult::changed);
             if (ok) {
-                com.daesung.sales.common.tx.AfterRollback.register("발송완료 되돌림 reqCd=" + reqCd,
+                com.daesung.sales.common.tx.AfterRollback.register(
+                        com.daesung.sales.common.tx.AfterRollback.Kind.UNDO_SHIP, reqCd,
                         () -> dsreGateway.unship(List.of(reqCd), currentAuditor.username()));
             }
             return ok ? 1 : 0;
@@ -202,7 +203,8 @@ public class OrderService {
         if (from == OrderState.SHIPPED && to == OrderState.READY_TO_SHIP) {
             var r = dsreGateway.unship(List.of(reqCd), currentAuditor.username()).stream()
                     .filter(com.daesung.sales.dsre.gateway.DsreShipResult::changed).findFirst();
-            r.ifPresent(x -> com.daesung.sales.common.tx.AfterRollback.register("발송취소 되돌림 reqCd=" + reqCd,
+            r.ifPresent(x -> com.daesung.sales.common.tx.AfterRollback.register(
+                    com.daesung.sales.common.tx.AfterRollback.Kind.UNDO_UNSHIP, reqCd,
                     () -> dsreGateway.ship(List.of(reqCd),
                             x.prevDelDate() != null ? x.prevDelDate() : LocalDate.now(),
                             currentAuditor.username())));

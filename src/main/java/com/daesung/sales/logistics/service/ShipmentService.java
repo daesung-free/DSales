@@ -181,7 +181,7 @@ public class ShipmentService {
                         r.beforeState(), OrderState.READY_TO_SHIP.code(),
                         "작업요청서 발송취소(발송건 " + s.getId() + ") — " + why);
                 revertSentByReqCd(r.reqCd(), why);   // 같은 신청의 다른 발송 건
-                AfterRollback.register("발송취소 되돌림 reqCd=" + r.reqCd(), () -> gw.ship(
+                AfterRollback.register(AfterRollback.Kind.UNDO_UNSHIP, r.reqCd(), () -> gw.ship(
                         List.of(r.reqCd()),
                         r.prevDelDate() != null ? r.prevDelDate() : LocalDate.now(),
                         currentAuditor.username()));
@@ -238,7 +238,7 @@ public class ShipmentService {
                 statusHistoryService.record(StatusEntityType.DSRE_ORDER, (long) r.reqCd(), "STATE",
                         r.beforeState(), OrderState.SHIPPED.code(),
                         "작업요청서 발송완료(발송건 " + s.getId() + ")");
-                AfterRollback.register("발송완료 되돌림 reqCd=" + r.reqCd(),
+                AfterRollback.register(AfterRollback.Kind.UNDO_SHIP, r.reqCd(),
                         () -> gw.unship(List.of(r.reqCd()), currentAuditor.username()));
             }
             out.add(toSync(r, OrderState.SHIPPED, shipMessage(r)));

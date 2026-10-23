@@ -70,7 +70,7 @@ class ShipmentDsreSyncTest {
         if (sent != null) {
             s.updateShipping(null, sent, null);
         }
-        when(shipmentRepository.findById(id)).thenReturn(Optional.of(s));
+        when(shipmentRepository.findByIdIncludingDeleted(id)).thenReturn(Optional.of(s));
         return s;
     }
 

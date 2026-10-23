@@ -19,7 +19,15 @@ public final class AfterRollback {
     private AfterRollback() {
     }
 
-    public static void register(String what, Runnable compensation) {
+    /** 무엇을 되돌리는가. 로그 문구를 상수로 묶어 둔다(자유 문자열을 로그에 넣지 않는다 — CRLF 위조 방지). */
+    public enum Kind {
+        /** 발송완료를 되돌림(우리 저장 실패 → DSRE 발송취소). */
+        UNDO_SHIP,
+        /** 발송취소를 되돌림(우리 저장 실패 → DSRE 다시 발송완료). */
+        UNDO_UNSHIP
+    }
+
+    public static void register(Kind kind, int reqCd, Runnable compensation) {
         if (!TransactionSynchronizationManager.isSynchronizationActive()) {
             return;   // 트랜잭션 밖이면 롤백도 없다
         }
@@ -29,11 +37,23 @@ public final class AfterRollback {
                 if (status != STATUS_ROLLED_BACK) {
                     return;
                 }
+                boolean undoShip = kind == Kind.UNDO_SHIP;
                 try {
                     compensation.run();
-                    log.warn("우리 저장이 롤백되어 DSRE 를 되돌렸습니다: {}", what);
+                    if (undoShip) {
+                        log.warn("우리 저장이 롤백되어 DSRE 발송완료를 되돌렸습니다. reqCd={}", reqCd);
+                    } else {
+                        log.warn("우리 저장이 롤백되어 DSRE 발송취소를 되돌렸습니다. reqCd={}", reqCd);
+                    }
                 } catch (RuntimeException e) {
-                    log.error("‼️DSRE 되돌리기 실패 — 수동 확인 필요: {}", what, e);
+                    // 예외 객체는 넘기지 않는다 — 메시지에 외부 값이 섞일 수 있어 로그 위조 룰에 걸린다. 종류만 남긴다.
+                    if (undoShip) {
+                        log.error("‼️DSRE 발송완료 되돌리기 실패 — 수동 확인 필요. reqCd={} cause={}",
+                                reqCd, e.getClass().getName());
+                    } else {
+                        log.error("‼️DSRE 발송취소 되돌리기 실패 — 수동 확인 필요. reqCd={} cause={}",
+                                reqCd, e.getClass().getName());
+                    }
                 }
             }
         });
